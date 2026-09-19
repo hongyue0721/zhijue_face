@@ -1,0 +1,23 @@
+{
+  "_comment": "M0-04 实测版本锁（2026-09-18 在开发机实测固化）。这是运行事实的参照清单，不是猜测的目标版本；doctor 用它校验锁定环境。官方 openJiuwen release 包含 PR #1344 修复后，必须切回正式 wheel 并重跑 M0-02/M0-03，再更新本文件。",
+  "measured_at": "2026-09-18T19:02:16-07:00",
+  "measured_on": "Linux x86_64 (arch)",
+  "python": {
+    "requires": ">=3.11,<3.14",
+    "measured": "3.11.16"
+  },
+  "openjiuwen": {
+    "version": "0.1.18",
+    "source_kind": "git_compat_commit",
+    "repository": "https://github.com/hongyue0721/agent-core.git",
+    "commit": "72c4985111b835530ec616f70dd67117eb2e015c",
+    "upstream_pr": "openJiuwen-ai/agent-core#1344",
+    "official_release_contains_fix": false
+  },
+  "pymilvus": "2.6.7",
+  "milvus_lite": "3.2.1",
+  "uv": "0.12.10",
+  "node": "v24.21.0",
+  "npm": "11.19.0",
+  "pnpm": "10.34.5"
+}

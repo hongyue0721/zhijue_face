@@ -1,0 +1,68 @@
+# 规范默认值，不是已经加载到应用的配置；M0 之后由应用使用相同键并验证。
+spec_version: "1.0.0"
+run_mode: live
+role_preset: embedded_junior
+interview:
+  root_question_count: 5
+  max_supplementary_per_root: 1
+  min_competency_dimensions: 3
+  soft_time_budget_seconds: 900
+limits:
+  max_upload_bytes: 10485760
+  max_pages_per_document: 5
+  max_documents_per_profile: 5
+  max_extracted_chars_per_document: 30000
+  max_jd_chars: 8000
+  max_answer_chars: 6000
+  max_facts_per_request: 50
+  max_chars_per_fact: 2000
+  max_fact_chars_per_request: 30000
+  max_queued_operations: 8
+model:
+  max_concurrent_requests: 2
+  max_attempts_per_logical_operation: 3
+  max_format_repairs_per_logical_operation: 1
+  operation_timeout_seconds: 60
+  max_session_total_tokens: 60000
+  verify_tls: true
+  provider_candidate: deepseek
+  model_name_candidate: deepseek-flash
+  api_base_from_env: API_BASE
+  actual_compatibility_verified: false
+retrieval:
+  strategy: dense
+  top_k: 4
+  chunk_size_chars: 300
+  chunk_overlap_chars: 40
+  embedding_transport_candidate: openjiuwen_openai_embedding
+  embedding_model_candidate: BAAI/bge-m3
+  embedding_dimension_candidate: 1024
+  embedding_api_base_from_env: EMBEDDING_API_BASE
+  native_knowledge_required: true
+  openjiuwen_release_version: "0.1.18"
+  openjiuwen_source_kind: git_compat_commit
+  openjiuwen_compat_commit: 72c4985111b835530ec616f70dd67117eb2e015c
+  openjiuwen_upstream_pr: 1344
+  official_release_contains_delete_fix: false
+  parse_add_retrieve_restart_verified: true
+  delete_compatibility_verified: true
+  actual_compatibility_verified: true
+seed_bank:
+  bootstrap_approved_count: 6
+  release_target_approved_count: 24
+  live_allowed_review_status: approved
+scoring:
+  minimum_root_coverage: 0.60
+  minimum_scored_roots_for_overall: 3
+  criterion_max_level: 3
+features:
+  ocr_enabled: false
+  memory_enabled: false
+  external_web_enabled: false
+  observer_mode_default: false
+  remote_public_access_enabled: false
+runtime:
+  api_workers: 1
+  sse_heartbeat_seconds: 15
+  ocr_timeout_seconds: 90
+  default_data_mode: synthetic

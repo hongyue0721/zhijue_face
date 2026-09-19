@@ -1,0 +1,64 @@
+# M0-04 CI 骨架：仓库尚未推送到远端，本工作流为 NOT_RUN。
+# 设计约束：默认不花模型费用——不调用任何 embedding/LLM 端点，不跑
+# integration_live（该标记的用例必须显式提供私密 env 文件才会执行）。
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.10"
+
+      - name: Install locked Python
+        run: uv python install 3.11
+
+      - name: Sync from lock (fails on drift)
+        run: uv sync --frozen --python 3.11
+
+      - name: Lint and format check
+        run: |
+          .venv/bin/ruff check smoke tests
+          .venv/bin/ruff format --check smoke tests
+
+      - name: Tests (no model spend; live cases gated)
+        run: .venv/bin/python -m pytest tests -q
+
+      - name: Doctor (readiness + secret scan; no network)
+        run: .venv/bin/python ../../scripts/doctor.py
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Frozen install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and build
+        run: pnpm build

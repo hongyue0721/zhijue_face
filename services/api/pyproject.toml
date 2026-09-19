@@ -1,0 +1,49 @@
+# 职觉 ZhiJue Demo 后端环境清单（仅依赖，不含业务代码）
+#
+# 本文件的作用只是锁定 M0 环境：Python 版本范围与直接依赖。
+# 传递依赖由同目录 uv.lock 锁定；不手写 lock 内容。
+# 业务包结构尚未创建，因此这里不声明 build-system / package 配置。
+
+[project]
+name = "zhijue-api-env"
+version = "0.0.0"
+description = "职觉 ZhiJue Demo 后端依赖环境（M0 环境锁定，尚未包含业务代码）"
+requires-python = ">=3.11,<3.14"
+
+# 版本依据与临时兼容来源（2026-09-19 实测）：
+#   最新正式版仍为 openjiuwen 0.1.18，requires_python >=3.11,<3.14；
+#   该发布版的 MilvusIndexer 无法处理 Milvus Lite delete() 返回的主键 list。
+#   暂时锁到基于官方 v0.1.18、仅含官方 PR #1344 两个提交的公开兼容 commit；
+#   不修改 site-packages、不使用 monkeypatch。官方发布包含修复后必须切回正式版。
+#   源码安装会增加首次同步的 Git/网络要求，但不增加运行期服务或付费组件。
+#   openjiuwen 自身约束 pymilvus>=2.6.2,<2.6.10，本地 Milvus Lite 经 pymilvus[milvus-lite] 提供。
+dependencies = [
+    "openjiuwen @ git+https://github.com/hongyue0721/agent-core.git@72c4985111b835530ec616f70dd67117eb2e015c",
+    "pymilvus[milvus-lite]==2.6.7",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.41",
+    "alembic>=1.13.1",
+    "pypdf>=5.1",
+    "python-multipart>=0.0.20",
+    "httpx>=0.28",
+    "PyYAML>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "jsonschema>=4.23",
+    "ruff>=0.9",
+    "mypy>=1.14",
+]
+
+[tool.uv]
+package = false
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+markers = [
+    "integration_live: requires an explicitly selected private live model configuration",
+]
