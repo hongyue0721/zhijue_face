@@ -1,0 +1,28 @@
+{
+  "name": "zhijue-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "职觉 Demo 前端：资料确认、能力覆盖与五题验证计划工作台",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=10 <11"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4"
+  }
+}
