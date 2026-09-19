@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-19｜M3-03 前端契约与语义漂移修正
+
+- 以当前后端 `CapacityLimitedError` 和 routes 为真值，把前端及 UI Contract 的错误码从不存在的 `OPERATION_CAPACITY_LIMITED` 统一为 `CAPACITY_LIMITED`；429 仍是 `retryable=true`，回答请求失败不会被当作提交成功。
+- Prepare 页明确区分 start 按冻结五个 Slot 实例化本场主问题，以及回答后 Policy 动态决定 PROBE / CLARIFY / NEXT / END；未改变后端实例化逻辑。
+- JD 来源展示改为只按服务端 `source_type` 区分 synthetic、用户提供、官方公开、公开岗位衍生四类，不从 `source_name` 推断可信度。
+- 补齐 `counterfactual`、`pushback`、`reflection` 三种用户可读映射，保持 pushback 与 counterfactual 独立，未知内部值继续走安全 fallback。
+- 前端契约测试由 7 项增至 10 项并全部通过；TypeScript + Vite production build 通过，112 modules。后端代码、OpenAPI、`api.md`、数据库和依赖均无变化；M3-03 保持 VERIFIED，业务文本模型 live 仍 NOT_RUN。
+
 ## Unreleased — 2026-09-19｜M3-03 三页 P0 前端 VERIFIED
 
 - 将旧的单页资料/计划工作台重构为 `/start`、`/profiles/:profile_id/prepare`、`/interviews/:interview_id` 三页纵切面；使用直接导入的 AnyUI 组件与现有 CSS Tokens，不引入 Liquid Glass、路由包或第二套业务状态源。

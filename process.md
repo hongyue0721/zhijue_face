@@ -21,8 +21,8 @@
 | openJiuwen Knowledge + Milvus Lite | VERIFIED（项目锁定兼容组合） | `runtime/evidence/m0-03-del/knowledge-locked-live-20260919T011100Z.json`、ADR-012；正式 0.1.18 wheel 失败记录保留 |
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live（累计 25 次逻辑调用）；历史网关探针 `deepseek-v4-flash` 成功，但当前 `.env.local` 没有业务 `MODEL_PROVIDER/MODEL_NAME/API_BASE/API_KEY/MODEL_TIMEOUT/MODEL_MAX_RETRIES`。回答模型适配已实现，业务 live 仍 NOT_RUN；token/cost 为 null |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
-| 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；公开历史由四个职责分明的提交组成，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料→确认→JD→五题计划→作答→PROBE/CLARIFY/NEXT/END 已在真实 FastAPI/openJiuwen Workflow + fixture Analyzer 的浏览器纵切面通过；前端网络幂等重试、Operation retry、SSE 降级 polling 和四档响应式已验证。业务文本模型 live、评分和报告仍 NOT_RUN |
+| 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料→确认→JD→五题计划→作答→PROBE/CLARIFY/NEXT/END 已在真实 FastAPI/openJiuwen Workflow + fixture Analyzer 的浏览器纵切面通过；前端网络幂等重试、Operation retry、SSE 降级 polling 和六组视口响应式已验证。业务文本模型 live、评分和报告仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -44,7 +44,7 @@
 | M2-03 | M2-02 | VERIFIED | 真实浏览器展示资料快照、synthetic 来源警示、Coverage Map、5 Slots 与首题审核门禁；点击生成计划 operation succeeded，URL 可恢复，刷新后仍为 5 Slots |
 | M3-01 | M2-03 + Seed Level 2 | IMPLEMENTED | 真实 openJiuwen handle-answer Workflow、Observation 语义校验与确定性 Policy 已在 fixture 验证；缺显式业务模型私密配置，live NOT_RUN，不能标 VERIFIED |
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；不代表文本模型 live |
-| M3-03 | M3-02 | VERIFIED | 三页 P0 前端、真实 PDF→Interview→Answer/Policy 操作链、动态 UI/API 对照表、错误恢复与四档浏览器验收均完成；fixture 不冒充业务模型 live |
+| M3-03 | M3-02 | VERIFIED | 三页 P0 前端与真实操作链保持不变；capacity code、主问题生成文案、四类 JD source 和 follow-up intent 映射已按当前后端契约修正并补回归 |
 | M4-01 | M3-03 | PLANNED | 评分与报告 |
 | M4-02 | M4-01 | PLANNED | 事实约束改写和简历入口 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
@@ -766,3 +766,17 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 版本落盘：前端实现 commit `5fe92051c09ef94e0009fc456546e69358905efb`；规范交接与完整性清单由包含本节的后续 docs commit 落盘。
 - 文档同步：`docs/{02-architecture,07-test-and-acceptance,08-ux,ui-contract}.md`、README、CHANGELOG、process、handoff；`api.md` 已检查无变化。
 - 唯一下一任务：负责人提供 O04 私密业务模型配置和费用上限后执行 M3-01 live 验证；在此之前不启动 M4。
+
+## 34. 2026-09-19T09:32:55-07:00｜M3-03 契约与展示语义漂移修正（VERIFIED）
+
+- 开工基线：公开 `main` 的 `77d703a364cd66529b0e1c92d50116be3272bf98`，工作区干净。重新读取 OpenAPI、后端 errors/routes/InterviewService、前端 API/展示/页面、测试、UI Contract 和 process 后，确认负责人列出的四类偏移全部存在。
+- 容量错误真值为后端 `CapacityLimitedError(code=CAPACITY_LIMITED, status=429, retryable=true)`；前端 ErrorNotice、answer retry 分类和 UI Contract 误写 `OPERATION_CAPACITY_LIMITED`，现统一按真实 code 处理。API 客户端仍对 429 reject，不把失败响应当成功。
+- start operation 会一次性按冻结的五个 Slot 实例化根问题；Prepare 文案现与此一致，并明确只有后续 PROBE / CLARIFY / NEXT / END 由回答驱动。后端实例化逻辑未改。
+- `JDSourceView.source_type` 四类现在逐项映射；不读取 `source_name` 猜官方来源。follow-up intent 补齐 counterfactual、pushback、reflection；pushback 与 counterfactual 不合并，未知值不直接暴露。
+- `apps/web/tests/contracts.test.ts` 从 7 项增至 **10 passed**：新增 429 capacity rejection/retry 分支、四类 JD source、三种 intent 与 fallback。`pnpm build` exit 0，TypeScript + Vite **112 modules**。
+- 1440×900 实际浏览器 smoke 使用显式 intercepted fixture response：Prepare 显示 official source 与准确 start/Policy 文案；Interview 显示 pushback、`CAPACITY_LIMITED` 和原请求重试，且不存在“回答已保存，正在分析”假成功文案。证据位于 ignored 的 `runtime/evidence/m3-03-semantic-fix/`，不冒充后端或模型 live。
+- 规范校验 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**；`CHECKSUMS.sha256` **203/203** 逐项通过。
+- 本轮没有修改后端、OpenAPI、`api.md`、数据库、迁移、依赖、三页路由、AnyUI、Operation Monitor、SSE/polling 或 retry 状态机。业务文本模型调用 0，provider/model/token/cost 均为 null；M3-03 保持 VERIFIED，M3-01 live 仍 NOT_RUN。
+- 版本落盘：前端修复 commit `25fcddef0dae4157898ff2a898e9bc783854666f`；规范交接与完整性清单由包含本节的后续 docs commit 落盘。
+- 两次结构化编辑分别残留旧 `else` 和旧 JSX `);`，Edit 解析警告均立即定位；重读局部并修正后，10 项测试、production build 和浏览器 smoke 全部通过，没有放宽断言或增加兜底。
+- 审计范围内未发现第五处仍未解决的 UI/API 漂移。M4 API、评分/报告、跨标签页失败 operation 恢复等既有边界不属于本轮，也未增加假入口。

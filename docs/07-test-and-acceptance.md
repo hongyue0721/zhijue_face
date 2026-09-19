@@ -276,16 +276,17 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 |---|---|---|
 | 资料导入 | 浏览器先 `POST /profiles`（`synthetic=false`），再发带浏览器 boundary 的 multipart PDF；Operation succeeded 后读取 Document，显示 `parsed / pending` 和 1 页文本块 | `runtime/evidence/m3-03/browser-e2e.json`、`ui-390-start.png` |
 | 空候选事实与确认 | 上传后 `proposed_claims=[]`，页面没有填充示例结论；手工 fact 真实 POST 后进入 proposed，确认 operation succeeded 后展示非空 `latest_snapshot_id` | 同上；服务端契约回归见 `tests/test_api_contract.py` |
-| JD 来源 | 演示按钮请求体省略 `jd_text/jd_source_name/source_type`，响应展示“演示岗位材料”；用户 JD 请求只带 `jd_text/jd_source_name`，响应展示“你提供的岗位材料” | `browser-e2e.json`、`ui-768-prepare.png` |
+| JD 来源 | 创建演示 JD 仍省略 `jd_text/jd_source_name/source_type`，用户 JD 仍只发送 `jd_text/jd_source_name`；展示只按响应 `source_type` 映射，四种类型均有前端契约测试，`source_name` 不升级可信度 | `apps/web/tests/contracts.test.ts`、`docs/ui-contract.md` |
 | Coverage/Plan | 主界面从 `jd_requirements[].statement/tier`、`coverage_map` 与五个 `root_plan.slots` 渲染；internal ID 只在默认折叠技术明细；开始按钮真实调用 start endpoint | 同上 |
 | Answer 202 | 捕获到真实 `client_turn_id`、`Idempotency-Key` 与 answer POST；202 后立即显示服务端 `accepted_answer.raw_text` 和“已保存，正在分析”，没有第二个提交入口 | `browser-e2e.json` |
 | 网络重试幂等 | 首次 answer 请求被浏览器中止后，显式“使用原请求重试”的 body、`client_turn_id` 与 `Idempotency-Key` 逐字节相同 | `browser-e2e.json` |
 | Policy 动作 | 真实浏览器分别出现 PROBE、CLARIFY、NEXT 与 END；追问面板显示 `reason_summary/followup_intent`，结束页只写“本场提问已完成”，没有假报告 | `browser-e2e.json`、`ui-1920-complete.png` |
 | 分析失败重试 | 非 JSON Analyzer 输出令 operation failed；页面保留服务端原回答。点击重试只调用 `/operations/{id}/retry`，网络捕获中没有第二次 `/answers` | `browser-e2e.json` |
 | SSE 降级 | 浏览器主动阻断 operation events 请求，轮询实际发出 4 次 GET Operation，仍从主问题 3 收敛到主问题 4；SSE 关闭没有被当作成功 | `browser-e2e.json` |
-| 错误状态 | 实际浏览器响应注入验证 `SERVICE_NOT_READY` 停用写操作、capacity limited 保留原请求供稍后重试、revision conflict 重新读取且不显示原请求重试 | `browser-e2e.json` |
+| 错误状态 | 浏览器响应注入验证 `SERVICE_NOT_READY` 停用写操作、capacity limited 保留原请求供稍后重试、revision conflict 重新读取且不显示原请求重试；后续契约修正确认真实码为 `CAPACITY_LIMITED`（429、retryable），并补 API rejection/分支回归 | `browser-e2e.json`、`apps/web/tests/contracts.test.ts` |
+| 语义修正 UI smoke | 1440×900 实际 Vite 页面以显式 intercepted fixture response 验证：official source、新 start/Policy 文案、pushback、`CAPACITY_LIMITED` 与原请求重试均可见；回答 429 后没有“已保存/分析中”假成功 | `runtime/evidence/m3-03-semantic-fix/`（ignored） |
 | 响应式 | 390×844、768×900、1366×768、1440×900、1440×1000、1920×1080 六组均满足 `bodyScrollWidth == innerWidth`；视觉截图已检查，长页纵向滚动、无横向溢出 | `runtime/evidence/m3-03/ui-*.png` |
-| 前端回归 | Vitest 7/7：multipart header、JD 来源输入、caller-owned answer identity、三路由、unknown 边界、Operation 终态 | `apps/web/tests/contracts.test.ts` |
+| 前端回归 | Vitest 10/10：原 7 项边界继续通过；新增 429 `CAPACITY_LIMITED` rejection/retry 分类、四类 JD source 展示、counterfactual/pushback/reflection 独立映射与未知 fallback | `apps/web/tests/contracts.test.ts` |
 | 生产构建 | 锁定 Node 24 / pnpm 10.34.5：TypeScript `--noEmit` + Vite build，112 modules | 本轮命令输出 |
 | 后端全量 | Python 3.11：247 passed / 2 skipped / 0 failed / 54 warnings | 本轮命令输出 |
 

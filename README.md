@@ -18,10 +18,10 @@
 - `M3-01`：approved Seed 首题实例化、真实 openJiuwen handle-answer Workflow、Observation 语义校验、确定性 Policy，以及按选中 criterion/冻结 Rubric 聚焦且不暴露内部 ID 的 PROBE 文案已实现并经 fixture 验证；外部业务文本模型因缺显式私密配置仍 `NOT_RUN`，状态保持 `IMPLEMENTED`。
 - `M3-02`：Answer/Operation 原子受理、并发单写入、幂等重放、durable event、失败保留、累计三次 retry 与重启 interrupted 恢复已按本地后端范围 `VERIFIED`。
 - `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页 P0 前端已完成；真实浏览器 fixture 纵切面覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、answer 网络重试幂等、SSE 阻断后 polling 收敛及六组视口响应式，状态 `VERIFIED`。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
-- 当前全量回归：后端 247 passed / 2 skipped / 0 failed / 54 warnings；前端 7 passed；生产构建 112 modules；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；Ruff 全绿。
+- 当前全量回归：后端 247 passed / 2 skipped / 0 failed / 54 warnings；前端 10 passed；生产构建 112 modules；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；Ruff 全绿。
 - 模型网关：BGE-M3 embedding 已 live；`deepseek-flash` 无通道，`deepseek-v4-flash` 仅完成历史探活。业务 LLM、面试 token/cost 仍 `NOT_RUN` / null。
 
-当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-03 前端 handoff](docs/handoffs/2026-09-19-m3-03.md)，浏览器验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)，负责人 Seed 结论见 [审核记录](docs/reviews/review_m2_01_level2_owner_20260919.md)。
+当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-03 语义修正 handoff](docs/handoffs/2026-09-19-m3-03-semantic-fix.md)，完整前端交接见 [M3-03 前端 handoff](docs/handoffs/2026-09-19-m3-03.md)，浏览器验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
 
 ## 项目一句话
 
