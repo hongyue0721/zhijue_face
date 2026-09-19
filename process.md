@@ -2,7 +2,7 @@
 
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
-**仓库基线：master @ `7ac1b7f`（首次提交；此前 0 commit）**  
+**仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
 **当前阶段：M3 / IN_PROGRESS（M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED；前端答题界面设计尚未开始）**
 **当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划/工作台 + M3 后端首题、回答分析、有限 Policy、幂等事件与恢复。业务模型 live、前端答题界面、评分和报告未完成。**
 
@@ -21,7 +21,7 @@
 | openJiuwen Knowledge + Milvus Lite | VERIFIED（项目锁定兼容组合） | `runtime/evidence/m0-03-del/knowledge-locked-live-20260919T011100Z.json`、ADR-012；正式 0.1.18 wheel 失败记录保留 |
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live（累计 25 次逻辑调用）；历史网关探针 `deepseek-v4-flash` 成功，但当前 `.env.local` 没有业务 `MODEL_PROVIDER/MODEL_NAME/API_BASE/API_KEY/MODEL_TIMEOUT/MODEL_MAX_RETRIES`。回答模型适配已实现，业务 live 仍 NOT_RUN；token/cost 为 null |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
-| 本仓库版本落盘 | PARTIAL（初始本地提交；后续未提交，未 push） | 基线 commit `7ac1b7f` 包含首批 145 文件；后续 M2/M3 施工仍在用户工作区，本轮未覆盖、清理、reset 或 stash；无远端，未 push |
+| 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；公开历史由四个职责分明的提交组成，本地 `master` 未推送 |
 | P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料链与面试计划工作台已 live 浏览器通过；M3 首题→回答→Policy→下一题/结束在 fixture FastAPI + 真实 openJiuwen Workflow 下通过，可靠性链本地 VERIFIED；业务文本模型 live 和前端答题界面仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
@@ -719,3 +719,14 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 前端网络契约在锁定 Node 24 下通过 `tsc --noEmit && vite build`（29 modules）；浏览器用显式 fixture 响应实际渲染工作台，确认 approved Seed、start/answer/retry 后端就绪和“前端待设计”边界可同时读到，页面不再出现过期 `technical_review` 门禁。
 - 闭环复核还发现 PROBE 虽已选出最重要 criterion，但候选人文案仍是与缺口无关的意图级通用句。已改为用冻结 Rubric 合格阈值确定性聚焦，且不泄露内部 criterion ID。首个回归断言误以为首题绑定技术 Seed，实际该 fixture 正确走 `seed_id=null` 回退题，首次 1 failed；按真实冻结回退 Rubric 修正预期后 targeted 与全量均通过，未放宽业务断言。
 - 同步文件：根/服务 README、`apps/web/src/{api,App}.tsx`、`docs/07-test-and-acceptance.md`、`docs/13-risks-and-decisions.md`、CHANGELOG、process、M3 handoff、ignored verification evidence 与 CHECKSUMS。无 API 语义、数据库或依赖变化；前端改动仅为契约同步和事实文案，不是界面设计。
+
+## 31. 2026-09-19｜PUBLIC-01 分段提交与公开仓库发布（VERIFIED）
+
+- 先将连续工作区按职责整理为 Seed 审核、JD/Planner、M3 回答工作流、前端工作台、文档/隐私五个本地提交；随后为公开发布建立不包含旧本地历史的干净 `main`。
+- 公开 `main` 首次 push 为四段：`7d3694a` 工具链/CI、`449375e` 后端/契约/测试、`554b78d` 前端工作台、`a678d6a` 规范/交接。旧 `master` 只保留在本地作为回退点，不得直接推送到公开 remote。
+- 发布前清理工作站绝对路径、私有简历文件名/身份标签/内容指纹；`.env.local`、`runtime/`、真实简历、来源 PDF 和运行证据均保持 ignored。M2-02 smoke 改为只接受显式 `ZHIJUE_DEMO_RESUME_*` 私密输入，不再扫描 Downloads。
+- 验证：后端 Ruff 覆盖 62 files，全量 247 passed / 2 skipped / 54 warnings；规范 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；前端锁定 Node 24 + pnpm 10.34.5 build 通过，29 modules；最终完整性清单 170/170。
+- 前端命令失败留痕：首次 PATH 缺 `pnpm`（exit 127）；其次裸 corepack 选择 pnpm 12.4.2，与锁定 10.34.5 冲突（exit 1）；显式 `corepack pnpm@10.34.5` 后通过，未放宽版本约束。
+- GitHub 核验：仓库 `https://github.com/hongyue0721/zhijue_face` 为 `PUBLIC`，默认分支 `main`；`git ls-remote --heads origin` 仅返回 `refs/heads/main`，远端 HEAD 与本地一致。
+- 发布动作无业务 API、Schema、数据库迁移或依赖变化；修正前端问题类型为后端真实 `main / probe / clarification`。业务模型 live 和 M3-03/M4 状态保持不变。
+- 交接：`docs/handoffs/2026-09-19-publication.md`。唯一下一任务仍为 M3-03 前端答题界面设计评审。

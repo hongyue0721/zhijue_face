@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-19｜公开仓库发布
+
+- 将工程按工具链/CI、后端契约与测试、前端工作台、规范交接整理为干净公开 `main`；旧本地 `master` 只作回退点，未推送。
+- 创建并推送 PUBLIC 仓库 `https://github.com/hongyue0721/zhijue_face`；默认分支和唯一远端分支均为 `main`。
+- 发布前移除工作站绝对路径、私有简历文件名/身份标签/内容指纹；`.env.local`、`runtime/`、真实材料和运行证据继续 ignored。M2-02 smoke 只接受显式私密输入，不扫描工作站目录。
+- 发布验证：后端 247 passed / 2 skipped、Ruff 全绿；规范 44/44；doctor 18/0/0；前端锁定 Node 24 + pnpm 10.34.5 build 通过；最终完整性清单 170/170。
+
 ## Unreleased — 2026-09-19｜M3-01 回答分析/Policy IMPLEMENTED，M3-02 后端可靠性 VERIFIED
 
 - `POST /interviews/{id}/start` 把五个冻结 slot 实例化为可追溯 Question；approved Seed 只做精确 competency 匹配并且单场不重复，无匹配时使用明确 `seed_id=null` 的非技术回退题，不伪造技术审核来源。
