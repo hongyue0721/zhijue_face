@@ -1,0 +1,131 @@
+# CHANGELOG
+
+## Unreleased — 2026-09-19｜M3-01 回答分析/Policy IMPLEMENTED，M3-02 后端可靠性 VERIFIED
+
+- `POST /interviews/{id}/start` 把五个冻结 slot 实例化为可追溯 Question；approved Seed 只做精确 competency 匹配并且单场不重复，无匹配时使用明确 `seed_id=null` 的非技术回退题，不伪造技术审核来源。
+- `POST /interviews/{id}/answers` 使用真实 openJiuwen Workflow 执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`。模型仅能提出 Observation；服务端校验 ID、冻结 Rubric、原文精确引文和审核 reference，Policy 只输出 `CLARIFY / PROBE / NEXT / END`，没有模型自决动作或招聘结论。PROBE 文案由 Policy 选中的缺口和冻结 Rubric 的合格阈值确定性生成，不再用与缺口无关的通用追问，也不泄露内部 criterion ID。
+- Answer、Operation 与 revision 的短事务受理由单进程共享锁串行化；并发相同 key / `client_turn_id` 只产生一份 Answer/Operation，不把 SQLite 竞争异常抛给调用方。成功 Observation/Decision/下一题/事件原子提交；失败保留原 Answer，retry 新建 parent-linked operation、累计最多三次并复用原文；进程重启把 running 标 interrupted，不静默重放上游调用。
+- 收紧隐私边界：SDK 日志提升到 WARNING 并移除文件 sink；operation 失败只公开固定契约文案，不回显 SQL 参数、回答原文或模型内部异常。模型配置仅从显式 0600 私密文件读取，禁用 ambient environment，transport 总尝试上限为三次。
+- 新增 Answer→accepted Operation 唯一关系、Question.seed_id 可空迁移和 OpenAPI 快照；`api.md`、后端 DTO、前端网络类型、数据模型、架构、Workflow、环境模板同步。前端只同步 start/answer/retry 契约和只读状态文案，尚未设计答题交互；未增加依赖。
+- 验证：Ruff check/format 全绿；后端全量 **247 passed / 2 skipped / 0 failed / 54 warnings**；规范 **44/44**；fixture FastAPI 冒烟真实跑过 openJiuwen Workflow，202→succeeded→NEXT，私人回答标记未进入输出。锁定 Node 24 下前端 TypeScript/Vite build 通过；浏览器 fixture 实际渲染新状态文案且不再出现过期 `technical_review` 门禁。
+- M3-01 保守记为 IMPLEMENTED：测试的 ScriptedAnalyzer 只替换外部文本模型，当前 `.env.local` 缺少六个 `MODEL_* / API_*` 业务变量，业务模型 live 调用 `NOT_RUN`，token/cost 为 null。M3-02 的持久化、幂等、事件、retry 与恢复按本地后端范围 VERIFIED；前端接口设计尚未开始。
+
+
+## Unreleased — 2026-09-19｜M2-01 六条 Seed Level 2 PASSED / APPROVED
+
+- 实际下载并提取 FreeRTOS V10.0.0 issue 1、ST PM0214 Rev 10、RM0090 Rev 22、RM0440 Rev 9、RM0433 Rev 8 官方 PDF；URL、字节数、SHA-256 与正文定位记录于 ignored 的 `runtime/evidence/m2-01-level2/source-manifest.json`。
+- 六条 Seed 的 reference point、red flag 与平台边界逐条核对：Queue 改为手册实际的固定 item-size 复制语义并补 ISR 边界；period 的 tick 分辨率改为带来源的技术要点；mutex 删除无原文支撑的 `"lessen/minimize"` 归因。
+- UART/DMA 与 SPI/I2C 新增 F4/RM0090、G4/RM0440 来源，和 H7/RM0433 分系列陈述；明确 F4 I2C 100/400 kHz、G4/H7 另列 1 MHz，禁止跨系列套用位名、DMA 映射或清除顺序。
+- 新增主演示外设种子必须覆盖 F4/G4/H7 登记来源的规范校验与回归用例。负责人明确选择“六条全部通过并批准”；Seed 批准版本为 0.2.1，Level 2 均 passed，统一审核记录为 `review_m2_01_level2_owner_20260919`。批准不扩展到 24 条。
+- 修复 `SeedBank` live 门禁与权威配置不一致的根因：原实现声称读取 `config/demo.yaml`，实际却硬编码放行 `technical_review`，且 `live_only=True` 仍返回整库。现改为读取 `live_allowed_review_status=approved`，未批准题库显式失败，混合题库只返回 approved 条目。
+- 验证：Seed 专项 12 passed；后端全量 186 passed / 2 skipped / 39 warnings；规范 44/44；Ruff 全绿。批准后的 SeedBank 指纹为 `1c6716b90449d375`。
+- API、DTO、SSE、数据库、迁移、前端与依赖无变化；无 LLM/embedding 调用，token/cost 均为 null。
+
+## Unreleased — 2026-09-19｜M2-03 面试准备工作台 VERIFIED
+
+- 前端新增完整 `InterviewView` 网络类型与 `POST/GET /interviews` 客户端，所有网络字段保持 snake_case；Operation 终态后再读取服务端 Interview 快照，不把 HTTP 202 当成功。
+- 工作台展示已确认资料快照、JD 来源、Coverage Map 和五个验证槽位；synthetic 来源显著标记“不是企业真实招聘公告”，unknown 明示“材料未体现，不等于不会”，related_context 与直接证据分开展示。
+- 首题严格停在审核门禁：Seed 仍为 `technical_review`、所有 `seed_id=null`，页面没有题目文本和回答入口，没有调用 LLM。
+- 真实浏览器点击生成计划：Operation `operation_a5690d32777560d56c06` succeeded，Interview `interview_46d8ee8bc76efccb75df` 返回 5 Slots；URL 写入恢复键，刷新后仍能恢复来源警示、计划和首题锁定态。视觉证据：`runtime/evidence/m2-03/workbench-live-final.png`。
+- 固定 Node 24 下 TypeScript `--noEmit` 与 Vite build 通过；后端全量 pytest 182 passed / 2 skipped，规范校验 43/43。
+
+## Unreleased — 2026-09-18｜M2-02 JD 来源持久化、Requirement 抽取与五题计划生成 VERIFIED（事实性与溯源闭环）
+
+- **P0 事实性与负向校验**：排查并彻底清除"DMA 双缓冲"虚假摘要，单元测试增加负向回归测试 `test_negative_regression_ungrounded_fact_rejected`，强校验任何非 SourceBlock 子串均抛出异常拒绝；建立 Demo 关键事实检查集并测得 **8/8（100.0%）** 召回率。
+- **中断 EvidenceRelation 体系重构**：查明 Demo Resume v1 对中断直接术语出现频次为 0；正式定义 `EvidenceRelation`（`DIRECT_CLAIM`、`DIRECT_EXPERIENCE`、`RELATED_CONTEXT`、`MODEL_INFERENCE`）；强制 TIM/输入捕获等仅作为 `RELATED_CONTEXT`，严禁把 unknown 升级为 unverified；在 Coverage Map 中中断严格保持 `status=unknown` 且 `evidence_ids=[]`。
+- **JD 来源真实性纠错**：删除使用不可验证示例域名与未经记录 `confirmed_by` 的 `demo-jd-v2.md`，撤回 `REAL_JD_DERIVED` 宣称；默认 Demo JD 固定标记 `synthetic_demo_jd`，用户粘贴文本固定为 `user_provided`，客户端不能自报来源类型；真实衍生来源缺少上游 URL/时间/hash/派生 hash/转换说明时以 `JD_PROVENANCE_INVALID` 拒绝。
+- **Planner 多维度业务优先级算法**：废除单纯字典序 tie 缺陷，综合考量岗位重要度、验证需求、证据关系、JD覆盖密度与证据丰富度；来源纠错后的 live 五槽位为验证(40)、UART/DMA(39)、ownership(39)、中断(38，unknown+related_context)、C基础(37)。
+- **真机 Live 运行全链路存证**：私有登记的 Demo Resume v1 + 显式合成 Demo JD 端到端执行，21 条事实向量化入库、8 条 Requirements、5 Slots、8/8 关键事实检查通过。私有输入指纹和运行存证只保存在 ignored runtime，不随公开仓库发布。
+- 全量回归 182 passed / 2 skipped / 0 failed / 39 warnings；`tools/validate_spec.py` 43/43 passed；M2-03 已完成，下一门槛为六条 Seed 的 Level 2 审核与负责人批准。
+## Unreleased — 2026-09-18｜仓库落盘（本地提交 7ac1b7f）
+
+- 首次提交：145 文件 / 24,354 行，含规范包、契约、示例、环境锁、M0 探针、M1 业务资料链与 HTTP/最小确认界面、M2-01 种子与 ADR-013。
+- 不含 `runtime/`（私有原件与业务库）、`.env*`（真实密钥）、`node_modules/`、`.venv/`、`toolchain/` 发行包、`dist/`；提交前逐项验证 `.gitignore` 生效。
+- 未 push（无远端）；提交前门禁全绿：doctor 18 pass / pytest 149 passed / validate_spec 37-37 / sha256sum 144-144。
+
+## Unreleased — 2026-09-18｜M2-01 契约对齐与六条种子 IMPLEMENTED
+
+- **ADR-013 契约对齐**（SPEC-ALIGN）：保持 P0 四动作不变，CHALLENGE 语义落在 `PROBE + counterfactual` 并在 docs/04 §5 正式说明；Seed Schema 新增 `reference_points`/`red_flags`/`follow_up_strategy`/`review_levels` 四个**显式字段**并设为必填，不用既有字段冒充新语义。
+- 结构性强制：技术参考要点缺 `reference_ids` 必被拒（模型知识不能充当技术结论）；`red_flag.requires_followup` 恒为 `true`（结构上禁止 red flag→扣分）；`approved` 必须两级审核 passed 且有 review_record_id；`technical_review` 必须 Level 1 passed；`max_followups ≤ 1`。
+- 新增 `data/seeds/` 六条种子（RTOS Queue/周期任务/互斥量与信号量、UART+DMA 排障、SPI/I2C 选型、中断优先级），覆盖 6 个能力维度；全部 `technical_review`（Level 1 自检通过、Level 2 待负责人），不写 `approved`。
+- 来源登记新增 S24（FreeRTOS 官方参考手册 V10.0.0）、S26（ST RM0433 Rev 8，第 15/19/47/48/50/56 章）等；来源均本机下载并核对章节号与正文，RM0433 的适用范围（仅 H7 系列）如实标注。
+- 新增 `zhijue/application/seed_bank.py`：种子加载/校验/live 门槛/版本指纹；空目录、坏契约、无达标种子一律显式失败。
+- 校验器 37/37（新增 5 条 Schema 负例 + 种子引用可追溯性检查，并做了负向自检证明其会失败）；全量 149 passed / 2 skipped；Ruff 全绿；无新依赖；LLM 调用 0 次。
+
+## Unreleased — 2026-09-18｜M1-03 声明确认、快照与 Knowledge 激活 VERIFIED
+
+- Claim 状态机（proposed/confirmed/disputed/retracted + supersedes 链）与引文子串校验；更正是新 user_input 块 + 新 Claim，不篡改原 PDF 来源。
+- ProfileService：`/facts` 语义的乐观 revision 校验、校验先于写入（50 条/2,000 字/30,000 字）；`/confirm` 裁决后产生**不可变** ProfileSnapshot（仓储无 UPDATE 方法）。
+- Knowledge 激活链：真实 openJiuwen `SimpleKnowledgeBase` + Milvus Lite，写完**回查回执校验**，`index_status` indexing→ready，异常必落 failed；检索按当前快照 allowlist 过滤，旧代来源不漏出。
+- Knowledge 构造收敛为唯一权威 `zhijue/adapters/knowledge.py`，`smoke/knowledge.py` 复用同一实现（探针与应用不再各一份构造）。
+- 首个 HTTP 服务（FastAPI，`src/zhijue/api/`）：统一成功/错误包封、契约错误码映射、乐观 revision 409、幂等重放返回原操作、202 受理 + operation 后台执行（`operation.started` / `operation.completed` / `operation.failed` 持久化事件）、SSE 事件流（重放 + 心跳 + 终态收敛）、`/health/live|ready`（live 缺配置 not_ready，不回退 fixture）、multipart 上传与 `/documents/{id}`、`/blocks`、`GET /operations/{id}`；导出 `contracts/openapi.json`。
+- 最小确认界面（`apps/web/`）：真实浏览器跑通 新建档案→手填事实→确认→激活，显示"材料中声明/已由你确认"区别与索引状态；前端类型为网络边界的 snake_case，无第二套字段名。
+- 修复真实缺陷：① operation 终态事件必须在状态转终态前写入（原顺序触发"events closed"）；② 后台任务异常不得逃逸到已发出的响应（改为 runner 边界落 failed）；③ 运行目录不存在时启动即崩（改为启动前自建）；④ `sniff_kind` 文本类型未做 UTF-8 校验（已补）。
+- 全量 141 passed / 2 skipped；Ruff 全绿；live HTTP 闭环与私有 Demo Resume v1 上传均按本地接收登记核验通过；embedding 调用 6 次逻辑，token/cost null。无新依赖；LLM 调用 0 次。下一任务 M2-01（Seed 契约对齐 + 六条审核 Seed）。
+
+## Unreleased — 2026-09-18｜M1-02 PDF/文本导入与 SourceBlock VERIFIED
+
+- 新增 DocumentService + pypdf 适配 + Document/SourceBlock 仓储：按页提取（page 从 1、text_hash、origin=text_layer）、魔数判型不信任文件名、Document+块单事务、SourceBlock 不可变、base64 游标分页。
+- 受控失败闭合 T02/T04：全空文字层→`requires_text`+粘贴提示（不输出"解析成功零项"假成功）；混合页→parsed+缺页警告（T03）；加密→`DOCUMENT_ENCRYPTED` 且拒收不索取口令；超限/损坏/类型不符各有 code；校验先于任何持久化，失败零半行。
+- 私有登记的 Demo Resume v1（0600 原件）经新链本地导入并与 ignored 接收登记一致；任何原件、正文、文件名和指纹均不进入 Git 或公开日志。合成 PDF fixture 手工构造（ToUnicode CMap 中文实测还原），红测抓住并修复空 user 口令仍可解密读取的 fixture 缺陷。
+- 全量 107 passed / 1 skipped；Ruff 全绿；`api.md`、contracts、迁移无变化；无新依赖；模型调用 0 次。下一任务 M1-03（确认/快照/Knowledge 激活）。
+
+## Unreleased — 2026-09-18｜M1-01 业务持久层 VERIFIED
+
+- 新建 `services/api/src/zhijue/` 分层：domain 纯函数（不透明 ID、Operation 状态机、规范化输入哈希）+ adapters/db（engine PRAGMA、14 表 SQLAlchemy 模型、Operation/事件仓储）。alembic 初版迁移 upgrade/downgrade 可逆，`compare_metadata` 零漂移。
+- 幂等与事件规则落地：`(scope,idempotency_key)` 唯一 + 同输入重放返回原操作 + 不同输入 409 语义异常；事件 seq 单事务原子推进且 payload 按 `contracts/operation-event.schema.json` 校验；终态关闭事件；retry 新建子操作并继承 attempts 预算。
+- 并发红线测试抓住真实缺陷：输家 IntegrityError 曾抛给调用方，修为撞唯一键后重查返回赢家行；10 连跑稳定。全量回归 93 passed / 1 skipped。修复 `migrations/env.py` 曾无条件覆盖调用方 URL、会把测试打向真实库的问题。
+- API/HTTP/SSE/前端无变化；无新依赖。模型调用 0 次；token/cost null。
+
+## Unreleased — 2026-09-18｜M0-04 版本锁、doctor、干净重装、前端锁与 CI 骨架
+
+- 新增 `config/versions.lock.json` 实测版本锁（Python 3.11.16 / openjiuwen 0.1.18 兼容 commit `72c49851` / pymilvus 2.6.7 / milvus-lite 3.2.1 / uv 0.12.10 / Node 24.21.0 / pnpm 10.34.5）与 `scripts/doctor.py` 只读就绪检查；12 项守卫测试锁定"不回显密钥、来源漂移必 FAIL、缺失私密配置只 WARN 不 FAIL"。
+- 干净环境重装通过：临时 venv `uv sync --frozen` 184 包、导入与 `SimpleKnowledgeBase` 构造成功、direct_url commit 一致；失败尝试（`--active` 被 uv 忽略）保留。`apps/web` 仅建 Vite+React+TS 工具链骨架，生成真实 `pnpm-lock.yaml` 并验证 frozen install + tsc + build 全 exit 0，不是业务 UI。
+- 新增 CI 骨架 `.github/workflows/ci.yml`（backend + frontend 双 job，零模型费用，integration_live 私密 env 门控）；仓库未推送远端，工作流本身 NOT_RUN。
+- 模型网关核验：`deepseek-flash` 无通道（503）；`deepseek-v4-flash` 探活 200 且支持 JSON mode 与 usage 返回。属网关探针而非业务链路；单价仍缺，cost 保持 null。全量回归 62 passed / 1 skipped；API/业务 Schema/迁移无变化。
+
+## Unreleased — 2026-09-19｜M0-03-DEL Knowledge 删除兼容 VERIFIED
+
+- 复现正式 openJiuwen 0.1.18 的 Milvus Lite list 删除缺陷；同一回归修复前 1 failed/1 passed，应用官方 PR #1344 精确补丁后 2 passed，上游目标测试文件 21 passed。
+- 基于官方 v0.1.18 建立公开兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；相对 tag 仅 2 个文件、31 行新增。项目 pyproject/uv.lock 固定该 commit，不修改 site-packages、不 monkeypatch、不替换 Knowledge。
+- 两次真实四进程 live（补丁 worktree、项目锁定安装且无 PYTHONPATH）均完成 parse/add/retrieve/provenance/restart/delete/post-delete-restart，两个 synthetic KB 删除后均 0 命中。
+- 在上游现有 PR #1344 提交真实 Milvus Lite 生命周期验证，不创建重复 PR；正式 0.1.18 wheel 仍明确记录为未含修复。
+- 新增依赖来源/commit 与 list 返回形态守卫；全量 pytest 50 passed/1 skipped，Ruff 与锁来源检查通过。无新增第三方包；首次安装临时来源增加 Git/网络要求。
+- 同步入口 README、Demo 登记、runbook、config、架构、Knowledge、测试、风险、来源、ADR、服务说明、process 与交接；API/DTO/SSE/业务数据库/前端无变化。兼容阶段 18 次成功逻辑 embedding 调用，usage/token/cost 为 null，DeepSeek LLM NOT_RUN。
+
+## Unreleased — 2026-09-19｜M0-03 Knowledge live 部分验证
+
+- 新增真实 openJiuwen Knowledge 多进程 smoke：SDK 自带 Parser/Chunker/SimpleKnowledgeBase/Milvus Store+Indexer/OpenAIEmbedding；没有本地同名 Knowledge 或主链 mock。
+- 使用两个 synthetic profile 实测 BGE-M3 1024 维、解析、入库、provenance 检索、KB 隔离及进程重启可用；Demo Resume 未外发。
+- `delete_documents` 因 openJiuwen 0.1.18 无法处理 pymilvus primary-key list 返回而失败；底层 profile A 已删但框架返回 false，post-delete restart NOT_RUN，M0-03 标记 BLOCKED。官方 PR #1344 与根因一致，但尚未当作发布版能力。
+- 将旧本地 BGE-small/torch 计划替换为负责人指定的远程 BGE-M3 配置；新增规范环境变量和私密文件权限/去敏守卫，没有新增第三方依赖。
+- 同步 ADR-012、架构、Knowledge、测试、风险、来源、Demo 登记、服务说明、process 与交接。API/DTO/SSE/业务数据库/前端无变化；DeepSeek LLM NOT_RUN，usage/token/cost 为 null。
+
+## Unreleased — 2026-09-18｜M0-BASE 续核
+
+- 核对官方 WorkflowAgent 源码/API/通用示例及公开仓库目录；7 个被审计的本地 SDK 文件与既有锁指定 wheel 完全一致，记录官方仓库与发布版的 2 个文件差异。
+- 复跑原 34 项测试与真实 smoke 通过；旧 notebook 导入按预期失败，未执行模型/外部天气服务。
+- 官方答疑查询 HTTP 418，M0-BASE 仍 BLOCKED；没有把未检索到当作没有指定 starter，也没有进入 Knowledge/M1。
+- 本轮仅文档与本地证据，无业务/API/Schema/依赖变化，无 commit/push。
+
+## Unreleased — 2026-09-18｜M0 局部施工与强制约束补充
+
+- 将负责人追加的 20 条约束写入 AGENTS.md；登记 CHALLENGE/Seed 契约冲突，不静默修改接口。
+- 新增真实 Workflow/WorkflowAgent 无模型 smoke、SDK 来源与继承链证据、34 项回归；修复探针 session 漏传及超时后台节点清理问题。
+- 增补官方 u-j8 解读核验；答疑正文未取得，M0-BASE 保留 BLOCKED。Knowledge/模型 NOT_RUN；未完成 M0 或业务闭环。
+- 同步架构、测试、来源、风险、process 与交接；ADR-011 保留 PROPOSED，不自行 ACCEPTED。
+- API/Schema/数据库/依赖无变化；未 commit/push。详细命令与失败记录见本轮交接。
+
+## 1.0.0 — 2026-09-18
+
+新增 Demo 规划、需求、架构、数据模型、HTTP/SSE 契约、AI 工作规范、文档同步、测试与验收、运行手册、任务板、合成契约示例和交接模板。
+
+相对前期讨论收紧：采用新轻量前端与单 Python 后端；种子规模调整为 6 起步/24 发布目标；OCR 和跨场记忆降为 P1；废除未经校准的能力概率；恢复、幂等、来源校验纳入 P0；新增国产 OS 适配和规则确认门槛。
+
+本版本是**工程规范发布**，不是应用版本发布。未安装/运行业务服务，未调用付费模型，未修改或推送用户仓库。兼容性和业务性能均待施工验证。
+
+## 2026-09-18 — DEMO-INPUT-01（本地输入登记）
+
+- 实际读取 Demo Resume v1，私有原件、身份信息、解析指纹和逐页内容只存 ignored runtime；公开记录仅确认文字层非空，不冒充 Evidence Extraction。
+- 保存负责人冻结的 Demo JD v1 与输入规范；后续来源审查确认没有可核验企业原公告，已从 `REAL_JD_DERIVED` 纠正为 `SYNTHETIC_DEMO_JD`，不再把聊天标签当作来源认证。
+- 补测试说明、process 与交接；本轮10项接收检查通过，现有35项 pytest通过。API/业务模型/前端无变化，无新依赖。
