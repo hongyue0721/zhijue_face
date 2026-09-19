@@ -5,7 +5,7 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -59,6 +59,9 @@ jobs:
 
       - name: Frozen install
         run: pnpm install --frozen-lockfile
+
+      - name: Frontend contract tests
+        run: pnpm test
 
       - name: Typecheck and build
         run: pnpm build

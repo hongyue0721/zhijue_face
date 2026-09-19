@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "职觉 Demo 前端：资料确认、能力覆盖与五题验证计划工作台",
+  "description": "职觉 Demo 前端：资料导入确认、岗位准备与五题模拟面试",
   "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=24 <25",
@@ -12,9 +12,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@any-design/anyui": "0.5.2",
+    "@iconify/react": "6.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -23,6 +26,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "4.0.18"
   }
 }
