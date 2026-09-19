@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-19｜M3-03 三页 P0 前端 VERIFIED
+
+- 将旧的单页资料/计划工作台重构为 `/start`、`/profiles/:profile_id/prepare`、`/interviews/:interview_id` 三页纵切面；使用直接导入的 AnyUI 组件与现有 CSS Tokens，不引入 Liquid Glass、路由包或第二套业务状态源。
+- `/start` 完成真实 Profile、multipart PDF、Document/blocks、手工 fact、Claim 确认和快照门禁；空 `proposed_claims` 明示“没有可确认候选事实”，不填假资料。扫描 PDF 只提示 P0 文本粘贴降级，不冒充 OCR。
+- `/prepare` 严格按服务端来源真相生成演示或用户 JD，只从 `InterviewView` 渲染来源、Requirements/Coverage Map 与精确五个 Slots；internal ID 仅出现在默认折叠技术明细。
+- `/interviews` 完成 caller-owned `client_turn_id`/`Idempotency-Key`、202 accepted 原回答展示、PROBE/CLARIFY/NEXT/END、Operation SSE + polling、失败原文保留及 operation retry。网络不确定性重试复用逐字相同请求；revision conflict 重新读取，capacity limited 不伪装成功。
+- 新增 7 个 Vitest 前端契约测试并接入 CI；真实浏览器 fixture 纵切面覆盖 PDF→确认→JD→计划→五题结束、分析失败重试、SSE 被阻断后的 polling 收敛，以及 390×844、768×900、1366×768、1440×900、1440×1000、1920×1080 六组视口无横向溢出。生产构建通过，112 modules。
+- 新增 `@any-design/anyui@0.5.2`、其显式运行时 peer `@iconify/react@6.0.2` 和测试依赖 `vitest@4.0.18`；全部可本地安装/构建，不增加云部署依赖。HTTP API、OpenAPI、数据库 Schema 与迁移均无变化。
+- 本轮业务回答模型仍为显式 `ScriptedAnalyzer` fixture；真实 openJiuwen Workflow/SQLite/Operation/SSE 路径保留。业务模型 live、token/cost、评分、回答优化和报告仍 `NOT_RUN`，没有伪造结果。
+
 ## Unreleased — 2026-09-19｜公开仓库发布
 
 - 将工程按工具链/CI、后端契约与测试、前端工作台、规范交接整理为干净公开 `main`；旧本地 `master` 只作回退点，未推送。

@@ -28,7 +28,7 @@ flowchart TB
 
 | 层 | 本版选择 | 限制与验证 |
 |---|---|---|
-| 前端 | React + TypeScript strict + Vite + 普通 CSS Modules | 轻量 SPA，无 SSR、无 UI 大而全模板；前端依赖在 M0 安装后锁定 |
+| 前端 | React 19 + TypeScript strict + Vite + AnyUI 基础组件 + 普通 CSS 设计令牌 | 轻量 SPA，无 SSR、无第二套 UI 框架；业务组件由当前 OpenAPI/资源快照驱动 |
 | Node | Node 24 LTS，pnpm 10 系列 | Node 官方当前将 24 标为 LTS；精确补丁与 pnpm 版本写入版本文件与 lock [S07] |
 | Python | CPython 3.11 的维护补丁版本 + uv | openJiuwen 公开要求 ≥3.11 且 <3.14；不直接使用 Arch 系统 Python [S03] |
 | Web API | FastAPI、Uvicorn、Pydantic v2 | 单进程；lifespan 管理 SDK、队列与关闭；同步重任务放受限工作线程/进程 [S08] |
@@ -82,11 +82,12 @@ zhijue-demo/
 ├── AGENTS.md / api.md / process.md / CHANGELOG.md
 ├── docs/                       # 本规范及 ADR、验收记录
 ├── apps/web/
-│   ├── src/pages/              # 首页、简历、面试、报告
-│   ├── src/features/           # profile、resume、interview、report
-│   ├── src/lib/api/            # 统一客户端、SSE 解析、错误处理
-│   ├── src/generated/          # 从实际 OpenAPI 生成的类型
-│   └── tests/
+│   ├── src/pages/              # /start、资料准备、正式面试三页
+│   ├── src/components/         # common/layout/profile/prepare/interview
+│   ├── src/hooks/              # Operation SSE + polling 生命周期
+│   ├── src/api.ts              # 唯一浏览器 API 边界与 snake_case DTO
+│   ├── src/{routing,storage,presentation}.ts
+│   └── tests/                  # Vitest 网络与展示契约
 ├── services/api/
 │   ├── src/zhijue/api/         # routes、DTO、异常映射
 │   ├── src/zhijue/application/ # 业务用例、操作调度、事务边界

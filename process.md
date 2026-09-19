@@ -3,8 +3,8 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M3 / IN_PROGRESS（M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED；前端答题界面设计尚未开始）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划/工作台 + M3 后端首题、回答分析、有限 Policy、幂等事件与恢复。业务模型 live、前端答题界面、评分和报告未完成。**
+**当前阶段：M3 / IN_PROGRESS（M3-03 三页 P0 前端本地 VERIFIED；M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 后端首题/回答/有限 Policy/可靠性 + 资料导入、岗位准备、五题模拟面试三页前端。业务模型 live、评分和报告仍未完成。**
 
 ## 1. 当前真实状态
 
@@ -22,7 +22,7 @@
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live（累计 25 次逻辑调用）；历史网关探针 `deepseek-v4-flash` 成功，但当前 `.env.local` 没有业务 `MODEL_PROVIDER/MODEL_NAME/API_BASE/API_KEY/MODEL_TIMEOUT/MODEL_MAX_RETRIES`。回答模型适配已实现，业务 live 仍 NOT_RUN；token/cost 为 null |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；公开历史由四个职责分明的提交组成，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料链与面试计划工作台已 live 浏览器通过；M3 首题→回答→Policy→下一题/结束在 fixture FastAPI + 真实 openJiuwen Workflow 下通过，可靠性链本地 VERIFIED；业务文本模型 live 和前端答题界面仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料→确认→JD→五题计划→作答→PROBE/CLARIFY/NEXT/END 已在真实 FastAPI/openJiuwen Workflow + fixture Analyzer 的浏览器纵切面通过；前端网络幂等重试、Operation retry、SSE 降级 polling 和四档响应式已验证。业务文本模型 live、评分和报告仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -44,7 +44,7 @@
 | M2-03 | M2-02 | VERIFIED | 真实浏览器展示资料快照、synthetic 来源警示、Coverage Map、5 Slots 与首题审核门禁；点击生成计划 operation succeeded，URL 可恢复，刷新后仍为 5 Slots |
 | M3-01 | M2-03 + Seed Level 2 | IMPLEMENTED | 真实 openJiuwen handle-answer Workflow、Observation 语义校验与确定性 Policy 已在 fixture 验证；缺显式业务模型私密配置，live NOT_RUN，不能标 VERIFIED |
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；不代表文本模型 live |
-| M3-03 | M3-02 | PLANNED | 前端答题界面须先经负责人设计评审；之后再做有界完整流程 |
+| M3-03 | M3-02 | VERIFIED | 三页 P0 前端、真实 PDF→Interview→Answer/Policy 操作链、动态 UI/API 对照表、错误恢复与四档浏览器验收均完成；fixture 不冒充业务模型 live |
 | M4-01 | M3-03 | PLANNED | 评分与报告 |
 | M4-02 | M4-01 | PLANNED | 事实约束改写和简历入口 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
@@ -66,19 +66,17 @@
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
 
-## 4. 下一次 AI 的唯一首要任务
+## 4. 当前唯一首要任务
 
-**前端答题界面设计评审：先把 M3 后端现有契约、界面状态与恢复交互提交负责人确认，未确认前不开始前端设计或实现。**
+**完成 M3-01 业务文本模型 live 验证；当前受负责人待办 O04 阻塞。**
 
-已具备的后端输入：`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /operations/{id}/retry`、`GET /operations/{id}`、`GET /interviews/{id}` 与 operation SSE；页面必须以 Operation 终态后的服务端快照为准，不把 202 当成功。
+M3-03 已完成本地 fixture 纵切面并记为 `VERIFIED`：真实 FastAPI/SQLite、Operation/SSE 和 openJiuwen Workflow 均在链路内，仅外部 Answer Analyzer 使用显式 `ScriptedAnalyzer`。UI 没有模型/provider/runtime endpoint，因此只展示 `fixture` 运行模式，不伪造模型名。
 
-设计评审必须覆盖：当前主问题/补充问题、结构化“为什么问/为什么追问或换题”、synthetic JD 与 UNKNOWN 边界、pending/failed/interrupted/retry、revision 冲突、刷新恢复，以及私人回答不得进入 URL/日志。不得展示模型私有推理，不得让前端计算动作或最终分数。
+继续该任务需要负责人在本地私密文件中配置 `MODEL_PROVIDER`、`MODEL_NAME`、`API_BASE`、`API_KEY`、`MODEL_TIMEOUT`、`MODEL_MAX_RETRIES` 和明确费用上限。密钥不得进入聊天、Git、日志或浏览器环境。
 
-并行但不由界面兜底的阻塞：负责人提供显式、权限不宽于 0600 的业务模型私密配置和预算后，才运行 M3-01 live 验收；缺配置时必须保持 not_ready/NOT_RUN。
+O04 未解除前不启动 M4，不把 fixture 的动作、延迟或调用次数写成模型效果。当前前端没有 report endpoint，也没有假分数、假优化答案或 Coming Soon 控件。
 
-当前明确不做：不自动开始前端施工，不扩到评分/报告，不扩题库到 24 条，不以 fixture 替代真实业务模型验收。
-
-回滚点：本轮未提交改动以基线 commit `7ac1b7f` 及本轮交接的完整文件清单为准；按文件恢复或删除本轮新增文件，不使用 reset/stash。更早的 M2-01 开工基线仍在 `runtime/evidence/m2-01/task-start.txt`。
+M3-03 回滚点：公开 `main` 基线 commit `f2f3af2`。只按 `docs/handoffs/2026-09-19-m3-03.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
 
 更早回滚点：M1-03 开工基线 `runtime/evidence/m1-03/task-start.txt`。M1-03 全部新增路径：`domain/claims.py`、`adapters/knowledge.py`、`adapters/db/profiles.py`、`application/{profiles,operations_runner}.py`、`api/*`、`__main__.py`、`tests/unit/{test_profile_confirm,test_knowledge_activation}.py`、`tests/test_api_contract.py`、`contracts/openapi.json`、`Makefile`、`apps/web/src/{api.ts,App.tsx}`；改动文件 `smoke/knowledge.py`、`adapters/db/{documents,profiles}.py`、`application/documents.py`、`adapters/pdf.py`、`apps/web/tsconfig.json`、`config/environment.env.example`、`api.md`。回滚=删除新增 + 按 `docs/handoffs/2026-09-19-m1-03.md` 恢复改动文件哈希。不使用 reset/stash。
 
@@ -730,3 +728,41 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - GitHub 核验：仓库 `https://github.com/hongyue0721/zhijue_face` 为 `PUBLIC`，默认分支 `main`；`git ls-remote --heads origin` 仅返回 `refs/heads/main`，远端 HEAD 与本地一致。
 - 发布动作无业务 API、Schema、数据库迁移或依赖变化；修正前端问题类型为后端真实 `main / probe / clarification`。业务模型 live 和 M3-03/M4 状态保持不变。
 - 交接：`docs/handoffs/2026-09-19-publication.md`。唯一下一任务仍为 M3-03 前端答题界面设计评审。
+
+## 32. 2026-09-19T08:13:10-07:00｜M3-03 P0 前端产品化重构领取（IN_PROGRESS）
+
+- 授权：负责人明确要求开始重构，并给出三页信息架构、API 硬约束、AnyUI 使用边界、26 项前端验收和最终纵向链路；不再等待额外设计确认。
+- 前置：工作区 `main...origin/main` 干净，基线 `f2f3af2`；M3-02 本地后端 VERIFIED。M3-01 业务文本模型 live 仍 NOT_RUN，不由前端兜底。
+- API Truth Audit：已逐项读取 `api.md`、`contracts/openapi.json`、FastAPI routes/events、InterviewService、现有 `api.ts`/`App.tsx`。正式 UI 只消费当前实现的 14 个 route；明确排除 control/report/resume/list/runtime 路径。
+- 输入：用户选择的 PDF、手工事实、用户提供 JD 或服务端 synthetic Demo JD、InterviewView/OperationView/SSE；不把 internal ID 推导成展示事实，不使用 mock 数据补业务缺口。
+- 输出：`apps/web/src/pages/` 三页、按 profile/prepare/interview 分层的业务组件、统一 API/SSE 客户端与产品视觉；新增 `docs/ui-contract.md`，同步测试记录、CHANGELOG、process 和 handoff。
+- 允许修改：`apps/web/`、`docs/ui-contract.md`、`docs/07-test-and-acceptance.md`、`docs/08-ux.md`、README、CHANGELOG、process、handoff、完整性清单；只有真实审计发现契约缺陷才改 `api.md`/后端。本轮不实现评分、报告、简历优化、历史列表、登录或岗位市场。
+- 依赖决定：采用包入口 `@any-design/anyui/react` 和正式样式入口；只使用已核实导出的基础组件。AnyUI 0.5.2 的 React 包在运行时直接导入可选 peer `@iconify/react`，因此安装时必须同时锁定该 peer；不引入第二套 UI 框架，不启用 Liquid Glass。
+- 计划验收：固定 Node 24/pnpm 10 的 typecheck/build；真实浏览器覆盖 1366×768、1440×900、1920×1080、390px；真实 FastAPI + Vite 完成 PDF→Operation→blocks/facts/confirm→plan→start→answer→Policy→下一题/追问。后端全量回归、规范校验、doctor 和完整性检查在收尾统一运行。
+- 回滚：以 `f2f3af2` 为文件级基线；新增路径单独删除，已有文件按交接差异恢复。禁止 destructive Git 操作。
+
+## 33. 2026-09-19T08:13:10-07:00—2026-09-19T09:03:51-07:00｜M3-03 三页 P0 前端（VERIFIED）
+
+### 真实交付
+
+- 把旧单页工作台重构为 `/start`、`/profiles/:profile_id/prepare`、`/interviews/:interview_id` 三页；统一顶部、步骤条、运行模式提示、错误组件和 760px 内容列。AnyUI 只作为直接包依赖使用，视觉由现有 CSS Tokens 控制，没有 Liquid Glass。
+- 资料页真实调用 Profile、multipart Document、Document blocks、facts、Claim confirm 与 Operation；空 `proposed_claims` 不造示例事实，扫描 PDF 明示 P0 文本降级。准备页按服务端真相区分 synthetic/user JD，渲染 Requirements/Coverage Map/五 Slots，internal ID 默认折叠。
+- 面试页由 Interview/Question/Decision 快照驱动。answer 的 `client_turn_id` 和 `Idempotency-Key` 由调用方生成并在网络不确定性重试时完全复用；202 后立即展示服务端已保存原文。分析失败只走 Operation retry，PROBE/CLARIFY/NEXT/END、revision conflict、capacity limited 和 health readiness 均有明确状态。
+- `useOperationMonitor` 以 EventSource 触发 GET Operation，再由 800ms polling 保证收敛；终态只来自 Operation snapshot。页面 unmount 会关闭 EventSource、计时器和 fetch。失败 operation ID 只为同标签页恢复写入 `sessionStorage`，跨新标签页不作虚假承诺。
+- API/OpenAPI/Python DTO/数据库/迁移均无变化；新增前端消费契约 `docs/ui-contract.md`。第三方依赖新增 AnyUI 0.5.2、其必需 peer `@iconify/react` 6.0.2 与测试依赖 Vitest 4.0.18；均为锁定版本、本地可运行，无云服务。
+
+### 实际验证
+
+- 前端：`corepack pnpm@10.34.5 test` exit 0，**7 passed**；`corepack pnpm@10.34.5 build` exit 0，TypeScript `--noEmit` + Vite **112 modules**。
+- 后端：`.venv/bin/python -m pytest -q` exit 0，**247 passed / 2 skipped / 0 failed / 54 warnings**。
+- 浏览器：synthetic 文本 PDF 完成 Profile→upload→blocks→manual fact→confirm snapshot→demo/user JD→5 Slots→start→answer→PROBE/CLARIFY/NEXT/END。分析失败保留原回答，retry 捕获中没有第二次 `/answers`；阻断 SSE 后实际发出 4 次 Operation GET 并推进主问题；390×844、768×900、1366×768、1440×900、1440×1000、1920×1080 六组视口均无横向溢出。去敏证据位于 ignored 的 `runtime/evidence/m3-03/`。
+- 规范校验首轮因 README 已链接而 handoff 尚未创建，实际为 43/44、exit 1；创建交接后复跑 **44/44、exit 0**。doctor 首轮为 17 PASS / 1 WARN / 0 FAIL，唯一 WARN 是施工中文件已变化而完整性清单尚未重建；重建后终态 **18 PASS / 0 WARN / 0 FAIL**，`CHECKSUMS.sha256` **202/202** 逐项通过。
+- 浏览器自动化一次 helper 等待超时、一次 locator 误用，页面资源状态实际已完成；改为 DOM/网络断言继续。视觉检查发现 AnyUI 全局暗色 `span/textarea/progress` 污染，应用作用域修复后重新截图。没有通过删断言或后端兜底掩盖。
+
+### 边界、成本与下一步
+
+- 浏览器运行模式为 `fixture`：真实 FastAPI、SQLite、正式 Operation/SSE 与 openJiuwen Workflow；只替换外部 Analyzer。外部业务模型调用 0，provider/model/token/cost 均为 null；业务模型效果、延迟、429 和费用仍 `NOT_RUN`。
+- 未实现评分、回答优化、报告、历史列表、登录、职位市场、OCR 或 Memory；跨代理 UTF-8 分块、`EVENT_HISTORY_GONE` 与跨新标签页失败 operation 恢复未做浏览器级验证。
+- 版本落盘：前端实现 commit `5fe92051c09ef94e0009fc456546e69358905efb`；规范交接与完整性清单由包含本节的后续 docs commit 落盘。
+- 文档同步：`docs/{02-architecture,07-test-and-acceptance,08-ux,ui-contract}.md`、README、CHANGELOG、process、handoff；`api.md` 已检查无变化。
+- 唯一下一任务：负责人提供 O04 私密业务模型配置和费用上限后执行 M3-01 live 验证；在此之前不启动 M4。

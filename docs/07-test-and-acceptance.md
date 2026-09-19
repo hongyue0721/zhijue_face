@@ -266,4 +266,27 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | 有界后端整场 | 五个充分回答产生 `NEXT × 4 + END`，不增加第六题，Interview 进入 finishing | `tests/test_interview_runtime.py`；control/end UI、报告和真实浏览器整场仍属 M3-03/M4 |
 | 隐私 | SDK 业务日志提升到 WARNING、移除文件 sink；固定公开错误文案；冒烟私人回答标记未进入 stdout/stderr | `tests/test_interview_runtime.py`、`runtime/evidence/m3-01-02/backend-verification.json` |
 
-最终回归：Ruff check/format 全绿；后端 **247 passed / 2 skipped / 0 failed / 54 warnings**；规范 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**。锁定 Node 24 下 TypeScript/Vite build 通过；浏览器以显式 fixture 数据渲染只读工作台，确认 approved Seed、后端契约已就绪和“前端待设计”边界同时可见，旧 `technical_review` 文案不存在。M3-01 因外部文本模型 live 未运行保留 `IMPLEMENTED`；M3-02 只按本地后端范围 `VERIFIED`。整体产品闭环和 M3-03 仍未完成。
+最终回归：Ruff check/format 全绿；后端 **247 passed / 2 skipped / 0 failed / 54 warnings**；规范 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**。锁定 Node 24 下 TypeScript/Vite build 通过；浏览器以显式 fixture 数据渲染只读工作台，确认 approved Seed、后端契约已就绪和“前端待设计”边界同时可见，旧 `technical_review` 文案不存在。M3-01 因外部文本模型 live 未运行保留 `IMPLEMENTED`；M3-02 只按本地后端范围 `VERIFIED`。该段是 M3-03 施工前的历史结论，M3-03 后续状态见下节。
+
+## M3-03 三页 P0 前端与浏览器纵切面验证（2026-09-19）
+
+本轮使用 synthetic 文本 PDF 与 synthetic 回答，启动真实 FastAPI/SQLite、正式 Operation/SSE 路由和真实 openJiuwen Workflow；只把外部回答文本模型替换为显式 `ScriptedAnalyzer`。因此下表证明前端状态机、HTTP 边界和框架编排，不证明业务模型效果、延迟或成本。
+
+| 场景 | 实际结果 | 证据 |
+|---|---|---|
+| 资料导入 | 浏览器先 `POST /profiles`（`synthetic=false`），再发带浏览器 boundary 的 multipart PDF；Operation succeeded 后读取 Document，显示 `parsed / pending` 和 1 页文本块 | `runtime/evidence/m3-03/browser-e2e.json`、`ui-390-start.png` |
+| 空候选事实与确认 | 上传后 `proposed_claims=[]`，页面没有填充示例结论；手工 fact 真实 POST 后进入 proposed，确认 operation succeeded 后展示非空 `latest_snapshot_id` | 同上；服务端契约回归见 `tests/test_api_contract.py` |
+| JD 来源 | 演示按钮请求体省略 `jd_text/jd_source_name/source_type`，响应展示“演示岗位材料”；用户 JD 请求只带 `jd_text/jd_source_name`，响应展示“你提供的岗位材料” | `browser-e2e.json`、`ui-768-prepare.png` |
+| Coverage/Plan | 主界面从 `jd_requirements[].statement/tier`、`coverage_map` 与五个 `root_plan.slots` 渲染；internal ID 只在默认折叠技术明细；开始按钮真实调用 start endpoint | 同上 |
+| Answer 202 | 捕获到真实 `client_turn_id`、`Idempotency-Key` 与 answer POST；202 后立即显示服务端 `accepted_answer.raw_text` 和“已保存，正在分析”，没有第二个提交入口 | `browser-e2e.json` |
+| 网络重试幂等 | 首次 answer 请求被浏览器中止后，显式“使用原请求重试”的 body、`client_turn_id` 与 `Idempotency-Key` 逐字节相同 | `browser-e2e.json` |
+| Policy 动作 | 真实浏览器分别出现 PROBE、CLARIFY、NEXT 与 END；追问面板显示 `reason_summary/followup_intent`，结束页只写“本场提问已完成”，没有假报告 | `browser-e2e.json`、`ui-1920-complete.png` |
+| 分析失败重试 | 非 JSON Analyzer 输出令 operation failed；页面保留服务端原回答。点击重试只调用 `/operations/{id}/retry`，网络捕获中没有第二次 `/answers` | `browser-e2e.json` |
+| SSE 降级 | 浏览器主动阻断 operation events 请求，轮询实际发出 4 次 GET Operation，仍从主问题 3 收敛到主问题 4；SSE 关闭没有被当作成功 | `browser-e2e.json` |
+| 错误状态 | 实际浏览器响应注入验证 `SERVICE_NOT_READY` 停用写操作、capacity limited 保留原请求供稍后重试、revision conflict 重新读取且不显示原请求重试 | `browser-e2e.json` |
+| 响应式 | 390×844、768×900、1366×768、1440×900、1440×1000、1920×1080 六组均满足 `bodyScrollWidth == innerWidth`；视觉截图已检查，长页纵向滚动、无横向溢出 | `runtime/evidence/m3-03/ui-*.png` |
+| 前端回归 | Vitest 7/7：multipart header、JD 来源输入、caller-owned answer identity、三路由、unknown 边界、Operation 终态 | `apps/web/tests/contracts.test.ts` |
+| 生产构建 | 锁定 Node 24 / pnpm 10.34.5：TypeScript `--noEmit` + Vite build，112 modules | 本轮命令输出 |
+| 后端全量 | Python 3.11：247 passed / 2 skipped / 0 failed / 54 warnings | 本轮命令输出 |
+
+当前明确未证明：外部业务文本模型 live、真实模型 429/超时/效果/延迟/费用、跨新标签页恢复失败 operation ID、评分与报告。T23 的本轮前端证据覆盖“事件流不可用时靠 Operation polling 收敛”，不等于所有代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合都完成浏览器验收。

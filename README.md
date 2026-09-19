@@ -1,11 +1,11 @@
 # 职觉 ZhiJue｜Demo 工程规划与 AI 施工规范
 
-**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3-01 后端 IMPLEMENTED（模型 live NOT_RUN）；M3-02 本地后端 VERIFIED；前端答题界面设计尚未开始。**
+**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3-03 三页 P0 前端本地 VERIFIED；M3-01 业务模型 live NOT_RUN；M4 未开始。**
 
-这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链、资料确认与计划工作台，以及后端首题→回答分析→有限 Policy→下一题/结束、幂等事件与恢复。尚未完成业务文本模型 live 验收、前端答题界面、评分报告，也尚未部署。所有性能、准确率和兼容性结论只以运行证据为准。
+这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答的三页 React 前端。浏览器 fixture 纵切面已覆盖 PROBE/CLARIFY/NEXT/END、失败保留、显式重试和 SSE 降级轮询；尚未完成业务文本模型 live 验收、评分与报告，也尚未部署。所有性能、准确率和兼容性结论只以运行证据为准。
 
 
-## 当前工程快照（2026-09-19，M3-01/M3-02 后端完成后）
+## 当前工程快照（2026-09-19，M3-03 三页前端完成后）
 
 - `M0-02`：真实 openJiuwen Workflow/WorkflowAgent smoke 已实现并完成本地回归，状态 `IMPLEMENTED`；额外官方 Base Agent/starter 要求仍 `BLOCKED / UNCONFIRMED`。
 - `M0-03 / M0-03-DEL`：真实 Knowledge 四进程生命周期 `VERIFIED`，覆盖解析、入库、检索、provenance、重启、删除和删除后重启零命中。项目临时锁定到基于 openJiuwen v0.1.18 和官方 PR #1344 的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；不得描述成官方新发布版。
@@ -16,11 +16,12 @@
 - `M2-02`：真实 Demo Resume v1 PDF→21 facts→Knowledge→显式 `SYNTHETIC_DEMO_JD`→8 Requirements→Coverage Map→5 Slots live 通过。不可验证的真实 JD 宣称已撤回，伪造/缺失 provenance 会 `JD_PROVENANCE_INVALID`。
 - `M2-03`：计划工作台曾在 Seed 批准前用真实浏览器跑通资料快照、synthetic 警示、unknown 边界、5 Slots、首题门禁和刷新恢复；该历史验收当时没有生成题目或调用业务 LLM。
 - `M3-01`：approved Seed 首题实例化、真实 openJiuwen handle-answer Workflow、Observation 语义校验、确定性 Policy，以及按选中 criterion/冻结 Rubric 聚焦且不暴露内部 ID 的 PROBE 文案已实现并经 fixture 验证；外部业务文本模型因缺显式私密配置仍 `NOT_RUN`，状态保持 `IMPLEMENTED`。
-- `M3-02`：Answer/Operation 原子受理、并发单写入、幂等重放、durable event、失败保留、累计三次 retry 与重启 interrupted 恢复已按本地后端范围 `VERIFIED`。前端断流/UTF-8 分块消费仍属于设计后的界面验收。
-- 当前全量回归：247 passed / 2 skipped / 0 failed / 54 warnings；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；Ruff 全绿。
+- `M3-02`：Answer/Operation 原子受理、并发单写入、幂等重放、durable event、失败保留、累计三次 retry 与重启 interrupted 恢复已按本地后端范围 `VERIFIED`。
+- `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页 P0 前端已完成；真实浏览器 fixture 纵切面覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、answer 网络重试幂等、SSE 阻断后 polling 收敛及六组视口响应式，状态 `VERIFIED`。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
+- 当前全量回归：后端 247 passed / 2 skipped / 0 failed / 54 warnings；前端 7 passed；生产构建 112 modules；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；Ruff 全绿。
 - 模型网关：BGE-M3 embedding 已 live；`deepseek-flash` 无通道，`deepseek-v4-flash` 仅完成历史探活。业务 LLM、面试 token/cost 仍 `NOT_RUN` / null。
 
-当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-01/M3-02 后端 handoff](docs/handoffs/2026-09-19-m3-01-m3-02.md)，负责人 Seed 结论见 [审核记录](docs/reviews/review_m2_01_level2_owner_20260919.md)，逐条技术依据见 [审核 Packet](docs/level2-review-packet-m2-01.md)。
+当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-03 前端 handoff](docs/handoffs/2026-09-19-m3-03.md)，浏览器验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)，负责人 Seed 结论见 [审核记录](docs/reviews/review_m2_01_level2_owner_20260919.md)。
 
 ## 项目一句话
 
@@ -65,6 +66,7 @@
 |---|---|
 | `AGENTS.md` | AI 工作纪律、禁止事项、开工/收工流程 |
 | `api.md` | HTTP 接口、错误、版本、异步操作与 SSE 契约 |
+| `docs/ui-contract.md` | 当前前端实际消费的 API/字段、状态与按钮门禁 |
 | `process.md` | 当前事实状态、任务依赖、阻塞与下一步 |
 | `CHANGELOG.md` | 已发生的规范/产品变更，不记录虚构完成项 |
 | `docs/00-owner-guide.md` | 你需要准备什么、如何验收和控制范围 |
@@ -75,7 +77,7 @@
 | `docs/05-knowledge-and-bank.md` | 真实 Knowledge 集成、题库与来源治理 |
 | `docs/06-prompts-and-factuality.md` | 模型职责、结构化输出、事实校验、评分与改写 |
 | `docs/07-test-and-acceptance.md` | 测试矩阵、回归、对照实验、发布门槛 |
-| `docs/08-ux.md` | 两个工作台和关键交互、可见状态与异常提示 |
+| `docs/08-ux.md` | 三页 P0 信息架构、组件、状态、响应式与可访问性约束 |
 | `docs/09-engineering.md` | 编码、Git、依赖、日志、性能、AI 协作规则 |
 | `docs/10-doc-sync.md` | 文档同步、单一真源、变更矩阵和交接 |
 | `docs/11-runbook.md` | 环境、配置、部署、故障恢复、备份与删除 |
@@ -95,4 +97,4 @@ MUST＝必须执行；SHOULD＝默认执行，偏离要记录原因；MAY＝可�
 
 `PLANNED / IN_PROGRESS / BLOCKED / IMPLEMENTED / VERIFIED / ACCEPTED` 是六种不同状态。写出了代码只能叫 IMPLEMENTED，必须有测试记录才叫 VERIFIED，负责人确认后才叫 ACCEPTED。
 
-文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划 API，以及 M3 首题/回答/Policy/retry/恢复后端；`apps/web` 仍只有确认与计划工作台。前端答题界面、评分与报告仍是 M3-03—M4 施工目标。
+文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划 API，以及 M3 首题/回答/Policy/retry/恢复后端；`apps/web` 已实现资料导入确认、岗位准备和五题模拟面试三页。评分、回答优化与报告仍是 M4 施工目标，不在本轮前端伪造。
