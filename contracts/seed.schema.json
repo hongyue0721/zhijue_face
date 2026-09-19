@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Question seed",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "competency_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$"
+    },
+    "difficulty": {
+      "enum": [
+        "easy",
+        "medium"
+      ]
+    },
+    "archetype": {
+      "enum": [
+        "mechanism",
+        "debugging",
+        "tradeoff",
+        "project",
+        "scenario",
+        "evaluation"
+      ]
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "allowed_context": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "reference_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "reference_points": {
+      "description": "ADR-013：可审核的参考要点。technical 必须带非空 reference_ids，禁止用模型知识充当技术结论。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "point_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "technical",
+              "acceptable_alternative"
+            ]
+          },
+          "reference_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "point_id",
+          "statement",
+          "kind",
+          "reference_ids"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "technical"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reference_ids": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "red_flags": {
+      "description": "ADR-013：需要进一步核对的回答信号。requires_followup 恒为 true——结构上禁止 red flag→自动扣分。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requires_followup": {
+            "const": true
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "signal_id",
+          "pattern",
+          "requires_followup"
+        ]
+      }
+    },
+    "follow_up_strategy": {
+      "description": "ADR-013：追问策略。与 followup_intents（允许意图集合）并存，不互相替代。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_followups": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "preferred_intents": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "clarification",
+              "detail",
+              "ownership",
+              "counterfactual",
+              "pushback",
+              "reflection"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "stop_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "max_followups",
+        "preferred_intents",
+        "stop_conditions"
+      ]
+    },
+    "review_levels": {
+      "description": "ADR-013：两级审核。approved 必须两级均 passed；不允许只做一级就写 approved。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level1": {
+          "$ref": "#/$defs/review_level"
+        },
+        "level2": {
+          "$ref": "#/$defs/review_level"
+        }
+      },
+      "required": [
+        "level1",
+        "level2"
+      ]
+    },
+    "rubric": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "criterion_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "kind": {
+            "enum": [
+              "technical",
+              "expression",
+              "evidence_reasoning"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "levels": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "0": {
+                "type": "string",
+                "minLength": 1
+              },
+              "1": {
+                "type": "string",
+                "minLength": 1
+              },
+              "2": {
+                "type": "string",
+                "minLength": 1
+              },
+              "3": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "0",
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        },
+        "required": [
+          "criterion_id",
+          "kind",
+          "weight",
+          "levels"
+        ]
+      },
+      "minItems": 1
+    },
+    "followup_intents": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "clarification",
+          "detail",
+          "ownership",
+          "counterfactual",
+          "pushback",
+          "reflection"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "source_origin": {
+      "enum": [
+        "original_draft",
+        "licensed_adaptation"
+      ]
+    },
+    "review_status": {
+      "enum": [
+        "draft",
+        "technical_review",
+        "approved",
+        "rejected",
+        "deprecated"
+      ],
+      "description": "ADR-013 映射：draft=未审；technical_review=Level 1 通过、Level 2 待做；approved=两级均通过。不再另立 reviewed 值，避免两套并行语义。"
+    },
+    "review_record_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "competency_id",
+    "difficulty",
+    "archetype",
+    "intent",
+    "stem",
+    "prerequisites",
+    "allowed_context",
+    "reference_ids",
+    "reference_points",
+    "red_flags",
+    "follow_up_strategy",
+    "review_levels",
+    "rubric",
+    "followup_intents",
+    "out_of_scope",
+    "source_origin",
+    "review_status",
+    "review_record_id"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_status": {
+            "const": "approved"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "review_record_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "review_levels": {
+            "properties": {
+              "level1": {
+                "properties": {
+                  "status": {
+                    "const": "passed"
+                  }
+                }
+              },
+              "level2": {
+                "properties": {
+                  "status": {
+                    "const": "passed"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_status": {
+            "const": "technical_review"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "review_levels": {
+            "properties": {
+              "level1": {
+                "properties": {
+                  "status": {
+                    "const": "passed"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "review_level": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed"
+          ]
+        },
+        "reviewer_role": {
+          "enum": [
+            "owner",
+            "independent_expert",
+            "self_check"
+          ]
+        },
+        "checked": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reviewer_role",
+        "checked",
+        "at"
+      ]
+    }
+  }
+}

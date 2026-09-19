@@ -1,0 +1,84 @@
+{
+  "slots": [
+    {
+      "slot_id": "slot_1_e85af49e",
+      "competency": "embedded.c.basics",
+      "jd_requirement_ids": [
+        "requirement_ae91721659fdd652"
+      ],
+      "candidate_evidence_ids": [],
+      "current_verification_status": "unknown",
+      "verification_goal": "确认是否具备 embedded.c.basics 的岗位相关能力（材料未体现，不作负面推断）",
+      "priority": 93,
+      "difficulty": "medium",
+      "reason_code": "JD_CRITICAL_NOT_IN_MATERIAL",
+      "structured_reason": "岗位必备且材料未体现，需要验证能力是否存在（材料未体现≠不会）；JD 重要度 3 × 验证需求 3（unknown）",
+      "seed_id": null,
+      "schema_version": "1.0.0"
+    },
+    {
+      "slot_id": "slot_2_3c390093",
+      "competency": "embedded.mcu.interrupt",
+      "jd_requirement_ids": [
+        "requirement_d53cb959355563fc"
+      ],
+      "candidate_evidence_ids": [],
+      "current_verification_status": "unknown",
+      "verification_goal": "确认是否具备 embedded.mcu.interrupt 的岗位相关能力（材料未体现，不作负面推断）",
+      "priority": 93,
+      "difficulty": "medium",
+      "reason_code": "JD_CRITICAL_NOT_IN_MATERIAL",
+      "structured_reason": "岗位必备且材料未体现，需要验证能力是否存在（材料未体现≠不会）；JD 重要度 3 × 验证需求 3（unknown）",
+      "seed_id": null,
+      "schema_version": "1.0.0"
+    },
+    {
+      "slot_id": "slot_3_f7c00e2c",
+      "competency": "embedded.peripheral.uart_dma",
+      "jd_requirement_ids": [
+        "requirement_733472def153c61d"
+      ],
+      "candidate_evidence_ids": [],
+      "current_verification_status": "unknown",
+      "verification_goal": "确认是否具备 embedded.peripheral.uart_dma 的岗位相关能力（材料未体现，不作负面推断）",
+      "priority": 93,
+      "difficulty": "medium",
+      "reason_code": "JD_CRITICAL_NOT_IN_MATERIAL",
+      "structured_reason": "岗位必备且材料未体现，需要验证能力是否存在（材料未体现≠不会）；JD 重要度 3 × 验证需求 3（unknown）",
+      "seed_id": null,
+      "schema_version": "1.0.0"
+    },
+    {
+      "slot_id": "slot_4_ca0ef840",
+      "competency": "project.ownership",
+      "jd_requirement_ids": [
+        "requirement_f6260dc80483eb23"
+      ],
+      "candidate_evidence_ids": [],
+      "current_verification_status": "unknown",
+      "verification_goal": "确认是否具备 project.ownership 的岗位相关能力（材料未体现，不作负面推断）",
+      "priority": 93,
+      "difficulty": "medium",
+      "reason_code": "JD_CRITICAL_NOT_IN_MATERIAL",
+      "structured_reason": "岗位必备且材料未体现，需要验证能力是否存在（材料未体现≠不会）；JD 重要度 3 × 验证需求 3（unknown）",
+      "seed_id": null,
+      "schema_version": "1.0.0"
+    },
+    {
+      "slot_id": "slot_5_2ea1ebf6",
+      "competency": "embedded.rtos.fundamentals",
+      "jd_requirement_ids": [
+        "requirement_ca8e87ac5d6e3677"
+      ],
+      "candidate_evidence_ids": [],
+      "current_verification_status": "unknown",
+      "verification_goal": "确认是否具备 embedded.rtos.fundamentals 的岗位相关能力（材料未体现，不作负面推断）",
+      "priority": 33,
+      "difficulty": "medium",
+      "reason_code": "JD_PREFERRED_SECONDARY",
+      "structured_reason": "岗位加分项，优先级低于必备项；JD 重要度 1 × 验证需求 3（unknown）",
+      "seed_id": null,
+      "schema_version": "1.0.0"
+    }
+  ]
+}

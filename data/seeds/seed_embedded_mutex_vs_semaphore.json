@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_mutex_vs_semaphore",
+  "version": "0.2.1",
+  "competency_id": "embedded.rtos.synchronization",
+  "difficulty": "medium",
+  "archetype": "tradeoff",
+  "intent": "考察互斥量与信号量的语义差别及优先级继承意识",
+  "stem": "假设两个任务要访问同一个共享外设，你会用互斥量还是信号量？两者的差别对系统行为有什么影响？",
+  "prerequisites": [
+    "了解存在多任务共享资源"
+  ],
+  "allowed_context": [
+    "材料显示多任务访问同一资源",
+    "或明确声明为假设题"
+  ],
+  "reference_ids": [
+    "freertos_reference_manual_v10"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_mutex_ownership",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS 官方手册将互斥量定义为带所有权（ownership）的二值信号量：必须由获取它的同一任务释放（可通过 xSemaphoreGetMutexHolder 查询），专用于共享资源互斥；二值信号量无所有权，更适合同步。"
+    },
+    {
+      "point_id": "rp_priority_inheritance",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS V10.0.0 手册说明 mutex 带优先级继承而 binary semaphore 不带：高优先级任务等待同一 mutex 时，持有任务继承其优先级，并在归还 mutex 后解除继承；configUSE_MUTEXES=1 时相关 mutex 能力才会纳入构建。"
+    },
+    {
+      "point_id": "rp_alternatives",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "也接受用临界区、单任务独占外设、消息传递替代共享访问等方案，只要说明适用条件。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_only_said_lock",
+      "pattern": "仅回答\"加锁\"而不说明锁保护的范围与选择理由",
+      "requires_followup": true,
+      "note": "需要追问保护范围；docs/04 §7 明确不能据此判定已掌握或未掌握互斥。"
+    },
+    {
+      "signal_id": "rf_inheritance_claim",
+      "pattern": "声称可完全消除优先级反转",
+      "requires_followup": true,
+      "note": "手册把优先级继承用于避免无界优先级反转，并明确队列集合中的 mutex 等边界不会触发同样的继承行为；不得据此宣称 mutex 能消除所有阻塞，也不能省略临界区时长与持锁路径分析。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明选择理由、保护范围与反转处理"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S24/FreeRTOS V10.0.0 issue 1：所有权、优先级继承与配置边界",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_mutex_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "存在与官方机制直接冲突的说明且澄清后仍坚持",
+        "1": "识别共享访问冲突但无法说明两种同步原语的差别",
+        "2": "说明互斥量与信号量在所有权/继承上的差别及适用条件",
+        "3": "说明差别、优先级反转处理、替代方案与验证方式"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不评价代码风格",
+    "不做录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

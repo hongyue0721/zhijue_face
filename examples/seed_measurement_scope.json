@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_measurement_scope",
+  "version": "0.1.0",
+  "competency_id": "engineering.measurement",
+  "difficulty": "easy",
+  "archetype": "evaluation",
+  "intent": "用户声称效果提升时核对指标定义、比较口径与测量方法",
+  "stem": "你提到这个指标有所改善，具体是怎样测量和比较的？",
+  "prerequisites": [],
+  "allowed_context": [
+    "用户材料有对应项目，或明确使用假设情景"
+  ],
+  "reference_ids": [],
+  "reference_points": [
+    {
+      "point_id": "rp_measurement_baseline",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "能说明比较口径（改进前后条件）即可，不要求统计显著性检验。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_uncited_metric",
+      "pattern": "给出百分比但无法说明测量方式",
+      "requires_followup": true,
+      "note": "属于核对信号，不自动视为夸大或造假。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail"
+    ],
+    "stop_conditions": [
+      "已说明指标定义、基线与比较条件"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [
+        "reference_points 依据可靠技术资料逐条核对"
+      ],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_measurement_scope_criterion",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "被问及后无法描述如何比较",
+        "1": "提供结果但没有比较口径",
+        "2": "说明指标和比较前后的条件",
+        "3": "说明测量方法、基线、相同条件及局限"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "ownership"
+  ],
+  "out_of_scope": [
+    "不得判断经历真实性或作录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

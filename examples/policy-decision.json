@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "id": "decision_demo_01",
+  "observation_id": "observation_demo_01",
+  "root_question_id": "question_main_01",
+  "action": "NEXT",
+  "reason_code": "ADEQUATE_EVIDENCE",
+  "reason_summary": "本轮已说明个人任务与团队分工；不为凑追问次数重复询问。",
+  "target": null,
+  "policy_version": "1.0.0"
+}

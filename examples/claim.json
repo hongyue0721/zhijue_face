@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "id": "claim_demo_01",
+  "profile_id": "profile_demo_01",
+  "text": "负责数据采集任务和串口协议",
+  "source_block_ids": [
+    "source_demo_01"
+  ],
+  "source_quotes": [
+    {
+      "source_block_id": "source_demo_01",
+      "exact_quote": "我负责数据采集任务和串口协议"
+    }
+  ],
+  "status": "confirmed",
+  "supersedes_id": null,
+  "synthetic": true
+}

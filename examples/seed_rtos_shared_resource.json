@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_rtos_shared_resource",
+  "version": "0.1.0",
+  "competency_id": "rtos.resource_access",
+  "difficulty": "easy",
+  "archetype": "scenario",
+  "intent": "在任务上下文假设成立时考察共享外设的访问协调与可接受替代方案",
+  "stem": "假设两个任务需要访问同一个外设，你会怎样协调访问？",
+  "prerequisites": [],
+  "allowed_context": [
+    "明确是多任务场景；没有简历依据时必须声明为假设"
+  ],
+  "reference_ids": [
+    "kb_rtos_reference_pending"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_serialize_access",
+      "kind": "technical",
+      "reference_ids": [
+        "kb_rtos_reference_pending"
+      ],
+      "statement": "共享外设访问需要串行化；互斥量/临界区/单任务独占等多种实现均可接受。"
+    },
+    {
+      "point_id": "rp_mutex_priority_inheritance",
+      "kind": "technical",
+      "reference_ids": [
+        "kb_rtos_reference_pending"
+      ],
+      "statement": "若使用互斥量，应能说明其与二值信号量在所有权语义上的差别。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_lock_scope_unclear",
+      "pattern": "只说\"加了锁\"而未说明保护的范围",
+      "requires_followup": true,
+      "note": "需要追问保护范围；不能据此判定已掌握或未掌握互斥（docs/04 §7）。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明串行化手段及其适用条件"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [
+        "reference_points 依据可靠技术资料逐条核对"
+      ],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_rtos_shared_resource_criterion",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "存在与审核资料直接冲突的解释且澄清后仍坚持",
+        "1": "识别访问冲突但无法说明方案边界",
+        "2": "解释一种适用于给定条件的串行访问方案",
+        "3": "解释适用条件、替代方案、边界和验证方式"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "ownership"
+  ],
+  "out_of_scope": [
+    "不得判断经历真实性或作录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_spi_i2c_selection",
+  "version": "0.2.1",
+  "competency_id": "embedded.peripheral.serial_bus",
+  "difficulty": "easy",
+  "archetype": "tradeoff",
+  "intent": "考察串行总线选型与时钟/拓扑约束的理解",
+  "stem": "给一个传感器选接口，SPI 和 I2C 你会怎么选？各自有哪些约束要考虑？",
+  "prerequisites": [
+    "接触过至少一种串行总线"
+  ],
+  "allowed_context": [
+    "材料提到传感器/外设接口",
+    "或明确作为假设题"
+  ],
+  "reference_ids": [
+    "rm0090_stm32f4",
+    "rm0440_stm32g4",
+    "rm0433_stm32h7"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_spi_mode",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0090_stm32f4",
+        "rm0440_stm32g4",
+        "rm0433_stm32h7"
+      ],
+      "statement": "RM0090、RM0440 与 RM0433 的 SPI 章节均把 SPI 定义为 MCU 与外设之间的同步串行通信，并给出用状态标志轮询或专用中断管理通信的路径。"
+    },
+    {
+      "point_id": "rp_i2c_speed",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0090_stm32f4",
+        "rm0440_stm32g4",
+        "rm0433_stm32h7"
+      ],
+      "statement": "三份系列手册均说明 I2C 经 SDA/SCL 通信；RM0090 的 F4 章节列出 Standard-mode 100 kHz 与 Fast-mode 400 kHz，RM0440 的 G4 和 RM0433 的 H7 章节另列 Fast-mode Plus 1 MHz。实际器件、实例与引脚是否支持目标模式必须再查对应数据手册。"
+    },
+    {
+      "point_id": "rp_selection_criteria",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "接受按速率/引脚数/多设备拓扑/中断与 DMA 支持等条件比较，不要求唯一答案。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_wrong_topology",
+      "pattern": "把 I2C 描述为点对点专用或把 SPI 描述为天然支持多主",
+      "requires_followup": true,
+      "note": "属于需要核对的信号，先追问其依据。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail"
+    ],
+    "stop_conditions": [
+      "已说明至少两个选型约束及其来源"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S28/RM0090、S30/RM0440、S26/RM0433：F4/G4/H7 SPI/I2C 事实与平台边界",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_bus_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "无法区分两种总线",
+        "1": "只给出结论，无约束说明",
+        "2": "说明速率/拓扑等至少两个约束",
+        "3": "说明约束、适用场景差异与速率、拓扑等平台边界"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail"
+  ],
+  "out_of_scope": [
+    "不要求具体器件型号",
+    "不做录用结论",
+    "速率档位、FIFO、DMA 与引脚能力必须按目标器件资料解释，不得把 H7/G4 的 Fast-mode Plus 能力外推到 F4"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

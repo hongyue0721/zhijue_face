@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "sources": [
+    {
+      "id": "kb_rtos_reference_pending",
+      "title": "待审核的 RTOS 同步参考资料",
+      "discovery_url": "https://www.freertos.org/Documentation/",
+      "exact_url": null,
+      "version_scope": null,
+      "content_sha256": null,
+      "license_review_status": "pending",
+      "technical_review_status": "pending",
+      "reviewer": null,
+      "note": "这是来源发现占位，不是已抓取技术原文，也不是 approved 引用。"
+    }
+  ]
+}

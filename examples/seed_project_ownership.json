@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_project_ownership",
+  "version": "0.1.0",
+  "competency_id": "project.ownership",
+  "difficulty": "easy",
+  "archetype": "project",
+  "intent": "区分本人的工作范围和团队成果，不把说不清楚等同于造假",
+  "stem": "你在这个项目里具体负责哪一部分？",
+  "prerequisites": [],
+  "allowed_context": [
+    "用户材料有对应项目，或明确使用假设情景"
+  ],
+  "reference_ids": [],
+  "reference_points": [
+    {
+      "point_id": "rp_ownership_boundary",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "能区分个人任务与他人工作的边界即可；不要求使用任何特定术语或格式。"
+    },
+    {
+      "point_id": "rp_ownership_specific_action",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "允许以时间顺序、模块划分或职责列表等不同方式描述个人工作。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_vague_scope",
+      "pattern": "反复用\"我们\"描述而不区分个人动作",
+      "requires_followup": true,
+      "note": "只表示需要追问边界，不作为扣分或造假判断（docs/05 §6）。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "ownership",
+      "detail"
+    ],
+    "stop_conditions": [
+      "用户已说明个人动作与他人分工的边界"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [
+        "reference_points 依据可靠技术资料逐条核对"
+      ],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_project_ownership_criterion",
+      "kind": "expression",
+      "weight": 1,
+      "levels": {
+        "0": "被明确询问后仍没有描述个人工作",
+        "1": "提到个人任务但范围含混",
+        "2": "说明自己的任务和一个具体动作",
+        "3": "清楚区分自己的任务、具体行动及他人工作边界"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "ownership"
+  ],
+  "out_of_scope": [
+    "不得判断经历真实性或作录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

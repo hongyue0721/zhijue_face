@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Interview slot plan (M2-02)",
+  "description": "五题计划：只声明'验证什么'，不含题目文本，也不绑定未批准种子（负责人 2026-09-18 决策 §4）。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "slots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slot"
+      },
+      "minItems": 5,
+      "maxItems": 5
+    }
+  },
+  "required": [
+    "slots"
+  ],
+  "$defs": {
+    "slot": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "Interview slot plan (M2-02)",
+      "description": "五题计划的槽位。只声明'验证什么'，不含题目文本，也不绑定未批准种子（负责人 2026-09-18 决策 §4）。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "slot_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+        },
+        "competency": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$"
+        },
+        "jd_requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "candidate_evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "current_verification_status": {
+          "enum": [
+            "supported",
+            "claimed",
+            "unverified",
+            "unknown",
+            "contradicted"
+          ]
+        },
+        "verification_goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "difficulty": {
+          "enum": [
+            "easy",
+            "medium"
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            "JD_CRITICAL_NOT_IN_MATERIAL",
+            "JD_CRITICAL_CLAIMED_NEEDS_EVIDENCE",
+            "JD_CRITICAL_SUPPORTED_LOWER_REPEAT",
+            "JD_PREFERRED_SECONDARY",
+            "COMPETENCY_DIVERSITY",
+            "EVIDENCE_CONTRADICTION",
+            "CONTEXTUAL_BACKGROUND"
+          ]
+        },
+        "structured_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seed_id": {
+          "description": "M2-02 阶段必须为 null：种子未 approved 时不得绑定（AGENTS §11.5）。",
+          "type": "null"
+        },
+        "question_wording": {
+          "description": "禁止字段：本阶段不生成题目文本。",
+          "not": {}
+        }
+      },
+      "required": [
+        "schema_version",
+        "slot_id",
+        "competency",
+        "jd_requirement_ids",
+        "candidate_evidence_ids",
+        "current_verification_status",
+        "verification_goal",
+        "priority",
+        "difficulty",
+        "reason_code",
+        "structured_reason",
+        "seed_id"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "current_verification_status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "candidate_evidence_ids": {
+                "maxItems": 0
+              },
+              "verification_goal": {
+                "pattern": "不作负面推断"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason_code": {
+                "const": "JD_PREFERRED_SECONDARY"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priority": {
+                "maximum": 99
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

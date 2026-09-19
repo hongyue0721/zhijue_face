@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_uart_dma_debug",
+  "version": "0.2.1",
+  "competency_id": "embedded.peripheral.uart_dma",
+  "difficulty": "medium",
+  "archetype": "debugging",
+  "intent": "考察串口+DMA 接收链路的排障思路与错误标志认识",
+  "stem": "串口 DMA 接收偶发丢数据，你会按什么顺序排查？接收链路上有哪些状态可以帮你定位？",
+  "prerequisites": [
+    "接触过 UART 与 DMA 接收"
+  ],
+  "allowed_context": [
+    "材料提到串口/DMA/丢数据",
+    "或作为假设故障题"
+  ],
+  "reference_ids": [
+    "rm0090_stm32f4",
+    "rm0440_stm32g4",
+    "rm0433_stm32h7"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_receiver_flags",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0090_stm32f4",
+        "rm0440_stm32g4",
+        "rm0433_stm32h7"
+      ],
+      "statement": "RM0090 第 30 章、RM0440 第 40 章与 RM0433 第 48 章均定义 USART 接收就绪和错误状态；F4 使用 RXNE，G4/H7 会按 FIFO 配置呈现 RXNE/RXFNE，具体位名必须服从目标系列手册。"
+    },
+    {
+      "point_id": "rp_dma_continuous",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0090_stm32f4",
+        "rm0440_stm32g4",
+        "rm0433_stm32h7"
+      ],
+      "statement": "RM0090 §30.3.13、RM0440 §40.5.19 与 RM0433 §48.5.19 分别描述对应系列使用 USART 与 DMA 的连续通信路径；DMA 通道映射、缓冲与清除步骤不能跨系列照搬。"
+    },
+    {
+      "point_id": "rp_overrun",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0090_stm32f4",
+        "rm0440_stm32g4",
+        "rm0433_stm32h7"
+      ],
+      "statement": "三份系列手册均列出接收侧 overrun、noise、framing、parity 等错误状态；状态位名称和清除顺序按目标系列手册核对。"
+    },
+    {
+      "point_id": "rp_method",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "也接受先缩小范围（速率/线序/中断优先级/缓冲深度）、复现最小化等工程排查路径。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_guess_without_evidence",
+      "pattern": "直接给出结论但没有任何可观察依据",
+      "requires_followup": true,
+      "note": "需追问如何验证；不因缺依据直接判错（docs/03 §4：未问到/未覆盖不等于不会）。"
+    },
+    {
+      "signal_id": "rf_flags_ignored",
+      "pattern": "完全不提接收错误状态位",
+      "requires_followup": true,
+      "note": "需要追问是否了解接收侧状态；作为核对信号。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "reflection"
+    ],
+    "stop_conditions": [
+      "已给出可观察依据与验证顺序"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S28/RM0090、S30/RM0440、S26/RM0433：F4/G4/H7 UART/DMA 事实与平台边界",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_uart_dma_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "无排查思路或与官方机制冲突",
+        "1": "提出猜测但无法说明依据",
+        "2": "给出有依据的排查顺序，提到至少一处接收侧状态",
+        "3": "说明排查顺序、错误标志含义、DMA 配置要点与验证方式"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "reflection"
+  ],
+  "out_of_scope": [
+    "不要求特定型号寄存器地址",
+    "不评价项目真实性",
+    "寄存器位名、DMA 映射与错误清除顺序必须按目标 STM32 系列手册解释，不得跨 F4/G4/H7 套用"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

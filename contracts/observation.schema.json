@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Validated answer observation, not raw model output",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "answer_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "question_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "root_question_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "relevance": {
+      "enum": [
+        "relevant",
+        "ambiguous",
+        "off_topic"
+      ]
+    },
+    "knowledge_status": {
+      "enum": [
+        "adequate",
+        "insufficient",
+        "conflicted"
+      ]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "criterion_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "kind": {
+            "enum": [
+              "technical",
+              "expression",
+              "evidence_reasoning"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 3
+          },
+          "finding": {
+            "enum": [
+              "supported",
+              "missing",
+              "contradicted",
+              "not_assessable"
+            ]
+          },
+          "answer_quotes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "answer_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+                },
+                "exact_quote": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "answer_id",
+                "exact_quote"
+              ]
+            }
+          },
+          "knowledge_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "criterion_id",
+          "kind",
+          "weight",
+          "level",
+          "finding",
+          "answer_quotes",
+          "knowledge_refs",
+          "explanation"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "finding": {
+                  "const": "not_assessable"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "level": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3
+                }
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "clarification_needed": {
+      "type": "boolean"
+    },
+    "validation_flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "answer_id",
+    "question_id",
+    "root_question_id",
+    "relevance",
+    "knowledge_status",
+    "criteria",
+    "clarification_needed",
+    "validation_flags"
+  ]
+}

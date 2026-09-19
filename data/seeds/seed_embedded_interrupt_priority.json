@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_interrupt_priority",
+  "version": "0.2.1",
+  "competency_id": "embedded.mcu.interrupt",
+  "difficulty": "medium",
+  "archetype": "mechanism",
+  "intent": "考察中断优先级分组与嵌套的可解释性",
+  "stem": "如果两个中断同时到来，执行顺序由什么决定？优先级分组会带来什么影响？",
+  "prerequisites": [
+    "了解中断与中断服务程序"
+  ],
+  "allowed_context": [
+    "材料提到中断处理",
+    "或明确作为假设题（Cortex-M4 平台，如 STM32F4/G4）"
+  ],
+  "reference_ids": [
+    "pm0214_cortex_m4",
+    "rm0440_stm32g4"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_nvic_priority_levels",
+      "kind": "technical",
+      "reference_ids": [
+        "pm0214_cortex_m4"
+      ],
+      "statement": "PM0214 §2.3.5（手册 p.41）：Cortex-M4 可配置优先级范围为 0-15，数值越小优先级越高。"
+    },
+    {
+      "point_id": "rp_nvic_channel_count_scope",
+      "kind": "technical",
+      "reference_ids": [
+        "rm0440_stm32g4"
+      ],
+      "statement": "RM0440 §14.1（手册 p.436）：STM32G4 有 102 个可屏蔽中断通道、16 级优先级（4 位），并引用 PM0214；通道数是型号级事实，不同系列不同。"
+    },
+    {
+      "point_id": "rp_grouping",
+      "kind": "technical",
+      "reference_ids": [
+        "pm0214_cortex_m4"
+      ],
+      "statement": "PM0214 §2.3.6（手册 p.41）：优先级寄存器分为 group priority 与 subpriority；只有 group priority 决定抢占，同组同子优先级按硬件索引顺序处理。"
+    },
+    {
+      "point_id": "rp_grouping_alt",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "接受以具体分组值或经验方式描述优先级分组，只要结论方向正确。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_universal_channel_count",
+      "pattern": "把某型号的中断通道数当作所有 Cortex-M 器件通用值",
+      "requires_followup": true,
+      "note": "需要核对系列适用范围；不直接判错。"
+    },
+    {
+      "signal_id": "rf_subpriority_preempts",
+      "pattern": "声称子优先级可以抢占正在执行的中断",
+      "requires_followup": true,
+      "note": "与 PM0214 §2.3.6 冲突，属需澄清信号；先追问依据。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明优先级决定机制与分组影响"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S29/PM0214 与 S30/RM0440：Cortex-M4 架构规则和 G4 平台实例",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_interrupt_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "与官方机制直接冲突且澄清后仍坚持",
+        "1": "只说\"优先级高的先执行\"，无分组概念",
+        "2": "说明优先级决定顺序并提及分组/子优先级",
+        "3": "说明优先级与分组机制、嵌套条件及型号适用范围"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不要求具体寄存器名称",
+    "不给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

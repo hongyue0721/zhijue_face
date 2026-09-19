@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Candidate claim with source quotes",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_block_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+      },
+      "uniqueItems": true
+    },
+    "source_quotes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_block_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "exact_quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source_block_id",
+          "exact_quote"
+        ]
+      }
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "confirmed",
+        "disputed",
+        "retracted"
+      ]
+    },
+    "supersedes_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "synthetic": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "profile_id",
+    "text",
+    "source_block_ids",
+    "source_quotes",
+    "status",
+    "supersedes_id",
+    "synthetic"
+  ]
+}

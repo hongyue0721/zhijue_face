@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "operation_id": "operation_demo_01",
+  "seq": 7,
+  "event_type": "policy.decided",
+  "payload": {
+    "action": "PROBE",
+    "reason_code": "MISSING_REQUIRED_DETAIL",
+    "root_question_id": "question_main_01"
+  }
+}

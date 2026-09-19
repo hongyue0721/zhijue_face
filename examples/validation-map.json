@@ -1,0 +1,38 @@
+[
+  {
+    "example": "examples/seed_project_ownership.json",
+    "schema": "contracts/seed.schema.json"
+  },
+  {
+    "example": "examples/seed_measurement_scope.json",
+    "schema": "contracts/seed.schema.json"
+  },
+  {
+    "example": "examples/seed_rtos_shared_resource.json",
+    "schema": "contracts/seed.schema.json"
+  },
+  {
+    "example": "examples/claim.json",
+    "schema": "contracts/claim.schema.json"
+  },
+  {
+    "example": "examples/observation-supported.json",
+    "schema": "contracts/observation.schema.json"
+  },
+  {
+    "example": "examples/observation-unknown.json",
+    "schema": "contracts/observation.schema.json"
+  },
+  {
+    "example": "examples/policy-decision.json",
+    "schema": "contracts/policy-decision.schema.json"
+  },
+  {
+    "example": "examples/operation-event.json",
+    "schema": "contracts/operation-event.schema.json"
+  },
+  {
+    "example": "examples/interview-slots-no-resume.json",
+    "schema": "contracts/interview-slot.schema.json"
+  }
+]

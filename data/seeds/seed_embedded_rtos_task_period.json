@@ -1,0 +1,110 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_rtos_task_period",
+  "version": "0.2.1",
+  "competency_id": "embedded.rtos.scheduling",
+  "difficulty": "medium",
+  "archetype": "tradeoff",
+  "intent": "考察周期任务的时间基准选择与漂移意识",
+  "stem": "一个需要每 10 ms 执行一次的采集任务，你会怎样安排它的周期？两种常见延时方式差别在哪？",
+  "prerequisites": [
+    "了解任务调度与 tick 概念"
+  ],
+  "allowed_context": [
+    "存在周期性任务的材料或假设情景"
+  ],
+  "reference_ids": [
+    "freertos_reference_manual_v10"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_delay_vs_delayuntil",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS 官方手册 Task and Scheduler API 章节明确：vTaskDelay 指定相对于调用时刻的相对延时（relative delay），vTaskDelayUntil 指定任务下一次解除阻塞并执行的绝对唤醒时刻（absolute wake time）。"
+    },
+    {
+      "point_id": "rp_drift",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "官方手册明确 vTaskDelayUntil 用于以固定频率周期执行；若在周期循环中使用相对延时，循环体内的执行耗时与调度波动会影响周期恒定性，固定频率任务建议使用基于绝对时刻的 vTaskDelayUntil。"
+    },
+    {
+      "point_id": "rp_tick_resolution",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS V10.0.0 手册说明延时以 tick 表示，换算出的绝对时间取决于 tick 频率，延时分辨率最坏为一个完整 tick 周期；不能据此宣称某个固定 tick 频率是唯一正确配置。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_period_ignores_exec_time",
+      "pattern": "周期设定完全未考虑任务自身执行耗时",
+      "requires_followup": true,
+      "note": "需追问漂移与超时处理；不自动扣分。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明周期基准选择与漂移处理方式"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S24/FreeRTOS V10.0.0 issue 1：相对延时、绝对唤醒与 tick 分辨率",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_period_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "未给出周期实现方式",
+        "1": "只说用延时函数循环，未区分基准",
+        "2": "区分相对延时与周期延时，并指出漂移",
+        "3": "说明基准选择、tick 精度权衡与超期/抖动处理"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不要求具体 tick 频率数值",
+    "不评价性能数字真实性"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_embedded_freertos_queue_mechanism",
+  "version": "0.2.1",
+  "competency_id": "embedded.rtos.queue",
+  "difficulty": "medium",
+  "archetype": "mechanism",
+  "intent": "考察对任务间队列通信的机制理解与适用边界，不要求背 API 名",
+  "stem": "在一个采集任务和一个处理任务之间，你会怎样传递采样数据？为什么这样选？",
+  "prerequisites": [
+    "了解存在多个并发任务"
+  ],
+  "allowed_context": [
+    "用户材料提到 RTOS 任务划分",
+    "或明确作为假设情景提问"
+  ],
+  "reference_ids": [
+    "freertos_reference_manual_v10"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_queue_decouple",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "队列可用于任务间传递数据并解耦生产与消费节奏；发送与接收各自带阻塞超时参数。"
+    },
+    {
+      "point_id": "rp_queue_copy_semantics",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS V10.0.0 手册说明 xQueueSend 会把创建队列时设定的 item-size 字节从 pvItemToQueue 复制进队列存储区，xQueueReceive 再复制到接收缓冲区；若 item 类型是指针，复制的是指针值，不代表队列按引用保存对象。"
+    },
+    {
+      "point_id": "rp_queue_isr_boundary",
+      "kind": "technical",
+      "reference_ids": [
+        "freertos_reference_manual_v10"
+      ],
+      "statement": "FreeRTOS V10.0.0 手册说明 xQueueSendFromISR/xQueueReceiveFromISR 是中断上下文专用版本，且不允许指定阻塞时间；不能在 ISR 中直接使用会阻塞等待的任务版队列操作。"
+    },
+    {
+      "point_id": "rp_queue_alt",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "也可说明环形缓冲区 + 信号量、消息缓冲区或流缓冲区等替代方案，只要说明选择依据。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_queue_no_boundary",
+      "pattern": "只用\"用队列传\"一句带过，不说明阻塞/超时或缓冲深度",
+      "requires_followup": true,
+      "note": "需要追问边界与参数选择；不据此判定不会。"
+    },
+    {
+      "signal_id": "rf_queue_isr_claim",
+      "pattern": "声称在中断里直接做阻塞发送",
+      "requires_followup": true,
+      "note": "需要核对是否了解中断上下文的限制；先追问，不直接判错。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明传递机制、阻塞策略与缓冲区边界"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "passed",
+      "reviewer_role": "self_check",
+      "checked": [
+        "schema",
+        "source_origin",
+        "competency_id",
+        "事实边界",
+        "follow_up 与 intent 一致性"
+      ],
+      "at": "2026-09-18"
+    },
+    "level2": {
+      "status": "passed",
+      "reviewer_role": "owner",
+      "checked": [
+        "S24/FreeRTOS V10.0.0 issue 1：队列复制、阻塞超时与 ISR 边界",
+        "负责人确认 Level 2 Packet 中的事实、允许 claim 与禁止外推边界"
+      ],
+      "at": "2026-09-19"
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_emb_queue_criterion",
+      "kind": "technical",
+      "weight": 3,
+      "levels": {
+        "0": "未说明任何任务间数据传递方式",
+        "1": "提到队列但说不出传什么、缓冲区如何设定",
+        "2": "说明队列传递数据的方式与阻塞/超时参数",
+        "3": "说明传递方式、缓冲深度依据、以及中断与任务上下文的边界"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不评价项目真实性",
+    "不判定是否掌握具体厂商实现",
+    "不给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "approved",
+  "review_record_id": "review_m2_01_level2_owner_20260919"
+}

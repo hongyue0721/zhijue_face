@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "id": "observation_demo_02",
+  "answer_id": "answer_demo_02",
+  "question_id": "question_main_02",
+  "root_question_id": "question_main_02",
+  "relevance": "relevant",
+  "knowledge_status": "insufficient",
+  "criteria": [
+    {
+      "criterion_id": "criterion_framework_api",
+      "kind": "technical",
+      "weight": 1,
+      "level": null,
+      "finding": "not_assessable",
+      "answer_quotes": [
+        {
+          "answer_id": "answer_demo_02",
+          "exact_quote": "具体 API 版本现在记不清"
+        }
+      ],
+      "knowledge_refs": [],
+      "explanation": "没有可用的适用版本资料；不依据模型旧知识判错。"
+    }
+  ],
+  "clarification_needed": false,
+  "validation_flags": [
+    "technical_reference_missing"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "id": "observation_demo_01",
+  "answer_id": "answer_demo_01",
+  "question_id": "question_main_01",
+  "root_question_id": "question_main_01",
+  "relevance": "relevant",
+  "knowledge_status": "adequate",
+  "criteria": [
+    {
+      "criterion_id": "seed_project_ownership_criterion",
+      "kind": "expression",
+      "weight": 1,
+      "level": 2,
+      "finding": "supported",
+      "answer_quotes": [
+        {
+          "answer_id": "answer_demo_01",
+          "exact_quote": "我负责数据采集任务和串口协议，队友负责电路板。"
+        }
+      ],
+      "knowledge_refs": [],
+      "explanation": "本回答说明了个人任务和其他人的分工；没有据此判断经历在现实中已核验。"
+    }
+  ],
+  "clarification_needed": false,
+  "validation_flags": []
+}
