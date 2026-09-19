@@ -264,6 +264,13 @@ export class ApiError extends Error {
   }
 }
 
+export type RequestRetryReason = "capacity" | "service";
+
+export function requestRetryReason(error: ApiError): RequestRetryReason | null {
+  if (!error.retryable) return null;
+  return error.code === "CAPACITY_LIMITED" ? "capacity" : "service";
+}
+
 const BASE = "/api/v1";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

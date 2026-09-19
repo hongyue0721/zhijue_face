@@ -3,9 +3,10 @@ import type { JDSourceView } from "../../api";
 import { jdSourceText } from "../../presentation";
 
 export function JDSourceBadge({ source }: { source: JDSourceView }) {
-  return (
-    <Tag className={`status-tag--${source.source_type === "synthetic_demo_jd" ? "warn" : "success"}`}>
-      {jdSourceText(source)}
-    </Tag>
-  );
+  const tone = source.source_type === "synthetic_demo_jd"
+    ? "warn"
+    : source.source_type === "user_provided"
+      ? "primary"
+      : "success";
+  return <Tag className={`status-tag--${tone}`}>{jdSourceText(source)}</Tag>;
 }

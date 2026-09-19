@@ -188,7 +188,7 @@ export function PreparePage({
             <div>
               <p className="eyebrow">Plan Ready</p>
               <h2>验证计划已准备</h2>
-              <p>开始后将按当前五题计划动态生成题目，具体措辞以 Interview.current_question 为准。</p>
+              <p>开始后将根据当前五题计划生成本场主问题；后续是否追问、澄清或进入下一题，将根据你的回答动态决定。</p>
             </div>
             <Button
               type="primary"

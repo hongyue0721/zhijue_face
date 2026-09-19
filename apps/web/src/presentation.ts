@@ -39,6 +39,9 @@ const intentText: Record<string, string> = {
   boundary: "确认能力边界",
   contradiction: "澄清材料冲突",
   clarification: "澄清指代或题意",
+  counterfactual: "条件变化下的调整",
+  pushback: "回应反例或限制条件",
+  reflection: "复盘与经验总结",
 };
 
 export function followupIntentText(intent?: string): string {
@@ -47,7 +50,16 @@ export function followupIntentText(intent?: string): string {
 }
 
 export function jdSourceText(source: JDSourceView): string {
-  return source.source_type === "synthetic_demo_jd" ? "演示岗位材料" : "你提供的岗位材料";
+  switch (source.source_type) {
+    case "synthetic_demo_jd":
+      return "演示岗位配置";
+    case "user_provided":
+      return "用户提供岗位描述";
+    case "official_posting":
+      return "官方公开岗位";
+    case "real_jd_derived":
+      return "公开岗位衍生材料";
+  }
 }
 
 export function interviewRoleText(interview: InterviewView): string {

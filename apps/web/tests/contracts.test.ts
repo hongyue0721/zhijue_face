@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
   api,
+  requestRetryReason,
   type CoverageEntryView,
   type JDRequirementView,
+  type JDSourceView,
   type OperationAccepted,
   type OperationView,
 } from "../src/api";
 import { isTerminalOperation } from "../src/hooks/useOperationMonitor";
-import { coverageExplanation, requirementTitle } from "../src/presentation";
+import {
+  coverageExplanation,
+  followupIntentText,
+  jdSourceText,
+  requirementTitle,
+} from "../src/presentation";
 import { parseRoute, preparePath } from "../src/routing";
 
 const accepted: OperationAccepted = {
@@ -25,6 +33,16 @@ function ok<T>(data: T): Response {
   });
 }
 
+
+function errorResponse(
+  status: number,
+  error: { code: string; message: string; retryable: boolean },
+): Response {
+  return new Response(JSON.stringify({ error: { ...error, details: {} } }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 describe("browser API boundary", () => {
   const fetchMock = vi.fn(async () => ok(accepted));
 
@@ -102,6 +120,40 @@ describe("browser API boundary", () => {
     expect(requests[0].key).toBe("answer-key-stable-0001");
   });
 
+  it("keeps a 429 CAPACITY_LIMITED response retryable without treating it as success", async () => {
+    fetchMock.mockResolvedValueOnce(errorResponse(429, {
+      code: "CAPACITY_LIMITED",
+      message: "操作队列已满，请稍后重试。",
+      retryable: true,
+    }));
+
+    let caught: unknown;
+    try {
+      await api.submitAnswer(
+        "interview_1",
+        {
+          expected_revision: 5,
+          question_id: "question_1",
+          client_turn_id: "turn-capacity-0001",
+          answer_text: "等待容量恢复后复用原请求",
+        },
+        "answer-key-capacity-0001",
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const apiError = caught as ApiError;
+    expect(apiError).toMatchObject({
+      status: 429,
+      code: "CAPACITY_LIMITED",
+      retryable: true,
+    });
+    expect(requestRetryReason(apiError)).toBe("capacity");
+    expect(requestRetryReason(apiError)).not.toBe("service");
+  });
+
 });
 
 describe("URL and presentation contracts", () => {
@@ -139,6 +191,26 @@ describe("URL and presentation contracts", () => {
     expect(requirementTitle([requirement], [requirement.id])).toBe(requirement.statement);
     expect(requirementTitle([requirement], ["missing"])).toBe("岗位相关能力验证");
     expect(coverageExplanation(coverage)).toContain("材料未体现不代表不会");
+  });
+
+  it("maps every JD source type from the server without inferring trust from its name", () => {
+    const source = (sourceType: JDSourceView["source_type"]) => ({
+      source_type: sourceType,
+      source_name: "相同来源名称不能改变 source_type",
+    }) as JDSourceView;
+
+    expect(jdSourceText(source("synthetic_demo_jd"))).toBe("演示岗位配置");
+    expect(jdSourceText(source("user_provided"))).toBe("用户提供岗位描述");
+    expect(jdSourceText(source("official_posting"))).toBe("官方公开岗位");
+    expect(jdSourceText(source("real_jd_derived"))).toBe("公开岗位衍生材料");
+  });
+
+  it("keeps counterfactual, pushback, and reflection follow-up intents distinct", () => {
+    expect(followupIntentText("counterfactual")).toBe("条件变化下的调整");
+    expect(followupIntentText("pushback")).toBe("回应反例或限制条件");
+    expect(followupIntentText("reflection")).toBe("复盘与经验总结");
+    expect(followupIntentText("pushback")).not.toBe(followupIntentText("counterfactual"));
+    expect(followupIntentText("unrecognized_internal_intent")).toBe("围绕当前回答继续核对");
   });
 
   it("treats only persisted operation terminal states as complete", () => {

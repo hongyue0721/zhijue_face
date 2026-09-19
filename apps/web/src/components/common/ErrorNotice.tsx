@@ -6,7 +6,7 @@ function guidance(error: unknown): string {
   switch (error.code) {
     case "SERVICE_NOT_READY":
       return "服务依赖尚未就绪，当前操作不会伪装成成功。";
-    case "OPERATION_CAPACITY_LIMITED":
+    case "CAPACITY_LIMITED":
       return "当前处理队列已满，请稍后使用原页面重试。";
     case "REVISION_CONFLICT":
       return "页面数据已过期，请刷新最新状态后再提交。";

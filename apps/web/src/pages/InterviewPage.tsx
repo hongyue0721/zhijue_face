@@ -1,6 +1,6 @@
 import { Alert, Tag } from "@any-design/anyui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, api, newCommandKey, type InterviewView, type OperationView } from "../api";
+import { ApiError, api, newCommandKey, requestRetryReason, type InterviewView, type OperationView } from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { AnswerComposer } from "../components/interview/AnswerComposer";
@@ -111,13 +111,9 @@ export function InterviewPage({
         await reload().catch(setError);
       } else if (!(nextError instanceof ApiError)) {
         setPendingSubmission({ ...command, retryReason: "network" });
-      } else if (nextError.retryable) {
-        const retryReason = nextError.code === "OPERATION_CAPACITY_LIMITED"
-          ? "capacity"
-          : "service";
-        setPendingSubmission({ ...command, retryReason });
       } else {
-        setPendingSubmission(null);
+        const retryReason = requestRetryReason(nextError);
+        setPendingSubmission(retryReason ? { ...command, retryReason } : null);
       }
     } finally {
       submittingRef.current = false;
