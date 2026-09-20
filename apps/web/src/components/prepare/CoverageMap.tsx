@@ -16,9 +16,9 @@ export function CoverageMap({
   return (
     <section className="plan-column" aria-labelledby="coverage-title">
       <div className="section-heading compact">
-        <p className="eyebrow">Coverage Map</p>
-        <h2 id="coverage-title">岗位能力覆盖</h2>
-        <p>状态来自确认资料与岗位要求的结构化映射，不等于最终能力结论。</p>
+        <p className="eyebrow">岗位能力覆盖</p>
+        <h2 id="coverage-title">本场需要核对的能力</h2>
+        <p>状态来自确认资料与岗位要求，不等于最终能力结论。</p>
       </div>
       <div className="coverage-list">
         {entries.map((entry) => (

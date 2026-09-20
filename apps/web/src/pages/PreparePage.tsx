@@ -18,8 +18,50 @@ import { JDSourceBadge } from "../components/prepare/JDSourceBadge";
 import { TechnicalDetails } from "../components/prepare/TechnicalDetails";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewPath, preparePath, startPath } from "../routing";
-import { interviewRoleText, requirementTierText } from "../presentation";
+import { interviewRoleText } from "../presentation";
 import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
+
+const REQUIREMENT_TIER_COPY = {
+  required: { count: "核心要求", item: "核心要求" },
+  preferred: { count: "优先要求", item: "优先要求" },
+  responsibility: { count: "岗位职责", item: "岗位职责" },
+  contextual: { count: "场景要求", item: "场景要求" },
+} as const;
+
+function JobSummary({ interview }: { interview: InterviewView }) {
+  const counts = { required: 0, preferred: 0, responsibility: 0, contextual: 0 };
+  for (const requirement of interview.jd_requirements) counts[requirement.tier] += 1;
+  return (
+    <section className="surface-card job-summary" aria-labelledby="job-summary-title">
+      <div className="job-summary-heading">
+        <div>
+          <p className="eyebrow">本场岗位</p>
+          <h2 id="job-summary-title">{interviewRoleText(interview)}</h2>
+        </div>
+        <JDSourceBadge source={interview.jd_source} />
+      </div>
+      <div className="requirement-counts" aria-label="岗位要求分类统计">
+        {Object.entries(counts).map(([tier, count]) => (
+          <span key={tier}><strong>{REQUIREMENT_TIER_COPY[tier as keyof typeof counts].count}</strong> {count}</span>
+        ))}
+      </div>
+      <details className="requirement-details">
+        <summary>查看完整岗位要求（{interview.jd_requirements.length}）</summary>
+        <div className="requirement-details-body">
+          <h3>完整岗位要求</h3>
+          <ul className="requirement-list">
+            {interview.jd_requirements.map((requirement) => (
+              <li key={requirement.id}>
+                <Tag>{REQUIREMENT_TIER_COPY[requirement.tier].item}</Tag>
+                <span>{requirement.statement}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
+    </section>
+  );
+}
 
 export function PreparePage({
   profileId,
@@ -145,7 +187,7 @@ export function PreparePage({
     return (
       <main className="page-container narrow-page">
         <Alert type="warn" title="资料尚未确认">
-          创建面试前必须存在服务端 Profile Snapshot。页面不会绕过这一门槛。
+          创建面试前必须存在服务端资料快照。页面不会绕过这一门槛。
         </Alert>
         <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回确认资料</Button>
       </main>
@@ -155,39 +197,20 @@ export function PreparePage({
   return (
     <main className="page-container prepare-page">
       <div className="page-intro">
-        <p className="eyebrow">Step 2 · Preparation</p>
-        <h1>准备面试</h1>
-        <p>岗位要求与资料覆盖由服务端计划结果驱动，页面不会提前展示尚未生成的具体题目。</p>
+        <p className="eyebrow">面试准备</p>
+        <h1>面试准备</h1>
+        <p>根据你的资料与岗位要求，系统已经生成本场验证计划。</p>
       </div>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       {!interview ? (
         <JDInput disabled={!serviceReady} busy={busy} onGenerate={createPlan} />
       ) : (
         <>
-          <section className="surface-card job-summary" aria-labelledby="job-summary-title">
-            <div>
-              <p className="eyebrow">本场岗位</p>
-              <h2 id="job-summary-title">{interviewRoleText(interview)}</h2>
-            </div>
-            <JDSourceBadge source={interview.jd_source} />
-            <ul className="requirement-list">
-              {interview.jd_requirements.map((requirement) => (
-                <li key={requirement.id}>
-                  <Tag>{requirementTierText(requirement.tier)}</Tag>
-                  <span>{requirement.statement}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <div className="plan-grid">
-            <CoverageMap entries={interview.coverage_map} requirements={interview.jd_requirements} />
-            <InterviewPlan slots={interview.root_plan.slots} requirements={interview.jd_requirements} />
-          </div>
-          <TechnicalDetails interview={interview} />
+          <JobSummary interview={interview} />
           <section className="surface-card ready-card plan-ready">
             <div>
-              <p className="eyebrow">Plan Ready</p>
-              <h2>验证计划已准备</h2>
+              <p className="eyebrow">准备完成</p>
+              <h2>本场验证计划已准备</h2>
               <p>开始后将根据当前五题计划生成本场主问题；后续是否追问、澄清或进入下一题，将根据你的回答动态决定。</p>
             </div>
             <Button
@@ -200,6 +223,11 @@ export function PreparePage({
               开始模拟面试
             </Button>
           </section>
+          <div className="plan-grid">
+            <CoverageMap entries={interview.coverage_map} requirements={interview.jd_requirements} />
+            <InterviewPlan slots={interview.root_plan.slots} requirements={interview.jd_requirements} />
+          </div>
+          <TechnicalDetails interview={interview} />
         </>
       )}
       <OperationStatus operation={operation} label={operation?.kind === "interview.start" ? "开始面试" : "生成面试计划"} />

@@ -27,7 +27,7 @@ export function EvidencePanel({
 
   return (
     <aside className="context-panel" aria-labelledby="evidence-context-title">
-      <p className="eyebrow">Evidence Context</p>
+      <p className="eyebrow">面试依据</p>
       <h2 id="evidence-context-title">为什么问这一题</h2>
       <dl className="context-list">
         <div><dt>岗位关联</dt><dd>{requirementTierText(requirements[0]?.tier)}</dd></div>

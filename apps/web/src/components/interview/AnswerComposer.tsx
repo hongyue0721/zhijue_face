@@ -77,7 +77,7 @@ export function AnswerComposer({
   const retryCopy = retryReason === "capacity"
     ? {
         title: "当前处理队列已满",
-        detail: "服务端没有受理本次命令；稍后重试会复用原 client_turn_id 与 Idempotency-Key。",
+        detail: "服务端没有受理本次命令；稍后重试会复用同一组请求标识。",
       }
     : retryReason === "service"
       ? {
@@ -86,7 +86,7 @@ export function AnswerComposer({
         }
       : {
           title: "上次请求未取得明确响应",
-          detail: "使用原请求重试会复用同一 client_turn_id 与 Idempotency-Key。",
+          detail: "使用原请求重试会复用同一组请求标识。",
         };
   return (
     <section className="answer-composer" aria-labelledby="answer-title">

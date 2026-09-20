@@ -168,11 +168,11 @@ export function InterviewPage({
     <main className="page-container interview-page">
       <div className="interview-heading">
         <div>
-          <p className="eyebrow">Step 3 · Interview</p>
+          <p className="eyebrow">模拟面试</p>
           <h1>{interviewRoleText(interview)}</h1>
         </div>
         <Tag className={`status-tag--${acceptedAnswer || isFinished ? "success" : "primary"}`}>
-          {acceptedAnswer || isFinished ? "已保存" : "等待作答"}
+          {isFinished ? "面试完成" : acceptedAnswer ? "回答已保存" : "等待作答"}
         </Tag>
       </div>
       <InterviewProgress total={total} question={question} />
@@ -187,9 +187,9 @@ export function InterviewPage({
       ) : null}
       {isFinished ? (
         <section className="surface-card completion-card">
-          <p className="eyebrow">Session Complete</p>
-          <h2>本场提问已完成</h2>
-          <p>当前真实 API 尚未提供报告读取端点，因此这里不会展示伪造评分、雷达图或反馈结论。</p>
+          <p className="eyebrow">面试完成</p>
+          <h2>本场提问已经结束</h2>
+          <p>当前版本尚未生成正式面试报告。</p>
         </section>
       ) : null}
       {question ? (

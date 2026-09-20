@@ -11,8 +11,8 @@ export function InterviewPlan({
   return (
     <section className="plan-column" aria-labelledby="plan-title">
       <div className="section-heading compact">
-        <p className="eyebrow">Interview Plan</p>
-        <h2 id="plan-title">五题验证计划</h2>
+        <p className="eyebrow">本场验证计划</p>
+        <h2 id="plan-title">五个主问题方向</h2>
         <p>这里只展示验证方向；具体问题在面试开始时由服务端生成。</p>
       </div>
       <ol className="slot-list">

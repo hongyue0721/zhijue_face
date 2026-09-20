@@ -1,8 +1,8 @@
 # 职觉 ZhiJue｜Demo 工程规划与 AI 施工规范
 
-**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3-03 三页 P0 前端本地 VERIFIED；M3-01 业务模型 live NOT_RUN；M4 未开始。**
+**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3-03 三页 P0 前端与 Product Polish 本地 VERIFIED；M3-01 业务模型 live NOT_RUN；M4 未开始。**
 
-这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答的三页 React 前端。浏览器 fixture 纵切面已覆盖 PROBE/CLARIFY/NEXT/END、失败保留、显式重试和 SSE 降级轮询；尚未完成业务文本模型 live 验收、评分与报告，也尚未部署。所有性能、准确率和兼容性结论只以运行证据为准。
+这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答的三页 React 前端。M3-03 已完成纯展示层 Product Polish 并暂时冻结视觉；浏览器 fixture 纵切面覆盖 PROBE/CLARIFY/NEXT/END、失败保留、显式重试和 SSE 降级轮询。尚未完成业务文本模型 live 验收、评分与报告，也尚未部署。所有性能、准确率和兼容性结论只以运行证据为准。
 
 
 ## 当前工程快照（2026-09-19，M3-03 三页前端完成后）
@@ -17,11 +17,11 @@
 - `M2-03`：计划工作台曾在 Seed 批准前用真实浏览器跑通资料快照、synthetic 警示、unknown 边界、5 Slots、首题门禁和刷新恢复；该历史验收当时没有生成题目或调用业务 LLM。
 - `M3-01`：approved Seed 首题实例化、真实 openJiuwen handle-answer Workflow、Observation 语义校验、确定性 Policy，以及按选中 criterion/冻结 Rubric 聚焦且不暴露内部 ID 的 PROBE 文案已实现并经 fixture 验证；外部业务文本模型因缺显式私密配置仍 `NOT_RUN`，状态保持 `IMPLEMENTED`。
 - `M3-02`：Answer/Operation 原子受理、并发单写入、幂等重放、durable event、失败保留、累计三次 retry 与重启 interrupted 恢复已按本地后端范围 `VERIFIED`。
-- `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页 P0 前端已完成；真实浏览器 fixture 纵切面覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、answer 网络重试幂等、SSE 阻断后 polling 收敛及六组视口响应式，状态 `VERIFIED`。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
-- 当前全量回归：后端 247 passed / 2 skipped / 0 failed / 54 warnings；前端 10 passed；生产构建 112 modules；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；Ruff 全绿。
+- `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页 P0 前端与纯 UI Product Polish 已完成；Header/中文层级/卡片密度、Requirement 聚合折叠、MAIN/PROBE/CLARIFY 右栏均经实际浏览器检查。真实 fixture 纵切面仍覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、answer 网络重试幂等、SSE 阻断后 polling 收敛，状态 `VERIFIED`。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
+- 当前全量回归：后端 247 passed / 2 skipped / 0 failed / 54 warnings（沿用 M3-03 基线，本轮未重跑）；前端 10 passed；生产构建 112 modules；规范校验 44/44；doctor 18 PASS / 0 WARN / 0 FAIL；完整性清单 204/204；Ruff 基线全绿。
 - 模型网关：BGE-M3 embedding 已 live；`deepseek-flash` 无通道，`deepseek-v4-flash` 仅完成历史探活。业务 LLM、面试 token/cost 仍 `NOT_RUN` / null。
 
-当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-03 语义修正 handoff](docs/handoffs/2026-09-19-m3-03-semantic-fix.md)，完整前端交接见 [M3-03 前端 handoff](docs/handoffs/2026-09-19-m3-03.md)，浏览器验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
+当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M3-03 Product Polish handoff](docs/handoffs/2026-09-19-m3-03-product-polish.md)，完整前端交接见 [M3-03 前端 handoff](docs/handoffs/2026-09-19-m3-03.md)，浏览器验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
 
 ## 项目一句话
 

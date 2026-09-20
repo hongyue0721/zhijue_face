@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-19｜M3-03 三页 Product Polish
+
+- 在不改变 FastAPI、OpenAPI、`api.md`、数据库、路由、Interview/Answer 状态机、Operation/SSE 与 retry 的前提下，完成三页纯展示层精修；业务能力、API 与状态机均为 0 变化。
+- Header 品牌字形由“知”统一为“职”，品牌显示“职觉 ZhiJue / AI 面试陪练”，步骤与页面 Eyebrow 统一中文；清除 Coverage Map、Interview Plan、Decision Summary 等用户可见英文模块名。
+- 普通业务卡片改为 border + background + whitespace，不再使用阴影；问题卡保留极轻阴影。主卡片/问题卡 12px、Input/Button 9px、Tag 6px，并补充 Linux 常见中文字体回退。
+- Prepare 页从真实 `jd_requirements` 派生四类 tier 数量，17 条示例在默认折叠的原生 `details/summary` 中展开；1366×768 首屏保留主 CTA，Coverage/Plan 继续双栏，internal ID 仍只在技术详情中。
+- Interview 页保持约 65%:35% 双栏；MAIN 显示“面试依据”，PROBE/CLARIFICATION 分别显示“为什么继续追问/为什么需要澄清”与对应方向。完成态只说明尚未生成正式报告，不新增评分、报告或控制入口。
+- 锁定 Node 24.21.0 / pnpm 10.34.5 下前端 **10 passed**，TypeScript + Vite production build **112 modules**；实际 Vite 页面以 intercepted fixture response 检查 1366×768、1440×900、1920×1080、390×844，无横向溢出。业务模型调用 0，token/cost 为 null。
+
 ## Unreleased — 2026-09-19｜M3-03 前端契约与语义漂移修正
 
 - 以当前后端 `CapacityLimitedError` 和 routes 为真值，把前端及 UI Contract 的错误码从不存在的 `OPERATION_CAPACITY_LIMITED` 统一为 `CAPACITY_LIMITED`；429 仍是 `retryable=true`，回答请求失败不会被当作提交成功。

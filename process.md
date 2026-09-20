@@ -780,3 +780,22 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 版本落盘：前端修复 commit `25fcddef0dae4157898ff2a898e9bc783854666f`；规范交接与完整性清单由包含本节的后续 docs commit 落盘。
 - 两次结构化编辑分别残留旧 `else` 和旧 JSX `);`，Edit 解析警告均立即定位；重读局部并修正后，10 项测试、production build 和浏览器 smoke 全部通过，没有放宽断言或增加兜底。
 - 审计范围内未发现第五处仍未解决的 UI/API 漂移。M4 API、评分/报告、跨标签页失败 operation 恢复等既有边界不属于本轮，也未增加假入口。
+
+## 35. 2026-09-19T17:38:37-07:00—2026-09-19T17:57:40-07:00｜M3-03 三页 Product Polish（VERIFIED）
+
+- 授权：负责人要求在当前 `main` 已 VERIFIED 的三页前端上做纯 UI / Product Polish，并明确冻结 FastAPI、OpenAPI、`api.md`、数据库 Schema、Interview Policy、Answer Workflow、Operation/SSE、retry 状态机、路由与三页业务流程。
+- 开工基线：`8a58d1ac872f9e6c23baa2ea0e203d254870c0c9`，工作区 `main...origin/main` 干净。M3-03 业务链继续保持 VERIFIED；本轮不新增 Report、评分、雷达图、简历优化、历史记录、岗位市场、登录、Skip 或 End Control。
+- 输入与输出：只消费现有 Profile/Document/Interview/Operation 响应；输出限于品牌、视觉 Token、信息层级、中文展示文案、Requirement 前端聚合/折叠和响应式样式。Requirement tier 数量只由 `InterviewView.jd_requirements` 派生，不构造业务事实。
+- 允许修改：`apps/web` 展示层、`docs/08-ux.md`、`docs/ui-contract.md`、测试记录、README、CHANGELOG、process、handoff 与完整性清单。后端、契约、迁移和依赖不在修改范围。
+- 计划验收：保持现有 10 项 contract tests 全通过，production build 通过；真实浏览器检查 1366×768、1440×900、1920×1080、390×844，并覆盖 `/start` 初始态、Prepare 计划完成态、Interview 主问题与 PROBE/CLARIFY 态。
+- 回滚：以本节开工基线按文件恢复，不使用 reset、stash 或覆盖用户修改。完成本轮后冻结 M3-03 视觉，等待 M4 Report 后端完成。
+
+- 实际交付：Header 品牌图形由“知”统一为“职”，品牌显示“职觉 ZhiJue / AI 面试陪练”，步骤和模块 Eyebrow 全部中文化；普通业务卡片阴影归零，问题卡仅保留 `0 6px 18px rgba(32, 48, 74, 0.04)`，主卡片/问题卡 12px、Input/Button 9px、Tag 6px，并补 Linux 中文字体回退。
+- `/start` 初始态继续居中；上传完成后的 Document、Claim 确认和资料就绪改为左对齐低密度信息层级，候选原文与资料版本默认折叠。没有生成额外 Claim，也没有改 Profile/Document 门槛。
+- Prepare 岗位摘要从真实 `jd_requirements` 派生 required/preferred/responsibility/contextual 四类数量；完整 N 条 Requirement 使用原生 `details/summary` 默认折叠。主 CTA 调整到计划摘要后，使 1366×768 首屏可见；Coverage/Plan 仍双栏，五题主问题与后续动态 Policy 的既有真实文案未改。
+- Interview 保持约 65%:35% 双栏与深蓝 Question Card。MAIN 右栏为“面试依据”；PROBE/CLARIFICATION 分别为“为什么继续追问/追问方向”和“为什么需要澄清/澄清方向”，仅消费现有 `question.kind`、`root_results`、`reason_summary`、`followup_intent`。完成态只显示“当前版本尚未生成正式面试报告”。
+- 锁定 Node 24.21.0 / pnpm 10.34.5：`pnpm test` **10/10 passed**、`pnpm build` exit 0、TypeScript + Vite **112 modules**。首次命令因 `corepack` 不在默认 PATH 而 exit 127；定位仓库 `toolchain/node24/bin` 后完成最终锁定环境验证，没有修改代码绕过。
+- 实际 Chromium + Vite intercepted fixture response 检查：1366×768 Prepare、1440×900 Start/PROBE、1920×1080 MAIN、390×844 Start/CLARIFY 均无横向溢出；390px 顺序为 Question→Answer→Context，按钮与 Textarea 宽度 274/324px 可操作。证据位于 ignored 的 `runtime/evidence/m3-03-product-polish/`，不冒充 FastAPI/openJiuwen/model live。
+- 规范校验 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**；`CHECKSUMS.sha256` **204/204** 一致。本轮业务模型调用 0，provider/model/token/cost 均为 null；后端全量 247 passed / 2 skipped 为 M3-03 既有基线，本轮因后端/API/OpenAPI 0 变化未重跑。
+- 后端、OpenAPI、`api.md`、数据库、迁移、依赖、三页路由、Policy、Answer Workflow、Operation/SSE、retry 状态机和业务流程均为 0 变化。M3-03 视觉从本节起冻结，唯一下一任务是等待 M4 Report 后端完成后评审第四页。
+- 交接：`docs/handoffs/2026-09-19-m3-03-product-polish.md`。版本尚未提交；由负责人决定 commit/push 时点。

@@ -16,21 +16,28 @@ export function DecisionPanel({
   question: QuestionView;
 }) {
   const decision = latestDecision(interview, question);
+  const isClarification = question.kind === "clarification";
+  const reasonTitle = isClarification ? "为什么需要澄清" : "为什么继续追问";
+  const directionTitle = isClarification ? "澄清方向" : "追问方向";
   return (
     <aside className="context-panel decision-panel" aria-labelledby="decision-title">
-      <p className="eyebrow">Decision Summary</p>
-      <h2 id="decision-title">为什么继续追问</h2>
+      <p className="eyebrow">本题分析</p>
+      <h2 id="decision-title">{reasonTitle}</h2>
       {decision ? (
-        <>
-          <Tag className="status-tag--warn">{actionText[decision.action]}</Tag>
-          <p className="decision-reason">{decision.reason_summary}</p>
-          <dl className="context-list">
-            <div>
-              <dt>本轮意图</dt>
-              <dd>{followupIntentText(decision.target?.followup_intent)}</dd>
-            </div>
-          </dl>
-        </>
+        <dl className="context-list decision-list">
+          <div>
+            <dt>当前动作</dt>
+            <dd><Tag className="status-tag--warn">{actionText[decision.action]}</Tag></dd>
+          </div>
+          <div>
+            <dt>原因</dt>
+            <dd>{decision.reason_summary}</dd>
+          </div>
+          <div>
+            <dt>{directionTitle}</dt>
+            <dd>{followupIntentText(decision.target?.followup_intent)}</dd>
+          </div>
+        </dl>
       ) : (
         <p className="empty-state">服务端尚未返回本题的结构化决策摘要。</p>
       )}

@@ -1,4 +1,4 @@
-const STEPS = ["导入资料", "准备面试", "模拟面试"];
+const STEPS = ["资料", "准备", "面试"];
 
 export function StepProgress({ current }: { current: 1 | 2 | 3 }) {
   return (

@@ -19,7 +19,7 @@ export function JDInput({
     const name = jobName.trim();
     const text = jdText.trim();
     if (!name || !text) {
-      setValidation("请填写岗位名称与 JD 正文，或明确选择演示 JD。欠缺输入不会被自动补成真实岗位。");
+      setValidation("请填写岗位名称与岗位描述正文，或明确选择演示岗位配置。欠缺输入不会被自动补成真实岗位。");
       return;
     }
     setValidation(null);
@@ -43,7 +43,7 @@ export function JDInput({
         />
       </label>
       <label className="field-label">
-        JD 正文
+        岗位描述正文
         <Textarea
           modelValue={jdText}
           onUpdateModelValue={setJdText}
@@ -66,7 +66,7 @@ export function JDInput({
             onGenerate({});
           }}
         >
-          使用演示 JD
+          使用演示岗位配置
         </Button>
       </div>
       {validation ? <p className="field-error" role="alert">{validation}</p> : null}

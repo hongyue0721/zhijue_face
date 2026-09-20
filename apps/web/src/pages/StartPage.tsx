@@ -150,11 +150,11 @@ export function StartPage({
   };
 
   return (
-    <main className="page-container start-page">
-      <div className="page-intro centered-intro">
-        <p className="eyebrow">Step 1 · Profile</p>
-        <h1>先导入你的资料</h1>
-        <p>系统只使用真实接口返回的文档、候选事实与确认快照，不会在浏览器里生成假分析。</p>
+    <main className={`page-container start-page ${profile ? "start-page--progress" : "start-page--initial"}`}>
+      <div className={`page-intro ${profile ? "" : "centered-intro"}`}>
+        <p className="eyebrow">资料导入</p>
+        <h1>准备你的面试资料</h1>
+        <p>上传简历，让系统建立本场面试使用的候选人资料。</p>
       </div>
       <ErrorNotice error={error ?? operationError} onReload={profileId ? () => void reloadProfile() : undefined} />
       {!document && !operationActive ? (

@@ -288,6 +288,8 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | 响应式 | 390×844、768×900、1366×768、1440×900、1440×1000、1920×1080 六组均满足 `bodyScrollWidth == innerWidth`；视觉截图已检查，长页纵向滚动、无横向溢出 | `runtime/evidence/m3-03/ui-*.png` |
 | 前端回归 | Vitest 10/10：原 7 项边界继续通过；新增 429 `CAPACITY_LIMITED` rejection/retry 分类、四类 JD source 展示、counterfactual/pushback/reflection 独立映射与未知 fallback | `apps/web/tests/contracts.test.ts` |
 | 生产构建 | 锁定 Node 24 / pnpm 10.34.5：TypeScript `--noEmit` + Vite build，112 modules | 本轮命令输出 |
+| Product Polish 回归 | 锁定 Node 24.21.0 / pnpm 10.34.5：Vitest 10/10；TypeScript `--noEmit` + Vite build，112 modules | 本轮命令输出 |
+| Product Polish 视觉 | 实际 Vite UI + intercepted fixture response：1366×768 Prepare 主 CTA 首屏可见、17 条 Requirement 默认折叠且可展开；1440×900 Start/PROBE；1920×1080 MAIN；390×844 Start/CLARIFY 均无横向溢出，移动端顺序为问题→回答→上下文 | `runtime/evidence/m3-03-product-polish/`（ignored，不代表后端或模型 live） |
 | 后端全量 | Python 3.11：247 passed / 2 skipped / 0 failed / 54 warnings | 本轮命令输出 |
 
 当前明确未证明：外部业务文本模型 live、真实模型 429/超时/效果/延迟/费用、跨新标签页恢复失败 operation ID、评分与报告。T23 的本轮前端证据覆盖“事件流不可用时靠 Operation polling 收敛”，不等于所有代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合都完成浏览器验收。

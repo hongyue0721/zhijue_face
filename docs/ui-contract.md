@@ -28,7 +28,7 @@
 | 用户 JD | `POST /api/v1/interviews` | `jd_text`、`jd_source_name` | 客户端不传 `source_type`；不把用户 JD 标成演示数据 |
 | 演示 JD | `POST /api/v1/interviews` | 省略 `jd_text`、`jd_source_name` | 来源必须由响应 `jd_source.source_type=synthetic_demo_jd` 证明 |
 | JD 来源 | `InterviewView.jd_source` | 只按 `source_type` 映射：`synthetic_demo_jd`→演示岗位配置、`user_provided`→用户提供岗位描述、`official_posting`→官方公开岗位、`real_jd_derived`→公开岗位衍生材料 | 不用按钮文案或 `source_name` 推断、升级来源可信度 |
-| 岗位要求 | `InterviewView.jd_requirements` | `tier/statement/source_span` | 主界面不显示内部 requirement ID |
+| 岗位要求 | `InterviewView.jd_requirements` | `tier/statement/source_span`；主摘要只按 `tier` 派生四类数量，完整 N 条默认折叠并可展开 | 不改写 requirement；主界面不显示内部 ID；聚合数量不构成新业务事实 |
 | Coverage Map | `InterviewView.coverage_map` | `status/relation/requirement_ids/evidence_ids` | `unknown` 必须解释为“材料未体现 ≠ 不会” |
 | 五题计划 | `InterviewView.root_plan.slots` | 五个真实 slot；主界面展示关联 requirement 文本与验证状态 | 不提前生成或展示具体题目；不按 `competency_id` 猜展示名称 |
 | 技术明细 | `InterviewView.root_plan`、`limitations` | `competency/priority/reason_code/seed_id/version` | 默认折叠；不得与主流程视觉竞争 |
@@ -37,7 +37,7 @@
 | 主问题进度 | `root_plan.slots.length` + `current_question.order_index` | 当前主问题位置 | probe/clarification 不增加主问题总数 |
 | 作答提交 | `POST /api/v1/interviews/{id}/answers` | `expected_revision/question_id/client_turn_id/answer_text`、`Idempotency-Key` | 一次点击创建一组标识；同一次网络重试复用原值 |
 | 已保存回答 | `current_question.accepted_answer` | `raw_text/evaluation_status` | 202 只表示接收；处理结果仍以 Operation + GET Interview 为准 |
-| 追问/澄清 | `current_question.kind`、`root_results` | `wording/action/reason_summary/target.followup_intent`；`counterfactual`→条件变化下的调整、`pushback`→回应反例或限制条件、`reflection`→复盘与经验总结 | `pushback` 不等于 `counterfactual`；未知 intent 使用用户可读 fallback，不暴露内部枚举；不展示模型私有推理 |
+| 追问/澄清 | `current_question.kind`、`root_results` | `probe` 显示“为什么继续追问 / 追问方向”，`clarification` 显示“为什么需要澄清 / 澄清方向”；内容只读取 `action/reason_summary/target.followup_intent`；`counterfactual`→条件变化下的调整、`pushback`→回应反例或限制条件、`reflection`→复盘与经验总结 | `pushback` 不等于 `counterfactual`；未知 intent 使用用户可读 fallback，不暴露内部枚举或模型私有推理 |
 | 分析重试 | `POST /api/v1/operations/{operation_id}/retry` | 失败 operation ID、最新 `expected_revision` | 不重新 POST answer，不新建 Answer |
 | 面试完成 | `InterviewView.status/current_question` | finishing/completed 且无 current question | 当前无 report GET，禁止展示评分、雷达图、报告或反馈结论 |
 
