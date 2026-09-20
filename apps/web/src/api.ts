@@ -222,6 +222,7 @@ export interface InterviewView {
     | "finish_failed"
     | "completed";
   run_mode: string;
+  profile_id: string;
   profile_snapshot_id: string;
   jd_requirements: JDRequirementView[];
   jd_source: JDSourceView;
@@ -267,6 +268,26 @@ export interface RootAssessmentView {
   answer_ids: string[];
 }
 
+export type ImprovementSourceRef =
+  | { type: "answer_quote"; answer_id: string; exact_quote: string }
+  | { type: "claim"; claim_id: string };
+
+export interface ImprovedAnswerView {
+  root_question_id: string;
+  original_answers: Array<{
+    answer_id: string;
+    question_id: string;
+    question_kind: "main" | "probe" | "clarification";
+    raw_text: string;
+  }>;
+  rewritten_answer: string;
+  segments: Array<{ text: string; source_refs: ImprovementSourceRef[] }>;
+  used_claim_ids: string[];
+  changes: string[];
+  missing_facts: Array<{ prompt: string; reason: string }>;
+  cautions: string[];
+}
+
 export interface ReportView {
   id: string;
   revision: number;
@@ -286,7 +307,9 @@ export interface ReportView {
     overall_eligible: boolean;
   };
   root_assessments: RootAssessmentView[];
-  improved_answers: unknown[];
+  improvements_status: "not_requested" | "generating" | "ready" | "failed";
+  active_operation_id: string | null;
+  improved_answers: ImprovedAnswerView[];
   limitations: unknown[];
   run_metadata: {
     run_mode: string;
@@ -297,7 +320,54 @@ export interface ReportView {
     model_fingerprint: string | null;
     sdk_version: string | null;
     scoring_version: string;
+    content_generation?: {
+      workflow: string;
+      workflow_version: string;
+      prompt_version: string;
+      usage: Record<string, number | null>;
+    };
   };
+}
+
+export interface ResumeItemView {
+  item_id: string;
+  text: string;
+  claim_ids: string[];
+}
+
+export interface ResumeSectionView {
+  section_id: "summary" | "education" | "projects" | "skills" | "awards" | "other";
+  title: string;
+  items: ResumeItemView[];
+}
+
+export interface ResumeDraftView {
+  id: string;
+  revision: number;
+  profile_id: string;
+  profile_snapshot_id: string;
+  interview_id: string | null;
+  status: "generating" | "generation_failed" | "draft" | "accepted";
+  sections: ResumeSectionView[];
+  source_claims: Array<{ id: string; text: string }>;
+  source_claim_ids: string[];
+  changes: Array<{
+    item_id: string;
+    before: string;
+    after: string;
+    claim_ids: string[];
+    reason: string;
+  }>;
+  missing_facts: Array<{ prompt: string; reason: string }>;
+  cautions: string[];
+  target_context: {
+    kind: "interview" | "jd_text" | "generic";
+    interview_id?: string;
+    source_name?: string;
+    content_hash?: string;
+  };
+  active_operation_id: string | null;
+  run_metadata: Record<string, unknown>;
 }
 
 export interface CreateInterviewOptions {
@@ -507,6 +577,42 @@ export const api = {
 
   getReport: (interviewId: string, signal?: AbortSignal) =>
     request<ReportView>(`/interviews/${interviewId}/report`, { signal }),
+
+  generateReportImprovements: (
+    interviewId: string,
+    expectedRevision: number,
+    idempotencyKey: string,
+  ) =>
+    request<OperationAccepted>(`/interviews/${interviewId}/report/improvements`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    }),
+
+  createResumeDraft: (
+    profileId: string,
+    input: {
+      expected_revision: number;
+      profile_snapshot_id: string;
+      interview_id?: string;
+      jd_text?: string;
+    },
+    idempotencyKey: string,
+  ) =>
+    request<OperationAccepted>(`/profiles/${profileId}/resume-drafts`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(input),
+    }),
+
+  getResumeDraft: (draftId: string, signal?: AbortSignal) =>
+    request<ResumeDraftView>(`/resume-drafts/${draftId}`, { signal }),
+
+  acceptResumeDraft: (draftId: string, expectedRevision: number) =>
+    request<ResumeDraftView>(`/resume-drafts/${draftId}/accept`, {
+      method: "POST",
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    }),
 
   retryOperation: (operationId: string, expectedRevision: number, idempotencyKey: string) =>
     request<OperationAccepted>(`/operations/${operationId}/retry`, {

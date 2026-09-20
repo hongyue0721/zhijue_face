@@ -69,11 +69,11 @@
 
 ## 8. 优化回答的硬约束
 
-P-COACH 输出：`rewritten_answer`、`used_claim_ids`、`changes`、`missing_facts`、`cautions`。不存在的测量、团队规模、公司、奖项、库版本不得写进 rewritten_answer。
+P-COACH 输出按 `contracts/coaching-result.schema.json` 固定为根题数组：每项含 `rewritten_answer`、逐段 `segments[].source_refs`、`used_claim_ids`、`changes`、`missing_facts` 和 `cautions`。source ref 只能是本场允许的 `answer_id + exact_quote` 或当前不可变资料快照 Claim；不存在的测量、团队规模、公司、奖项、库版本不得写进正文。
 
-可将“我们做的”改成“团队采用了……，我负责的部分需要补充”，但不能擅自改成“我主导……”。对缺失数据优先给“建议补充测量口径”的单独说明，不在可复制的最终答案塞假数字。
+P-RESUME 输出按 `contracts/resume-draft-result.schema.json` 固定为 section/item：每个正文 item 至少绑定一个当前快照允许 Claim，并单列 reason、missing facts 和 cautions。岗位信息只影响排序和措辞，不成为候选人经历来源。
 
-模板占位符可用于草稿，但导出前必须高亮并要求填写/删除。系统不替用户把占位符猜完。不将生成的官方技术解释包装为用户过去做过的实践。
+服务端不能只相信模型声明的 ID：回答引文必须是对应原回答的逐字子串，Claim 必须属于冻结快照；候选文本若新增输入不存在的数字、把“参与/协助/团队”升级为“主导/负责/独立”，或包含未确认占位符，则整个候选拒绝且不落部分结果。缺失数据只进入提示区，不混进可复制答案或可打印简历正文。
 
 ## 9. 面试与教学的区分
 
@@ -98,8 +98,9 @@ P0 正式回答前不给答案提示；默认面试结束后统一反馈。P1 �
 | prepare_interview | JD 解析 1 次 + 五个固定 slot 批量语言化 1 次 | 无 JD 时可用预置省一次；不得逐题循环调用五次后还称最多三次 |
 | handle_answer 主回答 | Observation 1 次；若需 PROBE，程序按已校验 criterion 与冻结 Rubric 确定性生成下一问 | NEXT 的主题已经在计划中；PROBE 不再额外调用模型自由改写，避免增加预算和引入虚假前提 |
 | handle_answer 补充回答 | 当前补充回答的 Observation 1 次 | 保留主答与补充答各自的 Observation；本轮不继续追问，M4 根题评价再合并两轮有效证据 |
-| finish_interview | 汇总/优化已回答根题的批量输出 1 次 | 数字由代码先计算；模型只能写建议，不重新给分 |
-| compose_resume | 受约束文案生成 1 次 | 同时返回事实映射、修改说明和缺失项 |
+| finish_interview | 0 次 | Assessment/Report 全部由冻结 Rubric 与 validated Observation 确定性计算，不让模型重新给分 |
+| report_coaching | 已回答根题批量优化 1 次 | 分数先由代码固定；模型只改表达，服务端逐段校验回答引文/Claim 来源 |
+| compose_resume | 受约束文案生成 1 次 | 每个正文条目绑定确认 Claim；事实映射、修改说明和缺失项分开返回 |
 
 剩余次数才用于网络重试或一次格式修复。会话 token 总预算还要跨 operation 累计；返回 usage 缺失时保守计入已发送估算 token 和最大输出预算，并标明 estimate，不能按 0 消耗放行。
 

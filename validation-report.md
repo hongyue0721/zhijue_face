@@ -2,7 +2,7 @@
 
 校验性质：规范资产检查，不是业务软件验收。
 
-结果：**44/44 项通过；0 项失败。**
+结果：**46/46 项通过；0 项失败。**
 
 实际命令：`python tools/validate_spec.py`
 
@@ -13,17 +13,19 @@
 | 检查 | 结果 | 说明 |
 |---|---|---|
 | 关键文件存在 | PASS | 11 项存在 |
-| UTF-8 与 LF | PASS | 165 文件检查通过 |
-| Markdown 本地链接 | PASS | 25 条路径存在 |
+| UTF-8 与 LF | PASS | 174 文件检查通过 |
+| Markdown 本地链接 | PASS | 26 条路径存在 |
 | 来源编号 | PASS | 引用 14 种；登记 30 种；未登记 [] |
 | 需求和测试编号 | PASS | 需求 19，测试 34；未知 [] |
 | 任务依赖无悬空/环 | PASS | 18 个任务，无环 |
 | 任务状态与证据一致 | PASS | 18 个任务状态合法且完成项均带产物说明 |
 | Schema: claim.schema.json | PASS | Draft 2020-12 结构合法 |
+| Schema: coaching-result.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: interview-slot.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: observation.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: operation-event.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: policy-decision.schema.json | PASS | Draft 2020-12 结构合法 |
+| Schema: resume-draft-result.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: seed.schema.json | PASS | Draft 2020-12 结构合法 |
 | 示例: seed_project_ownership.json | PASS | 结构通过；不是业务实测结果 |
 | 示例: seed_measurement_scope.json | PASS | 结构通过；不是业务实测结果 |

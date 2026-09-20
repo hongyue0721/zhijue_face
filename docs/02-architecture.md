@@ -122,7 +122,7 @@ zhijue-demo/
 
 `Policy.decide(context, observation) → PolicyDecision`
 
-`WorkflowPort.prepare/answer/finish(command) → WorkflowResult`
+`WorkflowPort.prepare/answer/finish/coach/compose_resume(command) → WorkflowResult`
 
 端口返回结构必须带 schema_version。所有 side effect 由 Application Service 控制，不在纯 Policy 内写状态。
 
@@ -134,11 +134,13 @@ zhijue-demo/
 
 进程重启时，queued 与 running 都转为 interrupted：两者依赖的 `BackgroundTasks` callable 都没有持久化，不能把 queued 假装成可安全自动重放。已保存 Answer 继续保留；answer/control 的可重试 operation 通过 parent-linked retry 恢复，其他命令由客户端重新发起新命令。不能承诺框架原生断点跨重启恢复，除非已经实测。
 
-**M3/M4 后端实况（2026-09-19）**：`handle_answer` 使用项目锁定的 openJiuwen Workflow 真实执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`；不是本地同名替代。OpenAI-compatible 模型适配只读取显式指定、权限不宽于 0600 的私密 env 文件，最多三次总 transport attempt；`deepseek-flash` 已完成一次通过的 synthetic 业务分析。业务 Observation 在进入纯规则 Policy 前必须通过冻结 Rubric、ID、精确引文和 reference 语义校验。
+**M3/M4 后端实况（2026-09-19）**：`handle_answer` 使用项目锁定的 openJiuwen Workflow 真实执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`；`report.coach` 与 `resume.compose` 真实执行 `Start → Generator → SemanticValidation → End`。它们都不是本地同名替代。OpenAI-compatible 适配器只读取显式指定、权限不宽于 0600 的私密 env 文件并共享有限重试预算；`deepseek-flash` 已完成一次 Answer Analyzer synthetic 业务分析，但 M4-02 内容生成生产 live 尚未运行。
 
-Answer、Operation 与 Interview 受理状态原子落 SQLite；成功 Observation/Decision/下一题和 durable event 再作短事务提交。M4 的 `ReportingService` 只消费已持久化的冻结 Rubric 与 validated Observation：主答/追问按 criterion 合并，程序计算 coverage/score，在同一事务写每根 Assessment、唯一 Report、`report.ready` 和 completed 状态；读取报告不调用模型。skip/end 使用同一串行 runner，end 可在回答 operation 进行中先记录 `stop_requested`，等待回答安全释放后汇总。
+Answer、Operation 与 Interview 受理状态原子落 SQLite；成功 Observation/Decision/下一题和 durable event 再作短事务提交。`ReportingService` 只消费已持久化的冻结 Rubric 与 validated Observation：主答/追问按 criterion 合并，程序计算 coverage/score，在同一事务写每根 Assessment、唯一 Report、`report.ready` 和 completed；读取报告不调用模型。skip/end 使用同一串行 runner，end 可在回答 operation 进行中先记录 `stop_requested`，等待回答安全释放后汇总。
 
-运行中崩溃转 interrupted，retry 新建父子操作且复用 Answer 原文；若模型分析已成功而报告落库失败，retry 只重跑确定性汇总，不再次调用 Analyzer。SDK INFO 级输入/输出日志和 SDK 文件 sink 在业务应用中关闭，避免私人回答进入日志。实现仍是单进程 `BackgroundTasks` + 有界串行 runner，不宣称分布式队列或 exactly-once 上游计费。
+`ContentGenerationService` 是回答优化和简历草稿的唯一写入方：短事务受理 Operation，事务外执行 Workflow，确定性验证模型候选后再短事务提交。回答改写绑定本场逐字引文或当前快照 Claim；简历正文逐项绑定当前不可变快照 Claim，岗位材料只影响排序和表达。失败不修改原回答、评分、Claim 或资料快照；retry 复用同一资源/输入，成功写 `coaching.ready` 或 `resume_draft.ready`。
+
+运行中崩溃转 interrupted，retry 新建父子 Operation；回答链复用 Answer 原文，报告落库失败只重跑确定性汇总，内容生成链复用已持久化资源与冻结输入。SDK INFO 级输入/输出日志和 SDK 文件 sink 在业务应用中关闭，避免私人回答进入日志。实现仍是单进程 `BackgroundTasks` + 有界串行 runner，不宣称分布式队列、跨进程自动重放或 exactly-once 上游计费。
 
 ## 8. 国产操作系统的边界
 

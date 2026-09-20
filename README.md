@@ -1,11 +1,11 @@
 # 职觉 ZhiJue｜Demo 工程规划与 AI 施工规范
 
-**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3 全部 VERIFIED；M4-01 评分与报告后端 VERIFIED；三页 P0 前端 FROZEN；M4-02 未开始。**
+**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-19 · 状态：M3 全部 VERIFIED；M4-01 VERIFIED；M4-02 功能基线 IMPLEMENTED，等待独立验收与新页面 Product Polish。**
 
-这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答的三页 React 前端。M3-03 前三页视觉已冻结；M3-01 已用 `deepseek-flash` 完成一次真实 synthetic 回答分析。M4-01 已由程序按冻结 Rubric 合并主答/追问、计算 coverage/score，并持久化唯一 Assessment/Report；Report UI、回答优化与简历草稿仍未实现，也尚未部署。所有性能、准确率和兼容性结论只以运行证据为准。
+这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答→评分报告→回答优化→简历草稿的 React 纵切面。M3-03 前三页视觉继续冻结；M4-02 已实现受事实约束的生成 Workflow、Operation/恢复、Report/Resume 两个功能页面和确认后打印，不把 fixture 输出冒充真实模型效果。生产内容生成模型 live、独立验收和两个新页面的视觉精修仍未完成，也尚未部署。
 
 
-## 当前工程快照（2026-09-19，M4-01 后端完成后）
+## 当前工程快照（2026-09-19，M4-02 功能基线完成后）
 
 - `M0-02`：真实 openJiuwen Workflow/WorkflowAgent smoke 已实现并完成本地回归，状态 `IMPLEMENTED`；额外官方 Base Agent/starter 要求仍 `BLOCKED / UNCONFIRMED`。
 - `M0-03 / M0-03-DEL`：真实 Knowledge 四进程生命周期 `VERIFIED`，覆盖解析、入库、检索、provenance、重启、删除和删除后重启零命中。项目临时锁定到基于 openJiuwen v0.1.18 和官方 PR #1344 的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；不得描述成官方新发布版。
@@ -18,11 +18,12 @@
 - `M3-01`：approved Seed 首题实例化、真实 openJiuwen handle-answer Workflow、真实 `deepseek-flash` Answer Analyzer、Observation 语义校验和确定性 Policy 已闭环。首轮 live 暴露 Prompt 未明确 `finding` 枚举；收紧输出契约并把 SDK 组件异常改为不携带模型文本的固定错误后，第二轮 1 次 HTTP 调用通过，状态 `VERIFIED`。
 - `M3-02`：Answer/Operation 原子受理、并发单写入、幂等重放、durable event、失败保留、累计三次 retry 与重启 interrupted 恢复已按本地后端范围 `VERIFIED`。
 - `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页 P0 前端与纯 UI Product Polish 已完成；JD 输入已与后端 8,000 / 200 字符上限对齐，Prepare 冻结顺序为岗位摘要→Coverage/五题 Plan→开始动作→技术详情。真实 fixture 纵切面仍覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、answer 网络重试幂等、SSE 阻断后 polling 收敛，状态 `VERIFIED / FROZEN`。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
-- `M4-01`：新增确定性根题评分、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、Assessment/Report 唯一约束和 `report.ready`。未测/跳过/覆盖不足/冲突均保持 null；至少三根 scored 才给总分。自然五题、主答+追问合并、skip/end、回答中 end、报告失败后无模型重调 retry 均通过；状态 `VERIFIED`。本轮没有付费模型或 embedding 调用，Report UI 仍 `NOT_RUN`。
-- 当前全量回归：后端 261 passed / 2 skipped / 0 failed / 63 warnings；前端在锁定 Node 24.21.0 / pnpm 10.34.5 下 11 passed、生产构建 112 modules；规范校验 44/44；Ruff 全绿；doctor 18 PASS / 0 WARN / 0 FAIL；完整性清单 211/211。
+- `M4-01`：新增确定性根题评分、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、Assessment/Report 唯一约束和 `report.ready`。未测/跳过/覆盖不足/冲突均保持 null；至少三根 scored 才给总分。自然五题、主答+追问合并、skip/end、回答中 end、报告失败后无模型重调 retry 均通过；状态 `VERIFIED`。M4-01 当时不含 Report UI，现已由 M4-02 功能基线接入。
+- `M4-02`：新增 `report.coach` 与 `resume.compose` 两条真实 openJiuwen Workflow 编排、确定性来源校验、Report 改写状态和 ResumeDraft 持久化/迁移/事件/retry；改写片段必须绑定本场逐字回答或确认 Claim，简历正文逐项绑定当前不可变快照 Claim，数字、责任升级和占位符越界会被拒绝。`/interviews/:interview_id/report` 与 `/resume-drafts/:draft_id` 已完成 API 驱动的功能基线，确认前不可打印；状态保守记为 `IMPLEMENTED`，生产模型 live、独立验收与新页面 Product Polish 仍 `NOT_RUN`。
+- 当前全量回归：后端 272 passed / 2 skipped / 0 failed / 73 warnings；前端在锁定 Node 24.21.0 下 12/12 passed、TypeScript 通过、生产构建 114 modules；规范校验 46/46；Ruff 全绿；doctor 18 PASS / 0 WARN / 0 FAIL；完整性清单 222/222。
 - 模型实测：BGE-M3 embedding 已 live；`deepseek-flash` 在 `api.deepseek.com` 的真实业务 Workflow 成功 1 次，耗时 10.650749 秒，usage 为 input 1156 / output 2544 / total 3700。此前同轮首个请求因输出契约不充分在服务端语义校验失败；该次 usage 未穿过失败边界，保持 NOT_MEASURED。两次调用的费用均为 null / NOT_MEASURED，不估造价格。
 
-当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M4-01 handoff](docs/handoffs/2026-09-19-m4-01.md)，业务模型 live 见 [M3-01 handoff](docs/handoffs/2026-09-19-m3-01-live.md)，前三页冻结记录见 [M3-03 Product Polish handoff](docs/handoffs/2026-09-19-m3-03-product-polish.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
+当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M4-02 handoff](docs/handoffs/2026-09-19-m4-02.md)，评分基线见 [M4-01 handoff](docs/handoffs/2026-09-19-m4-01.md)，业务模型 live 见 [M3-01 handoff](docs/handoffs/2026-09-19-m3-01-live.md)，前三页冻结记录见 [M3-03 Product Polish handoff](docs/handoffs/2026-09-19-m3-03-product-polish.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
 
 ## 项目一句话
 
@@ -98,4 +99,4 @@ MUST＝必须执行；SHOULD＝默认执行，偏离要记录原因；MAY＝可�
 
 `PLANNED / IN_PROGRESS / BLOCKED / IMPLEMENTED / VERIFIED / ACCEPTED` 是六种不同状态。写出了代码只能叫 IMPLEMENTED，必须有测试记录才叫 VERIFIED，负责人确认后才叫 ACCEPTED。
 
-文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划与 M3 回答链，以及 M4-01 control、确定性评分和报告 API；`apps/web` 已实现资料导入确认、岗位准备和五题模拟面试三页。Report UI、回答优化与简历整理属于后续 M4-02/M5 集成工作，不在冻结三页里伪造。
+文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划、M3 回答链、M4-01 确定性评分，以及 M4-02 回答优化/简历草稿 Workflow 与 API；`apps/web` 已实现资料导入确认、岗位准备、五题模拟面试、报告和简历草稿页面。前三页保持冻结，两个新页面当前是已验证功能基线，下一轮才做 Product Polish。

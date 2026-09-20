@@ -23,6 +23,8 @@
         "policy.decided",
         "question.ready",
         "report.ready",
+        "coaching.ready",
+        "resume_draft.ready",
         "operation.completed",
         "operation.failed",
         "operation.interrupted"
@@ -246,6 +248,68 @@
             "required": [
               "report_id",
               "interview_revision"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "coaching.ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "report_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+              },
+              "report_revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "report_id",
+              "report_revision"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "resume_draft.ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "resume_draft_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+              },
+              "resume_draft_revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "resume_draft_id",
+              "resume_draft_revision"
             ]
           }
         }

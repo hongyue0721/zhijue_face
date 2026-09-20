@@ -1,5 +1,15 @@
 # CHANGELOG
 
+
+## Unreleased — 2026-09-19｜M4-02 事实约束生成与 Report/Resume 功能基线 IMPLEMENTED
+
+- API-first 新增显式 `report.coach` / `resume.compose` Operation、Report 改写生命周期、ResumeDraft 生成/读取/确认、两个 ready 事件和 parent-linked retry；`InterviewView` 返回 `profile_id`，浏览器不猜资源关系。
+- 回答优化与简历生成均通过真实 openJiuwen `Start → Generator → SemanticValidation → End`。服务端在落库前校验 JSON Schema、允许 ID、逐字回答引文、Claim 绑定、数字/责任边界和占位符；失败保留原回答、分数、Claim 与资料快照。
+- 统一回答分析与内容生成的重试预算：单个 Operation 只发一次模型 HTTP 请求，transport/Schema/语义失败和用户显式 retry 共同消耗 `MODEL_MAX_RETRIES + 1`（硬上限三次）；补充累计预算耗尽回归，避免“每个业务重试再做三次 transport retry”放大为九次调用。
+- 新迁移 `b4d7c2e91f30` 持久化 Report 改写状态及 ResumeDraft，并防止同一快照/目标重复草稿。OpenAPI、Python DTO、前端网络类型与 API 客户端同步。
+- 新增 `/interviews/:interview_id/report` 与 `/resume-drafts/:draft_id` 功能页面：null 分数保持未评分；改写显示原文、来源和待补事实；简历逐项展示 Claim 来源，确认前不可打印，打印媒体只包含已确认正文。M3-03 前三页视觉未改，两个新页面尚未 Product Polish。
+- 后端 272 passed / 2 skipped / 73 warnings，Ruff 全绿；锁定 Node 24 下前端 12/12、TypeScript 和 Vite 114 modules 通过；规范 46/46、doctor 18/0/0、完整性 222/222。fixture Chromium 最终复验跑通报告原文→回答优化→简历 Claim 来源→确认→打印媒体。本轮外部模型/embedding 调用 0，usage/cost null；生产内容模型 live 与独立验收 NOT_RUN，故状态为 IMPLEMENTED。
+
 ## Unreleased — 2026-09-19｜M4-01 评分与报告 VERIFIED
 
 - `api.md` 先行落地 `POST /interviews/{id}/control` 与 `GET /interviews/{id}/report`：skip/end 通过 Operation 串行执行，重复 end 返回同一操作；报告读取只返回持久化结果，不触发模型。

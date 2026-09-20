@@ -154,7 +154,14 @@ class ServiceUnavailableError(DomainError):
 class UpstreamError(DomainError):
     """上游服务异常或超时。"""
 
-    def __init__(self, message: str, *, timeout: bool = False) -> None:
+    def __init__(
+        self, message: str, *, timeout: bool = False, retryable: bool = True
+    ) -> None:
         code = "UPSTREAM_TIMEOUT" if timeout else "UPSTREAM_FAILED"
         status_code = 504 if timeout else 502
-        super().__init__(message, code=code, status_code=status_code, retryable=True)
+        super().__init__(
+            message,
+            code=code,
+            status_code=status_code,
+            retryable=retryable,
+        )

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 FactSection = Literal["basic", "education", "project", "skill", "award", "other"]
 DecisionAction = Literal["accept", "reject", "correct"]
@@ -129,6 +129,33 @@ class SubmitAnswerRequest(BaseModel):
 
 
 class RetryOperationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
+class GenerateCoachingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
+class CreateResumeDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    profile_snapshot_id: str = Field(min_length=1, max_length=128)
+    interview_id: str | None = Field(default=None, min_length=1, max_length=128)
+    jd_text: str | None = Field(default=None, min_length=1, max_length=8000)
+
+    @model_validator(mode="after")
+    def one_target_source(self) -> CreateResumeDraftRequest:
+        if self.interview_id is not None and self.jd_text is not None:
+            raise ValueError("interview_id and jd_text are mutually exclusive")
+        return self
+
+
+class AcceptResumeDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=0)

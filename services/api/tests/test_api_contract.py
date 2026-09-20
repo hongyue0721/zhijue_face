@@ -720,11 +720,17 @@ def test_interview_get_unknown_is_404(client):
     assert client.get("/api/v1/interviews/interview_ghost").status_code == 404
 
 
-def test_openapi_exposes_control_and_report_contracts(client):
+def test_openapi_exposes_report_coaching_and_resume_contracts(client):
     document = client.get("/openapi.json").json()
     control_path = document["paths"]["/api/v1/interviews/{interview_id}/control"]
     report_path = document["paths"]["/api/v1/interviews/{interview_id}/report"]
+    coaching_path = document["paths"][
+        "/api/v1/interviews/{interview_id}/report/improvements"
+    ]
+    resume_path = document["paths"]["/api/v1/profiles/{profile_id}/resume-drafts"]
+    accept_path = document["paths"]["/api/v1/resume-drafts/{draft_id}/accept"]
     control_schema = document["components"]["schemas"]["ControlInterviewRequest"]
+    resume_schema = document["components"]["schemas"]["CreateResumeDraftRequest"]
     exported = json.loads(
         (Path(__file__).resolve().parents[3] / "contracts" / "openapi.json").read_text(
             encoding="utf-8"
@@ -735,4 +741,11 @@ def test_openapi_exposes_control_and_report_contracts(client):
     assert set(report_path) == {"get"}
     assert control_schema["properties"]["action"]["enum"] == ["skip", "end"]
     assert set(control_schema["required"]) == {"expected_revision", "action"}
+    assert set(coaching_path) == {"post"}
+    assert set(resume_path) == {"post"}
+    assert set(accept_path) == {"post"}
+    assert set(resume_schema["required"]) == {
+        "expected_revision",
+        "profile_snapshot_id",
+    }
     assert exported == document

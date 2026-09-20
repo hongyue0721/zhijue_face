@@ -175,6 +175,8 @@ def report_view(report: Report) -> dict[str, Any]:
         "overall_score": report.overall_score,
         "coverage": dict(report.coverage or {}),
         "root_assessments": list(report.root_assessments or []),
+        "improvements_status": report.improvements_status,
+        "active_operation_id": report.active_operation_id,
         "improved_answers": list(report.improved_answers or []),
         "limitations": list(report.limitations or []),
         "run_metadata": dict(report.run_metadata or {}),
@@ -242,6 +244,9 @@ class ReportingService:
             overall_score=overall_score,
             coverage=coverage,
             root_assessments=assessments,
+            improvements_status="not_requested",
+            active_operation_id=None,
+            improvements_operation_id=None,
             improved_answers=[],
             limitations=_limitations(
                 interview,

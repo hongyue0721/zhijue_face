@@ -1,6 +1,6 @@
 # services/api｜职觉 Demo Python 业务后端与框架探针
 
-**当前状态：M0 Workflow/WorkflowAgent 与 Knowledge 探针保留；M1/M2 资料和计划链已落地；M3 全部 VERIFIED / 三页前端 FROZEN；M4-01 确定性评分与报告后端 VERIFIED。Report UI 与 M4-02 回答优化未实现。**
+**当前状态：M0 Workflow/WorkflowAgent 与 Knowledge 探针保留；M1/M2 资料和计划链已落地；M3 全部 VERIFIED / 三页前端 FROZEN；M4-01 确定性评分与报告 VERIFIED；M4-02 受约束回答优化、简历草稿及两个功能页面 IMPLEMENTED。**
 
 `pyproject.toml` / `uv.lock` 锁定 Python 3.11.16 与 openJiuwen 0.1.18 兼容源码 commit `72c4985111b835530ec616f70dd67117eb2e015c`。该 commit 基于官方 v0.1.18，仅包含官方 PR #1344 的 Knowledge 删除返回值修复与测试；正式 0.1.18 wheel 本身仍有该缺陷。业务后端使用 FastAPI、SQLAlchemy/Alembic、SQLite 和真实 openJiuwen Workflow/Knowledge；没有新增平行 Agent 或第二数据库写入方。
 
@@ -38,13 +38,15 @@ PYTHONPATH=src .venv/bin/python -m smoke.answer_model \
 
 M4-01 由 `ReportingService` 读取已持久化 Observation 和冻结 Rubric，按根题合并主答/追问并计算 coverage/score；`POST /interviews/{id}/control` 串行处理 skip/end，`GET /interviews/{id}/report` 只读取唯一持久化 Report。未测、跳过、覆盖不足和冲突均保持 null；报告失败后的 retry 复用 Observation，不再次调用 Analyzer。Answer、Operation、Assessment、Report 与 durable events 仍由同一 FastAPI/SQLite 写入方管理。
 
+M4-02 的 `ContentGenerationService` 是生成内容唯一写入方。`report.coach` 与 `resume.compose` 先持久化 Operation，再通过真实 openJiuwen `Start → Generator → SemanticValidation → End`，最后校验 Schema、允许 ID、逐字回答引文、当前快照 Claim、数字/责任边界和占位符后原子提交。失败不修改原回答、评分、Claim 或资料快照；retry 复用同一资源和冻结输入。每个模型 Operation 只发一次 HTTP 请求，`MODEL_MAX_RETRIES + 1` 是 transport/Schema/语义失败共同消耗的 parent-linked 累计预算，硬上限三次。Report/Resume 页面已接 API，简历只有 accepted 后开放打印。
+
 ## 未解决事项
 
-官方基座/补充规则核验仍有阻塞；当前 WorkflowAgent 继承官方 legacy ControllerAgent/BaseAgent，弃用警告未隐藏。Knowledge 全生命周期已在锁定兼容 commit 上 VERIFIED，但正式 openJiuwen 0.1.18 发布包仍未包含删除修复。M4-01 已验证五题自然完成、主答/追问合并、skip/end、回答中 end、唯一报告和恢复语义；当前未完成的是 Report UI、M4-02 回答优化/简历草稿、浏览器真实模型全场链路，以及真实模型 429/timeout 与跨代理 SSE 组合。完整进度以根目录 `process.md` 和最新 handoff 为准。
+官方基座/补充规则核验仍有阻塞；当前 WorkflowAgent 继承官方 legacy ControllerAgent/BaseAgent，弃用警告未隐藏。Knowledge 全生命周期已在锁定兼容 commit 上 VERIFIED，但正式 openJiuwen 0.1.18 发布包仍未包含删除修复。M4-02 当前未完成的是生产 Content Generator live、真实模型五题浏览器全场、真实 429/timeout、跨代理 SSE 组合、独立验收和两个新页面 Product Polish；功能基线不外推为模型质量或成本结论。完整进度以根目录 `process.md` 和最新 handoff 为准。
 
 ## 私密 live 配置边界
 
-从仓库根目录复制 `config/environment.env.example` 为权限不宽于 0600 的私密文件。真实 key 不进入命令参数、文档、日志、证据 JSON 或浏览器配置。Knowledge 使用 `EMBEDDING_*`；业务回答模型适配读取 `MODEL_PROVIDER / MODEL_NAME / API_BASE / API_KEY / MODEL_TIMEOUT / MODEL_MAX_RETRIES`，只在显式设置 `ZHIJUE_MODEL_ENV_FILE` 时启用，不读取 ambient environment，也不默认与 embedding 共用 key。
+从仓库根目录复制 `config/environment.env.example` 为权限不宽于 0600 的私密文件。真实 key 不进入命令参数、文档、日志、证据 JSON 或浏览器配置。Knowledge 使用 `EMBEDDING_*`；业务回答/内容模型适配读取 `MODEL_PROVIDER / MODEL_NAME / API_BASE / API_KEY / MODEL_TIMEOUT / MODEL_MAX_RETRIES`，只在显式设置 `ZHIJUE_MODEL_ENV_FILE` 时启用，不读取 ambient environment，也不默认与 embedding 共用 key。`MODEL_MAX_RETRIES` 取 0—2，只决定失败后还能创建多少次显式 parent-linked Operation，不在单个 Operation 内隐藏重发 HTTP 请求。
 
 当前删除 blocker 已通过固定兼容 commit 解除；该来源与官方 openJiuwen PR #1344 对应。仍不得修改 site-packages，也不要为重复证明反复消耗 embedding 额度。官方发布包含修复后，应切回正式发布并重跑 M0-02/M0-03。
 

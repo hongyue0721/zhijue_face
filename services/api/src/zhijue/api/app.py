@@ -30,12 +30,15 @@ from zhijue.adapters.db.operations import OperationRepository
 from zhijue.adapters.db.profiles import ProfileRepository
 from zhijue.adapters.model import (
     OpenAICompatibleAnswerAnalyzer,
+    OpenAICompatibleContentGenerator,
     load_model_settings,
 )
 from zhijue.api.errors import RequestContext, install_error_handlers
 from zhijue.api.events import router as events_router
 from zhijue.api.routes import router
 from zhijue.application.answer_workflow import AnswerAnalyzer
+from zhijue.application.content_generation import ContentGenerationService
+from zhijue.application.content_workflow import ContentGenerator
 from zhijue.application.documents import DocumentService
 from zhijue.application.interviews import InterviewService
 from zhijue.application.operations_runner import OperationRunner
@@ -116,6 +119,7 @@ class Services:
     profiles: ProfileService
     interviews: InterviewService
     reports: ReportingService
+    content: ContentGenerationService
     operations: OperationRepository
     runner: OperationRunner
     _ready: bool = False
@@ -143,6 +147,7 @@ def build_services(
     *,
     knowledge: KnowledgeGateway | None = None,
     analyzer: AnswerAnalyzer | None = None,
+    generator: ContentGenerator | None = None,
 ) -> Services:
     _configure_private_sdk_logging()
     config.ensure_directories()
@@ -156,11 +161,17 @@ def build_services(
         "data_mode": config.data_mode,
         "database": "sqlite",
         "knowledge": "configured" if knowledge is not None else "absent",
-        "model": "configured" if analyzer is not None else "absent",
+        "model": (
+            "configured"
+            if analyzer is not None and generator is not None
+            else (
+                "partial" if analyzer is not None or generator is not None else "absent"
+            )
+        ),
     }
     if config.run_mode == "live":
         # live 缺少真实配置必须 not_ready；不自动回退 fixture（environment.env.example 首行约定）。
-        ready = knowledge is not None and analyzer is not None
+        ready = knowledge is not None and analyzer is not None and generator is not None
         if not ready:
             readiness["reason"] = "live 模式缺少 Knowledge/embedding 或模型配置"
     else:
@@ -172,6 +183,19 @@ def build_services(
     )
     readiness["seed_bank_version"] = seed_bank.version_fingerprint()
     reporting = ReportingService(engine=engine, operations=operation_repo)
+    content = ContentGenerationService(
+        engine=engine,
+        operations=operation_repo,
+        generator=generator,
+        run_mode=config.run_mode,
+        workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
+        model_attempt_limit=getattr(generator, "max_total_attempts", 3),
+        generator_metadata=(
+            generator.public_summary()
+            if generator is not None and hasattr(generator, "public_summary")
+            else {}
+        ),
+    )
     return Services(
         config=config,
         engine=engine,
@@ -183,12 +207,14 @@ def build_services(
             seed_bank=seed_bank,
             analyzer=analyzer,
             workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
+            model_attempt_limit=getattr(analyzer, "max_total_attempts", 3),
         ),
         documents=DocumentService(
             engine=engine, repo=document_repo, limits=config.limits
         ),
         profiles=ProfileService(repo=profile_repo, knowledge=knowledge),
         operations=operation_repo,
+        content=content,
         reports=reporting,
         runner=OperationRunner(
             engine=engine,
@@ -222,19 +248,36 @@ def build_model_analyzer(
     return OpenAICompatibleAnswerAnalyzer(settings)
 
 
+def build_content_generator(
+    config: AppConfig,
+) -> OpenAICompatibleContentGenerator | None:
+    """Use the same explicit private model config for grounded content generation."""
+    if config.model_env_file is None:
+        return None
+    settings = load_model_settings(config.model_env_file)
+    return OpenAICompatibleContentGenerator(settings)
+
+
 def create_app(
     config: AppConfig | None = None,
     *,
     knowledge: KnowledgeGateway | None = None,
     analyzer: AnswerAnalyzer | None = None,
+    generator: ContentGenerator | None = None,
 ) -> FastAPI:
     resolved = config or AppConfig.from_env()
-    services = build_services(resolved, knowledge=knowledge, analyzer=analyzer)
+    services = build_services(
+        resolved,
+        knowledge=knowledge,
+        analyzer=analyzer,
+        generator=generator,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         interrupted = services.operations.mark_interrupted_on_restart()
         services.interviews.recover_interrupted_operations(interrupted)
+        services.content.recover_interrupted_operations(interrupted)
         yield
         gateway = app.state.knowledge
         if gateway is not None and hasattr(gateway, "close"):
@@ -260,4 +303,10 @@ def create_default_app() -> FastAPI:
     config = AppConfig.from_env()
     knowledge = build_knowledge_gateway(config)
     analyzer = build_model_analyzer(config)
-    return create_app(config, knowledge=knowledge, analyzer=analyzer)
+    generator = build_content_generator(config)
+    return create_app(
+        config,
+        knowledge=knowledge,
+        analyzer=analyzer,
+        generator=generator,
+    )

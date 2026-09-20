@@ -27,14 +27,14 @@
 | SourceBlock | id、document_id、page_number、block_index、text、text_hash、origin | page 从 1 起；纯文本 page=null；origin text_layer/ocr/user_input |
 | Claim | id、profile_id、text、source_block_ids、source_quotes、status、supersedes_id | status proposed/confirmed/disputed/retracted；确认是用户确认叙述，不是现实核验 |
 | ProfileSnapshot | id、profile_id、revision、confirmed_claim_ids、display_fields | 一经被面试引用不可修改 |
-| ResumeDraft | id、profile_snapshot_id、revision、content、source_claim_ids、changes、missing_facts、status | draft/accepted/rejected；内容改写不能产生新事实 |
+| ResumeDraft | id、profile_id、profile_snapshot_id、interview_id、revision、status、sections、source_claim_ids、changes、missing_facts、cautions、target_context、active_operation_id、run_metadata | generating/generation_failed/draft/accepted；正文条目必须逐项引用快照内 confirmed Claim；目标 JD 不能作为候选人事实来源；仅 accepted 版本可打印 |
 | Interview | id、profile_snapshot_id、jd_snapshot、revision、status、root_plan、active_operation_id、stop_requested | 一个时间点最多一个活跃变更操作；主计划五题 |
 | Question | id、interview_id、root_id、kind、seed_id（经历/证据回退题可 null）、wording、basis、rubric_snapshot | kind main/follow_up/clarification；根问题权重只算一次；无匹配 approved Seed 时不得绑定无关技术种子 |
 | Answer | id、question_id、client_turn_id、accepted_operation_id、raw_text、created_at、assistance、evaluation_status | 原文不可覆盖；一题一份已接受作答；client_turn 与原 operation 可恢复、可幂等重放 |
 | Observation | id、answer_id、question_id、root_question_id、criteria、relevance、knowledge_status、clarification_needed、validation_flags | 仅保存通过语义校验的观察；模型原始输出隔离为调试数据 |
 | Decision | id、observation_id（控制动作时可 null）、action、reason_code、target、policy_version | 动作由代码决定，不由模型直接决定 |
 | Assessment | id、interview_id、root_question_id、criterion_results、score、coverage、status | `(interview_id,root_question_id)` 唯一；score 可以 null；未评不是 0 |
-| Report | id、interview_id、revision、completion、overall_score、coverage、root_assessments、improved_answers、limitations、run_metadata | `interview_id` 唯一；区分 complete/incomplete；结果保留版本 |
+| Report | id、interview_id、revision、completion、overall_score、coverage、root_assessments、improvements_status、active_operation_id、improved_answers、limitations、run_metadata | `interview_id` 唯一；评分完成不隐式调用改写模型；改写失败不改变已冻结分数 |
 | Operation | id、kind、resource_id、idempotency_key、input_hash、status、attempts | 状态队列独立于业务状态 |
 | OperationEvent | operation_id、seq、event_type、payload、created_at | `(operation_id,seq)` 唯一；只追加 |
 | TrainingMemory | profile_id、competency_id、observed_gap、evidence_ids、status | P1；未测试技能不得写成弱项；用户可删除 |
@@ -73,7 +73,7 @@ Observation 中每条 criterion：`criterion_id / kind / weight / level / findin
 
 ## 7. 数据库存储规则
 
-业务表使用 SQLite，JSON 字段存储版本化快照；第一版不把每个词建表。使用外键约束、事务、唯一键与索引。关键唯一键：`(interview_id,client_turn_id)`、`question_id`（一题一份 Answer）、`accepted_operation_id`、`(interview_id,root_question_id)`（一根一份 Assessment）、`report.interview_id`（一场一份 Report）、`(scope,idempotency_key)`、`(operation_id,seq)`。
+业务表使用 SQLite，JSON 字段存储版本化快照；第一版不把每个词建表。使用外键约束、事务、唯一键与索引。关键唯一键：`(interview_id,client_turn_id)`、`question_id`（一题一份 Answer）、`accepted_operation_id`、`(interview_id,root_question_id)`（一根一份 Assessment）、`report.interview_id`（一场一份 Report）、`(profile_snapshot_id,target_hash)`（同一快照与目标只生成一份 ResumeDraft）、`(scope,idempotency_key)`、`(operation_id,seq)`。
 
 开发者需设计明确 SQL migration，不在请求中 `create_all()` 临时改表。连接启用 foreign_keys，配置 busy_timeout；WAL 是否启用与备份策略一起测试。[S12]
 
@@ -87,7 +87,17 @@ SQLite 保存权威资料与引用；索引是可重建副本，二者不能假�
 
 Profile 删除先 tombstone，使所有新检索/操作提交立刻拒绝；再异步清理原件、索引、会话、报告与记忆。删除未完成 UI 显示 deleting，不说“已经完全删除”。发生部分失败可重试清理；保留最小无内容的操作状态。
 
-## 9. 原始生成输出
+## 9. 改写与简历生成的事实边界
+
+回答改写与简历生成都通过真实 openJiuwen Workflow 执行，但模型输出只是候选结果，不能直接持久化。服务端必须检查输出 Schema、引用 ID、逐字回答引文、数字事实和职责归属措辞；任一检查失败则整次 operation 失败，不保存部分结果。
+
+回答改写的每个文本片段至少绑定一条本场 Answer 精确引文或当前 ProfileSnapshot 内 Claim。简历每个正文条目至少绑定一条当前快照内 confirmed Claim。服务端从这些引用反向生成 `source_claim_ids` 和 diff，不接受模型自报的来源汇总。
+
+`missing_facts` 和 `cautions` 是编辑提示，不得拼进正文。JD 仅用于排序和表达目标，绝不能升级为候选人经历。数字与“主导/独立负责”等职责措辞只有在绑定来源出现时才能进入正文；此类机械校验只是可审计下限，不等同于语义真实性认证。
+
+原始 ProfileSnapshot、Answer、Report 分数都不可被生成操作覆盖。失败与重试更新独立状态和 revision；对相同已完成资源返回原 operation，不重复调用模型。
+
+## 10. 原始生成输出
 
 原始 LLM 输出不直接进入业务字段。默认只保存脱敏错误摘要与 hash；为定位问题临时保存原始输出时须限定合成测试数据、独立 debug 目录、保留期限与访问范围。
 

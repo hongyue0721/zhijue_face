@@ -1,4 +1,4 @@
-import { Alert, Tag } from "@any-design/anyui/react";
+import { Alert, Button, Tag } from "@any-design/anyui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, newCommandKey, requestRetryReason, type InterviewView, type OperationView } from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
@@ -10,6 +10,7 @@ import { InterviewProgress } from "../components/interview/InterviewProgress";
 import { QuestionCard } from "../components/interview/QuestionCard";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewRoleText } from "../presentation";
+import { reportPath } from "../routing";
 import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
 
 type PendingSubmission = {
@@ -24,9 +25,11 @@ type PendingSubmission = {
 export function InterviewPage({
   interviewId,
   serviceReady,
+  navigate,
 }: {
   interviewId: string;
   serviceReady: boolean;
+  navigate: (path: string) => void;
 }) {
   const [interview, setInterview] = useState<InterviewView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
@@ -189,7 +192,16 @@ export function InterviewPage({
         <section className="surface-card completion-card">
           <p className="eyebrow">面试完成</p>
           <h2>本场提问已经结束</h2>
-          <p>当前版本尚未生成正式面试报告。</p>
+          <p>
+            {interview.status === "completed"
+              ? "评分报告已经生成，可以继续查看依据和生成优化内容。"
+              : "系统正在冻结评分报告，请等待当前操作完成。"}
+          </p>
+          {interview.status === "completed" && interview.report_id ? (
+            <Button type="primary" onClick={() => navigate(reportPath(interview.id))}>
+              查看面试报告
+            </Button>
+          ) : null}
         </section>
       ) : null}
       {question ? (

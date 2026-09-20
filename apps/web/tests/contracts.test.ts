@@ -18,7 +18,7 @@ import {
   jdSourceText,
   requirementTitle,
 } from "../src/presentation";
-import { parseRoute, preparePath } from "../src/routing";
+import { parseRoute, preparePath, reportPath, resumeDraftPath } from "../src/routing";
 
 const accepted: OperationAccepted = {
   operation_id: "operation_contract_001",
@@ -163,10 +163,36 @@ describe("browser API boundary", () => {
     expect(requestRetryReason(apiError)).not.toBe("service");
   });
 
+  it("uses server-owned report and resume resources with explicit revisions", async () => {
+    await api.generateReportImprovements("interview_1", 2, "coaching-key-0001");
+    await api.createResumeDraft(
+      "profile_1",
+      {
+        expected_revision: 4,
+        profile_snapshot_id: "snapshot_1",
+        interview_id: "interview_1",
+      },
+      "resume-key-0001",
+    );
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls[0][0]).toBe("/api/v1/interviews/interview_1/report/improvements");
+    expect(JSON.parse(String(calls[0][1].body))).toEqual({ expected_revision: 2 });
+    expect(new Headers(calls[0][1].headers).get("Idempotency-Key")).toBe(
+      "coaching-key-0001",
+    );
+    expect(calls[1][0]).toBe("/api/v1/profiles/profile_1/resume-drafts");
+    expect(JSON.parse(String(calls[1][1].body))).toEqual({
+      expected_revision: 4,
+      profile_snapshot_id: "snapshot_1",
+      interview_id: "interview_1",
+    });
+  });
+
 });
 
 describe("URL and presentation contracts", () => {
-  it("recognizes only the three P0 route shapes", () => {
+  it("recognizes the five functional route shapes", () => {
     expect(parseRoute("/start", "?profile=profile_1")).toEqual({
       page: "start",
       profileId: "profile_1",
@@ -180,9 +206,19 @@ describe("URL and presentation contracts", () => {
       page: "interview",
       interviewId: "interview_1",
     });
+    expect(parseRoute("/interviews/interview_1/report", "")).toEqual({
+      page: "report",
+      interviewId: "interview_1",
+    });
+    expect(parseRoute("/resume-drafts/resume_1", "")).toEqual({
+      page: "resume",
+      draftId: "resume_1",
+    });
     expect(preparePath("profile 1", "interview/1")).toBe(
       "/profiles/profile%201/prepare?interview=interview%2F1",
     );
+    expect(reportPath("interview/1")).toBe("/interviews/interview%2F1/report");
+    expect(resumeDraftPath("resume/1")).toBe("/resume-drafts/resume%2F1");
   });
 
   it("uses returned requirement text and preserves the unknown-is-not-weakness rule", () => {

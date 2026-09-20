@@ -5,6 +5,8 @@ import { ServiceNotice, type ServiceState } from "./components/layout/ServiceNot
 import { InterviewPage } from "./pages/InterviewPage";
 import { PreparePage } from "./pages/PreparePage";
 import { StartPage } from "./pages/StartPage";
+import { ReportPage } from "./pages/ReportPage";
+import { ResumeDraftPage } from "./pages/ResumeDraftPage";
 import { parseRoute } from "./routing";
 
 function browserLocation(): string {
@@ -63,8 +65,20 @@ export default function App() {
           serviceReady={serviceReady}
           navigate={navigate}
         />
+      ) : route.page === "interview" ? (
+        <InterviewPage
+          interviewId={route.interviewId}
+          serviceReady={serviceReady}
+          navigate={navigate}
+        />
+      ) : route.page === "report" ? (
+        <ReportPage
+          interviewId={route.interviewId}
+          serviceReady={serviceReady}
+          navigate={navigate}
+        />
       ) : (
-        <InterviewPage interviewId={route.interviewId} serviceReady={serviceReady} />
+        <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} />
       )}
     </div>
   );

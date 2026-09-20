@@ -2,7 +2,7 @@
 
 **契约版本 1.0.0。** 根目录此文件为人类可读接口语义真源。后端由 FastAPI 导出 OpenAPI 到 `contracts/openapi.json`，前端类型由生成类型派生；不得另外手写一份独立含义的 OpenAPI。
 
-**实现状态（2026-09-19，M4-01 后端）**：已实现并测试资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`，以及 `GET /operations/{id}`、`GET /operations/{id}/events`（SSE）、`POST /operations/{id}/retry`、`GET /health/live`、`GET /health/ready`。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report，读取报告不调用模型。fixture 分析器只用于测试。简历草稿、runtime/info、`DELETE /profiles/{id}` 仍为 **PLANNED**；前三页前端保持 FROZEN，本轮只同步 control/report 网络类型，未新增 Report UI。
+**实现状态（2026-09-19）**：M4-01 评分/报告后端已实现并测试；M4-02 回答优化、简历草稿与对应页面正在按本契约施工。已实现资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`，以及 Operation/SSE/health。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report。M4-02 新增路径只有完成实现与回归后才从“施工中”改为已实现。runtime/info、`DELETE /profiles/{id}` 仍为 **PLANNED**。
 
 ## 1. 全局约定
 
@@ -54,7 +54,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 `DocumentView`：id、profile_id、kind、filename_display、sha256、page_count、extract_status、index_status、warnings；不含实际文件路径。
 
-`InterviewView`：id、revision、status、run_mode、profile_snapshot_id、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
+`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
 
 `OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、attempts、result、error、last_event_seq、created_at、updated_at。
 
@@ -89,13 +89,15 @@ confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必�
 
 | 方法与路径 | 输入 | 成功 | 语义 |
 |---|---|---|---|
-| POST `/profiles/{id}/resume-drafts` | expected_revision、profile_snapshot_id、jd_text? | 202 OperationAccepted | 从确认事实生成草稿与变更建议 |
-| GET `/resume-drafts/{id}` | 无 | 200 ResumeDraftView | content、source_claim_ids、changes、missing_facts、status |
-| POST `/resume-drafts/{id}/accept` | expected_revision（草稿） | 200 ResumeDraftView | 接受文案版本；不新增事实，不改变面试快照 |
+| POST `/profiles/{id}/resume-drafts` | expected_revision、profile_snapshot_id、interview_id?、jd_text? | 202 OperationAccepted | 从指定不可变快照生成一份草稿；interview_id 与 jd_text 最多一个，前者必须绑定同一快照 |
+| GET `/resume-drafts/{id}` | 无 | 200 ResumeDraftView | 生成中、失败、待确认和已接受都返回持久化快照 |
+| POST `/resume-drafts/{id}/accept` | expected_revision（草稿） | 200 ResumeDraftView | 只接受已经生成的草稿；增加 revision，不新增事实、不改变 ProfileSnapshot |
 
-ResumeDraftView 包含自身 revision。简历结构可用 sections:[{section_id,title,items:[{text,claim_ids}]}]；每个实质句子必须能回查原 Claim。建议补充的数据在 missing_facts，不混入导出正文。
+`ResumeDraftView` 精确字段：`id / revision / profile_id / profile_snapshot_id / interview_id / status / sections / source_claims / source_claim_ids / changes / missing_facts / cautions / target_context / active_operation_id / run_metadata`。status 只取 `generating / generation_failed / draft / accepted`。`sections[]` 为 `{section_id,title,items:[{item_id,text,claim_ids}]}`；每个实质 item 至少绑定一个当前快照内 confirmed Claim。`source_claims[]` 只返回 `{id,text}`，用于人工 diff；`changes[]` 为 `{item_id,before,after,claim_ids,reason}`，before 由服务端按绑定 Claim 生成，不信任模型回填原文。
 
-P0 没有服务端 PDF 导出接口。浏览器对已接受文案使用打印布局并保存 PDF；导出前不得自动接受未确认内容。未来新增字节导出接口按新需求登记。
+jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事实。提供 interview_id 时使用该会话冻结的 JD，且该会话的 profile_snapshot_id 必须与请求一致；两者都不提供时生成通用单模板。生成失败保留 draft 行和 operation，status=`generation_failed`，通过 `/operations/{id}/retry` 恢复，不重新创建第二份草稿。
+
+浏览器只允许对 `accepted` 草稿进入打印样式；打印内容必须可选中、长文本不截断，不输出 missing_facts、cautions 或未确认占位符。P0 没有服务端 PDF 字节导出接口。
 
 ## 6. 面试 API
 
@@ -106,7 +108,8 @@ P0 没有服务端 PDF 导出接口。浏览器对已接受文案使用打印布
 | POST `/interviews/{id}/start` | expected_revision | 202 OperationAccepted | ready→active，显示第一题；幂等 |
 | POST `/interviews/{id}/answers` | expected_revision、question_id、client_turn_id、answer_text | 202 OperationAccepted | 接受原回答，分析、决策、生成下一题或结束 |
 | POST `/interviews/{id}/control` | expected_revision、action | 202 OperationAccepted | action=skip/end；skip 仅当前题，end 请求停止提问并串行生成现有报告 |
-| GET `/interviews/{id}/report` | 无 | 200 ReportView | 无结果时 409 REPORT_NOT_READY；不临时再调用模型 |
+| GET `/interviews/{id}/report` | 无 | 200 ReportView | 无结果时 409 REPORT_NOT_READY；只读持久化结果，不临时调用模型 |
+| POST `/interviews/{id}/report/improvements` | expected_revision（Report） | 202 OperationAccepted | 一次批量生成已回答根题的受约束优化建议；数字评分不变 |
 
 end 在回答操作进行中也可受理：服务端原子记录 `stop_requested=true` 和唯一结束 operation；不再接受新答案、不再向 InterviewView 暴露待答问题，结束 operation 在当前回答安全释放后串行汇总。结束不保证远端调用立即取消或退费。重复 end 返回同一 operation。skip 仅在没有 active operation 且仍有 current_question 时受理：跳过主问题会使该根题 `status=skipped`、`score=null`；跳过追问保留该根题已有 Observation，但整场 `completion=incomplete`。两种 control 都不调用模型。
 
@@ -131,12 +134,15 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 
 `ReportView` 精确字段：
 
-- `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improved_answers / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
+- `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improvements_status / active_operation_id / improved_answers / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
 - `coverage` 为 `{planned_root_count, asked_root_count, answered_root_count, scored_root_count, insufficient_root_count, disputed_root_count, skipped_root_count, unmeasured_root_count, skipped_question_count, overall_eligible}`。这些是范围计数，不把未测根题换算成 0 分。
 - 每个 `root_assessments[]` 为 `{id, root_question_id, status, score, coverage, criterion_results, answer_ids}`；`status` 只取 `scored / insufficient / disputed / skipped / unmeasured`。`score` 可为 null；coverage 是该根题可评分 criterion 权重占冻结总权重的比例。
 - 每个 `criterion_results[]` 为 `{criterion_id, kind, weight, level, finding, answer_quotes, knowledge_refs, explanations}`。同一根题的主回答与追问按 criterion 合并，权重只计算一次；`supported` 与 `contradicted` 同时出现时保留 `finding=disputed` 且 `level=null`，不得自行挑一个版本。
-- `run_metadata` 只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`；未知模型或 SDK 字段为 null，不填造默认值。
-- `improved_answers` 在 M4-01 固定为空数组，M4-02 才能通过受约束的 P-COACH 结果填充；读取报告不会临时调用模型。
+- `improvements_status` 只取 `not_requested / generating / ready / failed`。生成中或失败时保留唯一 active/last operation；同一 Report 已 ready 后，即使换 Idempotency-Key 也返回原成功 operation，不再次调用模型。
+- 每个 `improved_answers[]` 为 `{root_question_id,original_answers,rewritten_answer,segments,used_claim_ids,changes,missing_facts,cautions}`。`original_answers[]` 保留 `{answer_id,question_id,question_kind,raw_text}`；`segments[]` 的每段必须绑定当前根题回答 exact_quote 或当前 ProfileSnapshot 的 confirmed claim_id，服务端校验 ID、精确引文、数值与责任边界后才提交。
+- `run_metadata` 的评分部分只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`。回答优化成功后追加 `content_generation={run_mode,workflow,workflow_version,prompt_version,generator,usage}`；未知模型、SDK 或 usage 字段为 null，不填造默认值。
+
+回答优化是显式异步操作，不与结束评分绑成一次隐式模型调用。它使用真实 openJiuwen `Start → Generator → SemanticValidation → End` Workflow；模型只生成候选文案，不能改 Assessment/score。失败时 Report 保留且 `improvements_status=failed`；retry 复用同一 Report 与输入快照。缺失数字、职责或实验事实必须进入 missing_facts/cautions，不得进入 rewritten_answer。
 
 根题计算严格采用冻结 Rubric：可评分项为 level 属于 0—3 且 finding 不为 `not_assessable/disputed` 的 criterion；`coverage=sum(可评分权重)/sum(冻结权重)`。可评分集合为空、coverage<0.60 或存在 disputed criterion 时根题 score=null。否则 `score=round_half_up(100 * sum(weight*level/3)/sum(可评分权重))`。至少三根题 `status=scored` 才提供 overall_score，按各根题等权算术平均并 `round_half_up`；JD priority 不进入分数。Report 与 Assessment 在同一事务落库，每场只允许一份；`report.ready` 与业务状态同事务追加。GET 无报告时返回 409 `REPORT_NOT_READY`，不得现场补算或重复调用模型。
 
@@ -151,7 +157,7 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 | GET `/health/live` | 无 | 200 {status:"ok"} |
 | GET `/health/ready` | 无 | 200 ready 或 503 not_ready |
 
-retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。目标被修改/删除、或已被其他操作推进则 409，不悄悄覆盖新状态。retry 消耗同一 logical_operation 的累计预算（所有父/子尝试合计最多三次），不能借重试无限绕过额度。
+retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
 
 健康接口不返回个人数据或密钥；readiness 检查已初始化依赖状态，不每请求调用付费模型。runtime/info 只有 model ID 和配置指纹，不暴露 base URL 中 token/query、真实 key 或内部存储路径。
 
@@ -166,7 +172,7 @@ data: {"schema_version":"1.0.0","operation_id":"operation_example","seq":7,"payl
 
 ```
 
-事件类型：`operation.started`、`node.started`、`node.completed`、`policy.decided`、`question.ready`、`report.ready`、`operation.completed`、`operation.failed`、`operation.interrupted`。
+事件类型：`operation.started`、`node.started`、`node.completed`、`policy.decided`、`question.ready`、`report.ready`、`coaching.ready`、`resume_draft.ready`、`operation.completed`、`operation.failed`、`operation.interrupted`。
 
 P0 不推送未验证的模型 token，因此不会先把错误前提渲染给用户再撤回。节点状态可以即时出现；问题通过来源校验并持久化后才发 question.ready。确有需要再添加独立 P1 token 流，不改变业务事件语义。
 

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from zhijue.adapters.model import (
     ModelSettings,
     OpenAICompatibleAnswerAnalyzer,
+    OpenAICompatibleContentGenerator,
     load_model_settings,
 )
 from zhijue.application import answer_workflow
@@ -367,7 +368,7 @@ def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
 
 
 @pytest.mark.parametrize("status_code", [429, 503])
-def test_model_transport_never_exceeds_three_total_attempts(status_code):
+def test_model_transport_uses_one_request_per_persisted_operation(status_code):
     attempts = 0
 
     async def unavailable(request: httpx.Request) -> httpx.Response:
@@ -379,6 +380,7 @@ def test_model_transport_never_exceeds_three_total_attempts(status_code):
         transport = httpx.MockTransport(unavailable)
         async with httpx.AsyncClient(transport=transport) as client:
             analyzer = OpenAICompatibleAnswerAnalyzer(model_settings(), client=client)
+            assert analyzer.max_total_attempts == 3
             with pytest.raises(Exception, match=f"HTTP {status_code}"):
                 await analyzer.analyze(
                     observation_id="observation_1",
@@ -390,6 +392,15 @@ def test_model_transport_never_exceeds_three_total_attempts(status_code):
                     rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
                     reference_material=None,
                 )
+            generator = OpenAICompatibleContentGenerator(
+                model_settings(), client=client
+            )
+            assert generator.max_total_attempts == 3
+            with pytest.raises(Exception, match=f"HTTP {status_code}"):
+                await generator.generate(
+                    task="compose_resume",
+                    payload={"draft_id": "resume_demo", "allowed_claims": {}},
+                )
 
     asyncio.run(scenario())
-    assert attempts == 3
+    assert attempts == 2

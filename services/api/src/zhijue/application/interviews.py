@@ -137,6 +137,7 @@ class InterviewService:
         reporting: ReportingService,
         analyzer: AnswerAnalyzer | None,
         workflow_timeout_seconds: float = 60,
+        model_attempt_limit: int = 3,
     ) -> None:
         self._engine = engine
         self._planner = planner
@@ -145,6 +146,13 @@ class InterviewService:
         self._reporting = reporting
         self._analyzer = analyzer
         self._workflow_timeout_seconds = workflow_timeout_seconds
+        if (
+            isinstance(model_attempt_limit, bool)
+            or not isinstance(model_attempt_limit, int)
+            or not 1 <= model_attempt_limit <= 3
+        ):
+            raise ValueError("model_attempt_limit must be an integer from 1 to 3")
+        self._model_attempt_limit = model_attempt_limit
         self._acceptance_lock = Lock()
 
     def create_plan(
@@ -654,6 +662,16 @@ class InterviewService:
                 existing_result=existing,
             )
 
+    def _upstream_error(
+        self, operation_id: str, message: str, *, timeout: bool = False
+    ) -> UpstreamError:
+        with Session(self._engine) as session:
+            operation = session.get(Operation, operation_id)
+            retryable = (
+                operation is not None and operation.attempts < self._model_attempt_limit
+            )
+        return UpstreamError(message, timeout=timeout, retryable=retryable)
+
     async def process_answer(self, *, operation_id: str) -> dict[str, Any]:
         context = self._load_answer_context(operation_id)
         if context.existing_result is not None:
@@ -683,13 +701,17 @@ class InterviewService:
                 timeout_seconds=self._workflow_timeout_seconds,
             )
         except TimeoutError as exc:
-            raise UpstreamError("回答分析超时。", timeout=True) from exc
+            raise self._upstream_error(
+                operation_id, "回答分析超时。", timeout=True
+            ) from exc
         except (
             AnswerWorkflowError,
             ModelRequestError,
             ObservationValidationError,
         ) as exc:
-            raise UpstreamError("回答分析失败，原始回答已保留。") from exc
+            raise self._upstream_error(
+                operation_id, "回答分析失败，原始回答已保留。"
+            ) from exc
         committed = self._commit_answer_result(
             operation_id=operation_id,
             context=context,
@@ -1136,7 +1158,6 @@ class InterviewService:
         idempotency_key: str,
         request_input: dict[str, Any],
         capacity_available: bool = True,
-        max_attempts: int = 3,
     ) -> AcceptedInterviewOperation:
         with self._acceptance_lock:
             return self._accept_retry_once(
@@ -1145,7 +1166,6 @@ class InterviewService:
                 idempotency_key=idempotency_key,
                 request_input=request_input,
                 capacity_available=capacity_available,
-                max_attempts=max_attempts,
             )
 
     def _accept_retry_once(
@@ -1156,7 +1176,6 @@ class InterviewService:
         idempotency_key: str,
         request_input: dict[str, Any],
         capacity_available: bool = True,
-        max_attempts: int = 3,
     ) -> AcceptedInterviewOperation:
         supported_kinds = {
             "interview.answer",
@@ -1172,6 +1191,9 @@ class InterviewService:
                 raise ResourceNotFoundError("原操作不存在。")
             if original.kind not in supported_kinds:
                 raise InvalidStateError("该操作不支持面试运行时重试。")
+            max_attempts = (
+                self._model_attempt_limit if original.kind == "interview.answer" else 3
+            )
             retry_scope = f"{original.scope}#retry_of_{original.id}"
             existing = session.scalar(
                 select(Operation).where(
@@ -1301,6 +1323,9 @@ class InterviewService:
             interview = session.get(Interview, interview_id)
             if interview is None:
                 return None
+            snapshot = session.get(ProfileSnapshot, interview.profile_snapshot_id)
+            if snapshot is None:
+                raise InvalidStateError("面试资料快照不存在。")
             plan = dict(interview.root_plan or {})
             jd = dict(plan.get("jd_snapshot") or {})
             current_question = None
@@ -1368,6 +1393,7 @@ class InterviewService:
                 "revision": interview.revision,
                 "status": interview.status,
                 "run_mode": interview.run_mode,
+                "profile_id": snapshot.profile_id,
                 "profile_snapshot_id": interview.profile_snapshot_id,
                 "jd_requirements": plan.get("requirements", []),
                 "jd_source": {

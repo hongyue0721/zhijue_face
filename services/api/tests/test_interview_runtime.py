@@ -450,6 +450,8 @@ def test_five_adequate_answers_end_without_inventing_extra_questions(tmp_path):
             "overall_score",
             "coverage",
             "root_assessments",
+            "improvements_status",
+            "active_operation_id",
             "improved_answers",
             "limitations",
             "run_metadata",

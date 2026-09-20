@@ -3,8 +3,8 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M4 / VERIFIED（M4-01 确定性评分与报告后端 VERIFIED；M3 全部 VERIFIED；前三页视觉 FROZEN；M4-02 未开始）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性/三页前端 + M4-01 control、确定性评分与持久化报告。Report UI、回答优化和简历草稿仍未完成。**
+**当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 事实约束生成与 Report/Resume 功能基线 IMPLEMENTED；生产模型 live、独立验收和新页面 Product Polish 待做）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性/冻结三页前端 + M4 确定性评分、受约束回答优化、简历草稿与五页功能纵切面。**
 
 ## 1. 当前真实状态
 
@@ -22,7 +22,7 @@
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` 业务 Workflow 第二次调用通过，10.650749 秒，usage 1156/2544/3700。首轮失败 usage 与全部费用均 NOT_MEASURED/null；单样本不形成 p95 或效果结论 |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer 的三页浏览器纵切面已通过；生产模型适配器跑通一次 `deepseek-flash` 合成回答；M4 fixture 五题完成、确定性评分和报告 API smoke 通过。Report UI、真实模型浏览器整场与跨代理 SSE 组合仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Content Generator 的五页纵切面已通过；生产 Answer Analyzer 曾跑通一次 `deepseek-flash` 合成回答。M4-02 浏览器已验证报告、回答优化、简历确认和打印媒体；生产内容生成模型 live、独立验收、两个新页面 Product Polish 与跨代理 SSE 组合仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -46,14 +46,14 @@
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；真实模型单样本与本地可靠性证据分开记录 |
 | M3-03 | M3-02 | VERIFIED | 视觉状态 `FROZEN`；三页 P0 前端已完成最终收尾，JD 输入限制与后端 8,000 / 200 字符契约一致，Prepare 顺序固定为岗位摘要→Coverage/Plan→开始动作→技术详情，不再继续修改前三页视觉 |
 | M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过；Report UI 不在本任务 |
-| M4-02 | M4-01 | PLANNED | 当前唯一下一任务：事实约束的回答优化与简历草稿入口；不得补造事实，付费 live 前先明确 O04 总预算 |
+| M4-02 | M4-01 | IMPLEMENTED | 受事实约束的回答优化/简历草稿、Operation/retry、迁移/API 和 Report/Resume 功能页面已实现并通过 fixture 回归/浏览器烟测；生产模型 live、独立验收与两个新页面 Product Polish 待做 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
 
 只在有真实产物时更新。IMPLEMENTED、VERIFIED、ACCEPTED 不可互换；测试没运行写 NOT_RUN；确实尝试失败才填写失败输出。独立验收前保留 IMPLEMENTED 状态。
 
-**`tools/validate_spec.py` 现为 44/44 通过**（2026-09-19；新增主演示外设 Seed 必须覆盖 F4/G4/H7 已登记来源的守卫；历史 28/31、31/31 记录保留在后文章节）。结构校验与负责人审核记录共同闭合 M2-01；校验脚本本身不冒充负责人技术结论。
+**`tools/validate_spec.py` 现为 46/46 通过**（2026-09-19；新增两个 M4-02 生成结果 Schema 检查，主演示外设 Seed 的 F4/G4/H7 来源守卫继续通过；历史 28/31、31/31 记录保留在后文章节）。结构校验不冒充生产模型、业务验收或负责人结论。
 
 ## 3. 负责人待办
 
@@ -62,19 +62,19 @@
 | O01 | 确认校内截止和系统上传字段 | 未提供 | 不能承诺报名资格/必交物 |
 | O02 | 确认真实团队与指导教师 | 未提供 | 正式报名门槛 |
 | O03 | 确认国产 OS 软件组适配口径 | 未提供 | 提交前合规与环境验收 |
-| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权 M3 受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供。M4-01 额外付费调用 0 次 | M3-01 live 和 M4-01 确定性实现已完成；M4-02 或批量 live 前仍须明确费用上限，未知 cost 保持 null |
+| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权 M3 受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供。M4-01/M4-02 本轮外部模型调用均为 0 | M3-01 live 已完成；M4-02 生产内容生成 live 或批量验证前仍须明确费用上限，未知 cost 保持 null |
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
 
 ## 4. 当前唯一首要任务
 
-**M4-02 事实约束的回答优化与简历入口。**
+**M4-02 两个新页面 Product Polish 与独立验收。**
 
-M4-01 已按 API-first 完成：主答/追问 Observation 按冻结 Rubric 合并，coverage/score 由程序计算；自然五题、skip/end、回答中 end、唯一 Assessment/Report、`report.ready` 和失败后无模型重调 retry 均有回归。fixture 五题实际烟测得到 complete、5 根 scored、overall_score=67。这证明程序闭环，不证明真实模型整场效果。
+M4-02 已按 API-first 实现功能基线：`report.coach` 和 `resume.compose` 通过真实 openJiuwen `Start → Generator → SemanticValidation → End` 编排，模型候选必须通过 Schema、允许 ID、逐字引文、Claim 绑定、数字/责任边界和占位符校验后才原子落库。Report/Resume 页面使用真实 API/Operation/retry，null 分数不显示成 0，简历必须显式确认后才显示打印动作。
 
-M3-03 三页前端继续 `VERIFIED / FROZEN`。M4-02 若需要新增 Report/优化/简历页面，必须先按 `api.md` 同步契约并明确新的页面范围；不能把后端 Report 存在写成 Report UI 已完成，也不能把 null 评分显示为 0。若需要外部模型调用，O04 的持续总预算仍须负责人明确；M4-01 本轮没有产生额外模型或 embedding 网络调用。
+fixture 浏览器纵切面已经跑通完成面试→报告→回答优化→简历草稿→确认→打印媒体；这证明程序行为和页面连接，不证明生产内容模型质量、延迟、费用或独立验收。M3-03 前三页继续 `VERIFIED / FROZEN`，下一轮只优化 Report/Resume 两个新页面，不借机改前三页、业务契约或事实边界。生产内容模型 live 仍受 O04 持续预算约束。
 
-M4-01 回滚点：公开 `main` 开工基线 commit `a74b6a37e99bf7850b7b5dabbbcafc31096739e0`。只按 `docs/handoffs/2026-09-19-m4-01.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
+M4-02 回滚点：公开 `main` 开工基线 commit `4e4e7b43332c7d4e964d58ece3854275ef689a72`。只按 `docs/handoffs/2026-09-19-m4-02.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
 
 更早回滚点：M1-03 开工基线 `runtime/evidence/m1-03/task-start.txt`。M1-03 全部新增路径：`domain/claims.py`、`adapters/knowledge.py`、`adapters/db/profiles.py`、`application/{profiles,operations_runner}.py`、`api/*`、`__main__.py`、`tests/unit/{test_profile_confirm,test_knowledge_activation}.py`、`tests/test_api_contract.py`、`contracts/openapi.json`、`Makefile`、`apps/web/src/{api.ts,App.tsx}`；改动文件 `smoke/knowledge.py`、`adapters/db/{documents,profiles}.py`、`application/documents.py`、`adapters/pdf.py`、`apps/web/tsconfig.json`、`config/environment.env.example`、`api.md`。回滚=删除新增 + 按 `docs/handoffs/2026-09-19-m1-03.md` 恢复改动文件哈希。不使用 reset/stash。
 
@@ -836,3 +836,16 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 本轮外部模型和 embedding 网络调用均为 0，新增费用未发生；fixture 的 `model_calls=5` 不是付费调用。Report UI、真实模型浏览器五题整场、429/timeout、p95 和成本仍 NOT_RUN。M4-01 只写 VERIFIED，不写 ACCEPTED。
 - 最终完整性：doctor **18 PASS / 0 WARN / 0 FAIL**，密钥扫描 212 个 Git 跟踪文件 0 命中；`CHECKSUMS.sha256` **211/211 OK**；`git diff --check` 无输出。
 - 修改范围：`api.md`、OpenAPI、后端 scoring/reporting/interview/API/operation recovery、SQLAlchemy/Alembic、前端网络类型、评分/API/runtime/migration tests，以及 README、架构/数据/Workflow/评分/验收/UI/risk 文档、CHANGELOG、process、handoff 和完整性清单。交接：`docs/handoffs/2026-09-19-m4-01.md`；唯一下一任务为 M4-02。
+
+## 39. 2026-09-19｜M4-02 事实约束回答优化与简历草稿（IMPLEMENTED）
+
+- 开工 HEAD：公开 `main` 的 `4e4e7b43332c7d4e964d58ece3854275ef689a72`，工作区干净。先在 `api.md` 冻结 Report 改写状态、ResumeDraft、Operation/event、retry 与确认打印契约，再修改实现；M3-03 三页视觉保持冻结。
+- 新增 `domain/grounded_content.py`、两个 JSON Schema 与 `application/content_workflow.py`。回答优化片段只能绑定允许的 `answer_id + exact_quote` 或当前快照 Claim；简历每个正文条目至少绑定一个允许 Claim。未知 ID、非逐字引文、无来源片段、输入没有的新数字、从参与升级为主导/负责，以及未确认占位符均确定性拒绝。
+- `ContentGenerationService` 是生成内容唯一写入方。`report.coach` 与 `resume.compose` 先短事务受理 Operation，再在真实 openJiuwen `Start → Generator → SemanticValidation → End` 外部执行，最后短事务写 Report/ResumeDraft 与 `coaching.ready` / `resume_draft.ready`。失败不改变原回答、评分、Claim 或原简历资料；retry 复用同一资源和冻结输入。闭环审计同时消除了原先“每个业务 retry 内再做 transport retry”的放大风险：一个模型 Operation 只发一次 HTTP 请求，transport/Schema/语义失败共同消耗 `MODEL_MAX_RETRIES + 1` 的 parent-linked 累计预算，硬上限三次。
+- 迁移 `b4d7c2e91f30` 新增 Report 改写状态/操作字段和 ResumeDraft 表，并以 `(profile_snapshot_id,target_hash)` 防止同一事实快照/目标重复草稿。新增生成/读取/确认 API、OpenAPI、Python DTO 和前端类型；`InterviewView.profile_id` 让报告页从服务端关系取得 Profile，不从 URL 或浏览器猜测。
+- 新增 `/interviews/:interview_id/report` 与 `/resume-drafts/:draft_id` 功能页面。报告直接读取持久化评分，null 保持“未形成总分”，显式触发回答优化并展示原答/改写/待补事实；简历草稿展示 Claim 来源与差异，确认前不显示打印动作，打印媒体只保留已确认正文。未做视觉 Product Polish。
+- 回归覆盖 Schema/来源绑定/数字、未绑定英文技术词和责任升级拒绝、生成成功、失败保留、parent-linked retry 与累计预算耗尽、迁移 up/down/metadata、OpenAPI 和前端路由/API。后端全量 **272 passed / 2 skipped / 0 failed / 73 warnings**；Ruff check/format 检查 73 个 Python 文件全绿。锁定 Node 24 下前端 **12/12 passed**，TypeScript 通过，Vite **114 modules**。
+- 最终 Chromium + Vite + FastAPI fixture 纵切面得到 Report `report_314761ef679b674e30d0`、ResumeDraft `resume_b59b46840872313e84f3`；页面实际显示 `original_answers[].raw_text` 与 `{id,text}` Claim 来源。确认后打印动作调用成功，print media 的 header/actions/audit 为 `display:none`、正文为 `display:block`，1440 宽视口无横向溢出。证据汇总写入 ignored 的 `runtime/evidence/m4-02/verification.json`。
+- 本轮外部模型和 embedding 网络调用均为 0，usage/cost 为 null；浏览器使用 `ScriptedContentGenerator` 替换模型边界，但编排为真实 openJiuwen Workflow。生产内容模型 live、质量/延迟/成本、独立验收和新页面 Product Polish 均 NOT_RUN，因此状态保守记为 IMPLEMENTED，不写 VERIFIED/ACCEPTED。
+- 最终完整性：规范校验 **46/46**；doctor **18 PASS / 0 WARN / 0 FAIL**，223 个 Git 跟踪/待跟踪文件密钥扫描 0 命中；`CHECKSUMS.sha256` **222/222 OK**；`git diff --check` 无输出。
+- 接口、数据模型、架构、Prompt/事实约束、验收、UI Contract、README、CHANGELOG、process 与 handoff 已同步。交接：`docs/handoffs/2026-09-19-m4-02.md`；唯一下一任务为两个新页面 Product Polish 与独立验收。

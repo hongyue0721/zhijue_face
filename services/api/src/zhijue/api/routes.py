@@ -27,11 +27,14 @@ from zhijue.adapters.db.operations import (
 )
 from zhijue.api.errors import ApiError, RequestContext, envelope
 from zhijue.api.schemas import (
+    AcceptResumeDraftRequest,
     ConfirmRequest,
     ControlInterviewRequest,
     CreateInterviewRequest,
     CreateProfileRequest,
+    CreateResumeDraftRequest,
     FactsRequest,
+    GenerateCoachingRequest,
     OperationAccepted,
     ProfileClaim,
     ProfileDocumentView,
@@ -755,6 +758,145 @@ def get_interview_report(interview_id: str, request: Request) -> dict[str, Any]:
     return envelope(report, _ctx(request).request_id)
 
 
+@router.post("/interviews/{interview_id}/report/improvements", status_code=202)
+def generate_report_improvements(
+    interview_id: str,
+    payload: GenerateCoachingRequest,
+    request: Request,
+    background: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    key = _require_idempotency_key(idempotency_key)
+    services = request.app.state.services
+    report = services.reports.get_view(interview_id)
+    accepted = services.content.accept_coaching(
+        interview_id,
+        expected_revision=payload.expected_revision,
+        command=OperationCommand(
+            kind="report.coach",
+            resource_type="report",
+            resource_id=report["id"],
+            scope=canon_scope(
+                WORKSPACE_ID,
+                "POST",
+                f"/api/v1/interviews/{interview_id}/report/improvements",
+            ),
+            idempotency_key=key,
+            input=payload.model_dump(),
+        ),
+        capacity_available=services.runner.capacity_available,
+    )
+    if accepted.created:
+
+        async def _run() -> dict[str, Any]:
+            try:
+                return await services.content.process_coaching(
+                    operation_id=accepted.operation.id
+                )
+            except Exception:
+                await asyncio.to_thread(
+                    services.content.release_failed_operation,
+                    accepted.operation.id,
+                )
+                raise
+
+        background.add_task(
+            services.runner.submit,
+            OperationJob(
+                operation_id=accepted.operation.id,
+                kind=accepted.operation.kind,
+                resource_id=accepted.operation.resource_id,
+                run=_run,
+            ),
+        )
+    return envelope(
+        _accepted(accepted.operation).model_dump(),
+        _ctx(request).request_id,
+    )
+
+
+@router.post("/profiles/{profile_id}/resume-drafts", status_code=202)
+def create_resume_draft(
+    profile_id: str,
+    payload: CreateResumeDraftRequest,
+    request: Request,
+    background: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    key = _require_idempotency_key(idempotency_key)
+    services = request.app.state.services
+
+    def _command(draft_id: str, target_hash: str) -> OperationCommand:
+        return OperationCommand(
+            kind="resume.compose",
+            resource_type="resume_draft",
+            resource_id=draft_id,
+            scope=canon_scope(
+                WORKSPACE_ID,
+                "POST",
+                f"/api/v1/profiles/{profile_id}/resume-drafts",
+            ),
+            idempotency_key=key,
+            input={**payload.model_dump(), "target_hash": target_hash},
+        )
+
+    accepted = services.content.accept_resume_draft(
+        profile_id,
+        expected_revision=payload.expected_revision,
+        profile_snapshot_id=payload.profile_snapshot_id,
+        interview_id=payload.interview_id,
+        jd_text=payload.jd_text,
+        source_name=None,
+        command_factory=_command,
+        capacity_available=services.runner.capacity_available,
+    )
+    if accepted.created:
+
+        async def _run() -> dict[str, Any]:
+            try:
+                return await services.content.process_resume_draft(
+                    operation_id=accepted.operation.id
+                )
+            except Exception:
+                await asyncio.to_thread(
+                    services.content.release_failed_operation,
+                    accepted.operation.id,
+                )
+                raise
+
+        background.add_task(
+            services.runner.submit,
+            OperationJob(
+                operation_id=accepted.operation.id,
+                kind=accepted.operation.kind,
+                resource_id=accepted.operation.resource_id,
+                run=_run,
+            ),
+        )
+    return envelope(
+        _accepted(accepted.operation).model_dump(),
+        _ctx(request).request_id,
+    )
+
+
+@router.get("/resume-drafts/{draft_id}")
+def get_resume_draft(draft_id: str, request: Request) -> dict[str, Any]:
+    draft = request.app.state.services.content.get_resume_draft(draft_id)
+    return envelope(draft, _ctx(request).request_id)
+
+
+@router.post("/resume-drafts/{draft_id}/accept")
+def accept_resume_draft(
+    draft_id: str,
+    payload: AcceptResumeDraftRequest,
+    request: Request,
+) -> dict[str, Any]:
+    draft = request.app.state.services.content.accept_draft(
+        draft_id, expected_revision=payload.expected_revision
+    )
+    return envelope(draft, _ctx(request).request_id)
+
+
 @router.post("/operations/{operation_id}/retry", status_code=202)
 def retry_operation(
     operation_id: str,
@@ -766,17 +908,33 @@ def retry_operation(
     key = _require_idempotency_key(idempotency_key)
     services = request.app.state.services
     request_input = payload.model_dump()
-    accepted = services.interviews.accept_retry(
-        operation_id,
-        expected_revision=payload.expected_revision,
-        idempotency_key=key,
-        request_input=request_input,
-        capacity_available=services.runner.capacity_available,
-    )
+    original = services.operations.get(operation_id)
+    content_operation = original is not None and original.kind in {
+        "report.coach",
+        "resume.compose",
+    }
+    if content_operation:
+        accepted = services.content.accept_retry(
+            operation_id,
+            expected_revision=payload.expected_revision,
+            idempotency_key=key,
+            request_input=request_input,
+            capacity_available=services.runner.capacity_available,
+        )
+    else:
+        accepted = services.interviews.accept_retry(
+            operation_id,
+            expected_revision=payload.expected_revision,
+            idempotency_key=key,
+            request_input=request_input,
+            capacity_available=services.runner.capacity_available,
+        )
     if accepted.created:
 
         async def _run() -> dict[str, Any]:
             try:
+                if content_operation:
+                    return await services.content.process_operation(accepted.operation)
                 if accepted.operation.kind == "interview.answer":
                     return await services.interviews.process_answer(
                         operation_id=accepted.operation.id
@@ -786,10 +944,12 @@ def retry_operation(
                     operation_id=accepted.operation.id,
                 )
             except Exception:
-                await asyncio.to_thread(
-                    services.interviews.release_failed_operation,
-                    accepted.operation.id,
+                release = (
+                    services.content.release_failed_operation
+                    if content_operation
+                    else services.interviews.release_failed_operation
                 )
+                await asyncio.to_thread(release, accepted.operation.id)
                 raise
 
         background.add_task(

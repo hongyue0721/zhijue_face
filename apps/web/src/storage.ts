@@ -1,4 +1,4 @@
-export type OperationScope = "profile" | "prepare" | "interview";
+export type OperationScope = "profile" | "prepare" | "interview" | "report" | "resume";
 
 function storageKey(scope: OperationScope, resourceId: string): string {
   return `zhijue:${scope}:operation:${resourceId}`;

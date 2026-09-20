@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grounded coaching result candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "root_question_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+          },
+          "rewritten_answer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "segments": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "source_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "type": {
+                            "const": "answer_quote"
+                          },
+                          "answer_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+                          },
+                          "exact_quote": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 6000
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "answer_id",
+                          "exact_quote"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "type": {
+                            "const": "claim"
+                          },
+                          "claim_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "claim_id"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "text",
+                "source_refs"
+              ]
+            }
+          },
+          "used_claim_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+            }
+          },
+          "changes": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "missing_facts": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "prompt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "prompt",
+                "reason"
+              ]
+            }
+          },
+          "cautions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          }
+        },
+        "required": [
+          "root_question_id",
+          "rewritten_answer",
+          "segments",
+          "used_claim_ids",
+          "changes",
+          "missing_facts",
+          "cautions"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "items"
+  ]
+}

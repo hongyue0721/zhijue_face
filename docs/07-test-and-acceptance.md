@@ -262,7 +262,7 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | T21 / T22 / T34 | 同 key、同 `client_turn_id` 和并发相同回答均返回原 operation，数据库各一份 Answer/Operation；变化输入冲突；过期 revision 零写入；start 和 retry 幂等 | `tests/test_interview_runtime.py`、`tests/unit/test_operations_repository.py` |
 | T23 后端范围 | durable events 顺序为 started→policy.decided→question.ready→completed；SSE 可按 seq 重放并以 Operation/Interview 快照收敛 | 后端已验证；真实前端断连重连、UTF-8 网络分块解析和浏览器恢复仍 `NOT_RUN`，不能宣称完整 T23 |
 | T24 | 重启把 running answer operation 标 interrupted，保留 Answer，并释放 Interview；不静默重放上游调用 | `tests/test_interview_runtime.py` |
-| T25 fixture 范围 | 429/503 transport 均最多三次总尝试；Workflow timeout 会取消 analyzer；分析失败保留原回答并可显式 retry | 外部模型 live 的真实 429/超时/费用耗尽仍 `NOT_RUN`；没有价格配置，不伪造 cost |
+| T25 fixture 范围 | 单个模型 Operation 对 429/503/timeout 只发一次 HTTP 请求；失败后的 parent-linked retry 与 Schema/语义失败共同消耗配置预算，累计硬上限三次；Workflow timeout 会取消 analyzer；分析失败保留原回答 | 外部模型 live 的真实 429/超时/费用耗尽仍 `NOT_RUN`；没有价格配置，不伪造 cost |
 | 有界后端整场 | 五个充分回答产生 `NEXT × 4 + END`，不增加第六题，Interview 进入 finishing | `tests/test_interview_runtime.py`；control/end UI、报告和真实浏览器整场仍属 M3-03/M4 |
 | 隐私 | SDK 业务日志提升到 WARNING、移除文件 sink；固定公开错误文案；冒烟私人回答标记未进入 stdout/stderr | `tests/test_interview_runtime.py`、`runtime/evidence/m3-01-02/backend-verification.json` |
 
@@ -349,3 +349,29 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 - 前端最终在锁定 Node 24.21.0 / pnpm 10.34.5 复验通过；默认 shell 的 Node 26 首轮虽通过但带 engine warning，不作为最终工具链结论。
 - 没有运行真实模型五题全场、429/timeout 或收费批量 benchmark；这些不属于 fixture 报告烟测的结论。
 - 首轮 Ruff 暴露 import 排序并已修复；首次通过 eval 生成 OpenAPI 时 SDK 日志混入 stdout 导致 JSON `Extra data`，随后改为直接写临时 JSON 再更新契约。尝试 `pnpm --use-node-version=24.21.0 exec node --version` 被当前 pnpm 拒绝为未知选项；doctor 随后定位仓库 `toolchain/node24/bin`，显式使用该工具链完成最终测试和构建。均未通过放松契约或删除断言处理。
+
+## M4-02 回答优化与简历草稿功能验证（2026-09-19）
+
+### 行为覆盖
+
+- Coaching/Resume 两个模型候选均先过严格 JSON Schema，再校验资源 ID、逐字回答引文和当前 ProfileSnapshot Claim allowlist。
+- 无来源正文片段、输入中不存在的新数字、从“参与/团队”升级为“主导/负责/独立”、未确认占位符全部拒绝；失败不落部分结果。
+- `report.coach` 不改 Assessment/overall_score；失败保留原回答与报告，可重试 Operation 复用同一 Report。`resume.compose` 不改 Claim/资料快照，同一 snapshot + target 不重复创建草稿。每个模型 Operation 只发一次 HTTP 请求；transport、Schema 和语义失败统一消耗 parent-linked 累计预算，硬上限三次。
+- ResumeDraft 必须由用户显式接受；接受只冻结该草稿版本，不回写资料事实或面试评分。
+- 前端从完成面试进入持久化 Report，null score 显示“未形成总分”；回答优化、简历生成和失败重试均以 Operation 快照收敛。
+- 简历确认前没有打印动作；确认后打印动作调用 `window.print`，print media 隐藏应用 chrome/操作/审计信息并保留完整已确认正文。
+
+### 实际命令与结果
+
+| 命令/场景 | 结果 |
+|---|---|
+| `cd services/api && .venv/bin/python -m pytest tests -q` | exit 0；272 passed / 2 skipped / 0 failed / 73 warnings |
+| `cd services/api && .venv/bin/ruff format --check src tests smoke migrations && .venv/bin/ruff check src tests smoke migrations` | exit 0；All checks passed；73 files already formatted |
+| 锁定 Node 24：Vitest + `tsc --noEmit` + Vite build | exit 0；12/12 passed；TypeScript 通过；114 modules transformed |
+| FastAPI + SQLite + 真实 openJiuwen Workflow + ScriptedContentGenerator 浏览器烟测 | Report/优化/ResumeDraft/accept/print 全部通过；证据 `runtime/evidence/m4-02/verification.json` 与四张 ignored 截图 |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；46/46 passed |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；18 PASS / 0 WARN / 0 FAIL；223 个 Git 跟踪/待跟踪文件密钥扫描 0 命中 |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；222/222 OK |
+| `git diff --check` | exit 0；无空白错误 |
+
+本轮外部模型和 embedding 网络调用均为 0，usage/cost 为 null。fixture 只替换 Generator 外部模型边界，不能证明生产内容模型质量、延迟或费用；生产 live、独立验收及两个新页面 Product Polish 均 NOT_RUN。M4-02 因此记为 IMPLEMENTED，不写 VERIFIED/ACCEPTED。

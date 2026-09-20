@@ -112,3 +112,11 @@
 - K24：M4 烟测使用 ScriptedAnalyzer fixture，证明真实 FastAPI/openJiuwen Workflow/SQLite/评分/报告闭环，不证明真实模型五题效果。Report UI、浏览器完整报告、真实模型 429/timeout 与整场成本均 NOT_RUN。
 - K25：默认 shell 为 Node v26.8.1，直接执行会因 package 要求 `>=24 <25` 产生 engine warning；最终已显式使用仓库 `toolchain/node24/bin` 的 Node 24.21.0 / pnpm 10.34.5 完成 11 项测试与 production build。后续命令仍必须显式选择锁定工具链，不能依赖默认 PATH。
 - O04 持续费用上限仍未给出。M4-01 使用 0 次付费模型/embedding 网络调用；M4-02 或批量 live 若要继续调用外部模型，仍需先得到明确总预算，未知费用保持 null。
+
+## M4-02 受约束生成与新页面风险更新（2026-09-19）
+
+- K26：生成式文案即使绑定真实来源，也可能在连接词或语义组合中产生误导。当前服务端用 JSON Schema、允许 ID、逐字引文、Claim allowlist、数字和责任升级守卫作为可审计下限；这不等于语义真实性已经由程序完全证明，用户确认简历版本仍是硬门槛。
+- K27：ResumeDraft 以 `(profile_snapshot_id,target_hash)` 唯一，避免同一事实快照/目标产生并行真相；但新快照代表新的事实版本，旧草稿不会自动升级。页面必须显示其绑定来源，不把旧草稿静默套到新资料。
+- K28：内容生成仍使用单进程 `BackgroundTasks`。失败和重启通过持久化资源、parent-linked Operation 和 interrupted 状态恢复，但不承诺自动重放或 exactly-once 上游调用；模型调用成功而提交前崩溃仍可能在人工 retry 时再次计费。
+- K29：M4-02 浏览器 fixture 已证明 Report/Resume API、Operation、确认和打印媒体连接，未证明生产 Content Generator 的语言质量、延迟、429/timeout 或费用。两个新页面也只完成功能基线，视觉 Product Polish 与独立验收仍 NOT_RUN。
+- O04 持续费用上限仍未给出。M4-02 没有外部模型或 embedding 网络调用；生产内容生成 live 或批量验证前必须先得到明确总预算，未知 usage/cost 保持 null。

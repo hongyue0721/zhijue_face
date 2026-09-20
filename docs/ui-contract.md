@@ -1,6 +1,6 @@
-# UI Contract｜P0 三页面试陪练
+# UI Contract｜P0 面试陪练、报告与简历草稿
 
-更新时间：2026-09-19。适用实现：`apps/web`。本文件登记当前页面实际消费的 FastAPI/OpenAPI 能力；M4-01 新增的 control/report 已进入 `api.ts` 类型和客户端，但冻结三页尚未接入，不把后端存在误写成页面已实现。
+更新时间：2026-09-19。适用实现：`apps/web`。本文件登记当前页面实际消费的 FastAPI/OpenAPI 能力；M3-03 的 Start/Prepare/Interview 三页视觉继续冻结，M4-02 新增 Report/Resume 两页功能基线，尚未 Product Polish。
 
 ## 1. 路由与业务门槛
 
@@ -9,6 +9,8 @@
 | `/start?profile={profile_id}` | 创建 Profile、上传 PDF、查看文档状态、补充/确认事实 | `ProfileView.latest_snapshot_id != null` |
 | `/profiles/{profile_id}/prepare?interview={interview_id}` | 输入用户 JD 或明确选择演示 JD、展示 Coverage Map 与五题 Plan、开始面试 | `InterviewView.status == ready` 后调用 start；start operation 成功后进入面试页 |
 | `/interviews/{interview_id}` | 展示当前题、提交回答、监控分析、呈现追问决策、失败重试 | 所有题面与状态均取自 `GET /interviews/{id}` |
+| `/interviews/{interview_id}/report` | 读取持久化评分、显式生成/重试回答优化、进入简历草稿 | Interview 必须 completed 且存在唯一 Report；页面不在浏览器重算评分 |
+| `/resume-drafts/{draft_id}` | 展示 Claim 绑定正文/差异/缺失项、显式确认、确认后打印 | Draft 生成成功后可读；只有 `status=accepted` 才显示打印动作 |
 
 查询参数只保存不含正文的资源标识。简历文本、JD 正文、回答正文不得进入 URL。
 
@@ -39,9 +41,12 @@
 | 已保存回答 | `current_question.accepted_answer` | `raw_text/evaluation_status` | 202 只表示接收；处理结果仍以 Operation + GET Interview 为准 |
 | 追问/澄清 | `current_question.kind`、`root_results` | `probe` 显示“为什么继续追问 / 追问方向”，`clarification` 显示“为什么需要澄清 / 澄清方向”；内容只读取 `action/reason_summary/target.followup_intent`；`counterfactual`→条件变化下的调整、`pushback`→回应反例或限制条件、`reflection`→复盘与经验总结 | `pushback` 不等于 `counterfactual`；未知 intent 使用用户可读 fallback，不暴露内部枚举或模型私有推理 |
 | 分析重试 | `POST /api/v1/operations/{operation_id}/retry` | 失败 operation ID、最新 `expected_revision` | 不重新 POST answer，不新建 Answer |
-| 面试完成 | `InterviewView.status/current_question` | finishing/completed 且无 current question | 当前页面尚未调用 report GET；禁止自行计算或展示评分、雷达图、反馈结论 |
-| 后端控制（未接 UI） | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、`Idempotency-Key` | 当前冻结页不展示 skip/end 按钮；未来接入必须以 Operation 终态和新 Interview 快照为准 |
-| 后端报告（未接 UI） | `GET /api/v1/interviews/{id}/report` | 持久化 Report/Assessment、nullable score、completion/limitations/run_metadata | 当前冻结页不展示报告；未来不得把 null 显示成 0，也不得在浏览器重算服务端分数 |
+| 面试完成 | `InterviewView.status/current_question/profile_id` | completed 且无 current question时进入 `/interviews/{id}/report`；Profile 关系取服务端 `profile_id` | 不从 URL 或 storage 猜 Profile；不自行计算评分 |
+| 面试控制 | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、`Idempotency-Key` | 当前冻结 Interview 页仍不新增 skip/end 按钮；控制结果以 Operation 和新快照为准 |
+| 评分报告 | `GET /api/v1/interviews/{id}/report` | 持久化 Assessment、nullable score、coverage、completion、limitations、improvements_status | null 显示“未形成总分/未评”，不显示 0；浏览器不重算服务端分数 |
+| 回答优化 | `POST /api/v1/interviews/{id}/report/improvements` | Report revision、Operation、`improved_answers[].original_answers/rewritten_answer/missing_facts/cautions` | 只有显式点击才生成；不把改写答案回写成面试证据或改变分数 |
+| 简历草稿 | `POST /api/v1/profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}` | 当前 snapshot、可选 interview 目标、sections/changes/source_claims/missing_facts/cautions | JD/报告只影响目标表达；正文事实只来自当前快照 Claim |
+| 草稿确认与打印 | `POST /api/v1/resume-drafts/{id}/accept` | expected_revision；accepted 后开放打印 | 确认不改 Claim/评分；未确认正文不得进入打印区域 |
 
 Prepare ready 的冻结展示顺序为：岗位摘要 → Coverage Map / 五题 Plan → 开始面试动作 → 默认折叠的技术详情。该顺序只调整叙事层级；Coverage、Plan、Requirement 均保持服务端数组顺序，不按 `competency_id` 生成名称、重排 priority 或补造计划。
 
@@ -53,6 +58,8 @@ Prepare ready 的冻结展示顺序为：岗位摘要 → Coverage Map / 五题 
 4. `queued/running` 禁止重复提交；`succeeded` 后重新读取对应 Profile/Interview；`failed/interrupted/canceled` 显示真实错误。
 5. 回答 202 后，`accepted_answer.raw_text` 来自服务端快照，因此刷新页面不要求重新填写。
 6. 后端失败释放后，`InterviewView.active_operation_id` 为空，`accepted_answer` 也没有 operation ID。当前实现通过同标签页 `sessionStorage` 恢复 retry ID；跨标签页打开失败状态时只能展示“原回答已保存”，不能调用 retry。这是现有响应契约限制，不以猜测补齐。
+7. Report 与 Resume 使用各自的 sessionStorage scope 恢复 operation ID；正文仍不进入 storage。generation failed 只能 retry 原 operation，不能以新 POST 绕过累计尝试预算。
+8. ResumeDraft 的 resource ID 在 202 响应中已固定；页面可先导航并显示 generating 状态，Operation succeeded 后重新读取同一 Draft，不创建第二份草稿。
 
 ## 4. 错误状态
 
@@ -62,7 +69,9 @@ Prepare ready 的冻结展示顺序为：岗位摘要 → Coverage Map / 五题 
 - `PROFILE_UNCONFIRMED`：返回资料确认步骤；不绕过 Snapshot 门槛。
 - PDF `requires_text`：显示真实文档警告并开放手工事实输入；不伪装 OCR 已完成。
 - 网络响应不明确：回答文本保持在当前表单中，同一次显式重试复用原 `client_turn_id` 与 `Idempotency-Key`。
+- `REPORT_NOT_READY`：不显示空报告或假分数，返回面试完成链检查。
+- 内容生成失败：继续展示原评分、原回答或空草稿；只在原 operation 明确 retryable 时开放重试，不自动切 fixture/replay。
 
 ## 5. 当前页面明确不实现
 
-M4-01 后端已经提供 control/report，`apps/web/src/api.ts` 也有对应类型和方法，但当前冻结三页没有按钮、报告路由或展示组件；这不是“后端没有能力”，也不能冒充 Report UI 已完成。当前 OpenAPI 仍没有运行时模型信息页、岗位搜索、简历优化、面试历史列表、Profile/Interview 列表、视频/语音、社交登录或支付，页面不得出现对应假入口。`run_mode=fixture/replay` 必须在全局提示中明示，不能冒充 live 模型效果。
+M4-02 已实现 Report/Resume 功能页面，但两个新页面尚未 Product Polish；M3-03 三页继续冻结，不因本轮新增路由重排其视觉。当前 OpenAPI 仍没有运行时模型信息页、岗位搜索、面试历史列表、Profile/Interview 列表、完整简历编辑器、视频/语音、社交登录或支付，页面不得出现对应假入口。`run_mode=fixture/replay` 必须在全局提示中明示，不能冒充 live 模型效果。

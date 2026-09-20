@@ -240,11 +240,49 @@ class Report(TimestampMixin, Base):
     overall_score: Mapped[int | None] = mapped_column(Integer)
     coverage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     root_assessments: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    improvements_status: Mapped[str] = mapped_column(
+        String(24), default="not_requested"
+    )
+    active_operation_id: Mapped[str | None] = mapped_column(String(128))
+    improvements_operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("operation.id")
+    )
     improved_answers: Mapped[list[Any]] = mapped_column(JSON, default=list)
     limitations: Mapped[list[Any]] = mapped_column(JSON, default=list)
     run_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     __table_args__ = (UniqueConstraint("interview_id", name="uq_report_interview"),)
+
+
+class ResumeDraft(TimestampMixin, Base):
+    __tablename__ = "resume_draft"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    profile_id: Mapped[str] = mapped_column(ForeignKey("profile.id"))
+    profile_snapshot_id: Mapped[str] = mapped_column(ForeignKey("profile_snapshot.id"))
+    interview_id: Mapped[str | None] = mapped_column(ForeignKey("interview.id"))
+    target_hash: Mapped[str] = mapped_column(String(64))
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="generating")
+    sections: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    source_claim_ids: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    changes: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    missing_facts: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    cautions: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    target_context: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    active_operation_id: Mapped[str | None] = mapped_column(String(128))
+    generation_operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("operation.id")
+    )
+    run_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_snapshot_id",
+            "target_hash",
+            name="uq_resume_draft_snapshot_target",
+        ),
+    )
 
 
 class Operation(TimestampMixin, Base):
