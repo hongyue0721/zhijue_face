@@ -28,6 +28,17 @@ export function preferObservedOperation(
   return current && isTerminalOperation(current) ? current : next;
 }
 
+export function stopOperationTransport(
+  timer: number | null,
+  source: Pick<EventSource, "close"> | null,
+  controller: Pick<AbortController, "abort">,
+): null {
+  if (timer !== null) window.clearInterval(timer);
+  source?.close();
+  controller.abort();
+  return null;
+}
+
 export function useOperationMonitor(
   operationId: string | null,
   onTerminal: (operation: OperationView) => void,
@@ -49,12 +60,7 @@ export function useOperationMonitor(
     let terminalSnapshot: OperationView | null = null;
 
     const stopTransport = () => {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-      source?.close();
-      controller.abort();
+      timer = stopOperationTransport(timer, source, controller);
     };
 
     const refresh = async () => {

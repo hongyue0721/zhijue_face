@@ -35,8 +35,16 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: #f4f6f9;
+}
+
+html,
+body {
+  width: auto;
+  height: auto;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 button,

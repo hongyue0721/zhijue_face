@@ -15,6 +15,7 @@ import {
 import {
   isTerminalOperation,
   preferObservedOperation,
+  stopOperationTransport,
 } from "../src/hooks/useOperationMonitor";
 import {
   coverageExplanation,
@@ -455,6 +456,18 @@ describe("URL and presentation contracts", () => {
     expect(preferObservedOperation(running, failed)).toBe(failed);
     expect(preferObservedOperation(failed, running)).toBe(failed);
     expect(preferObservedOperation(succeeded, failed)).toBe(succeeded);
+  });
+
+  it("stops the polling timer, SSE source, and request after terminal observation", () => {
+    const clearInterval = vi.fn();
+    const close = vi.fn();
+    const abort = vi.fn();
+    vi.stubGlobal("window", { clearInterval });
+
+    expect(stopOperationTransport(42, { close }, { abort })).toBeNull();
+    expect(clearInterval).toHaveBeenCalledWith(42);
+    expect(close).toHaveBeenCalledOnce();
+    expect(abort).toHaveBeenCalledOnce();
   });
 
   it("localizes report and resume states without conflating zero with missing", () => {

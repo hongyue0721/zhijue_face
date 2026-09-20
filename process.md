@@ -3,8 +3,8 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 事实约束生成与 Report/Resume 功能基线 IMPLEMENTED；生产模型 live、独立验收和新页面 Product Polish 待做）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性/冻结三页前端 + M4 确定性评分、受约束回答优化、简历草稿与五页功能纵切面。**
+**当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 事实约束生成、五页功能纵切面与首屏 Product Polish IMPLEMENTED；生产内容模型 live、独立验收待做）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性 + M4 确定性评分、受约束回答优化、简历草稿与五页首屏收口。**
 
 ## 1. 当前真实状态
 
@@ -22,7 +22,7 @@
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` 业务 Workflow 第二次调用通过，10.650749 秒，usage 1156/2544/3700。首轮失败 usage 与全部费用均 NOT_MEASURED/null；单样本不形成 p95 或效果结论 |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Content Generator 的五页纵切面已通过；生产 Answer Analyzer 曾跑通一次 `deepseek-flash` 合成回答。M4-02 浏览器已验证报告、回答优化、简历确认和打印媒体；生产内容生成模型 live、独立验收、两个新页面 Product Polish 与跨代理 SSE 组合仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Content Generator 的五页纵切面已通过；生产 Answer Analyzer 曾跑通一次 `deepseek-flash` 合成回答。本轮另以显式 synthetic fixture API 完成五页两轮视觉、状态语义、lost-202 幂等恢复与只读交互验收；生产内容生成模型 live、独立验收与跨代理 SSE 组合仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -44,9 +44,9 @@
 | M2-03 | M2-02 | VERIFIED | 真实浏览器展示资料快照、synthetic 来源警示、Coverage Map、5 Slots 与首题审核门禁；点击生成计划 operation succeeded，URL 可恢复，刷新后仍为 5 Slots |
 | M3-01 | M2-03 + Seed Level 2 | VERIFIED | `deepseek-flash` 合成回答经生产 Answer Analyzer、真实 openJiuwen Workflow、Observation 语义校验和确定性 Policy 通过；首次失败按契约拒绝并修正 Prompt/日志边界，证据见 §37 |
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；真实模型单样本与本地可靠性证据分开记录 |
-| M3-03 | M3-02 | VERIFIED | 视觉状态 `FROZEN`；三页 P0 前端已完成最终收尾，JD 输入限制与后端 8,000 / 200 字符契约一致，Prepare 顺序固定为岗位摘要→Coverage/Plan→开始动作→技术详情，不再继续修改前三页视觉 |
-| M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过；Report UI 不在本任务 |
-| M4-02 | M4-01 | IMPLEMENTED | 受事实约束的回答优化/简历草稿、Operation/retry、迁移/API 和 Report/Resume 功能页面已实现并通过 fixture 回归/浏览器烟测；生产模型 live、独立验收与两个新页面 Product Polish 待做 |
+| M3-03 | M3-02 | VERIFIED | 业务链继续 VERIFIED；原视觉冻结由负责人本轮明确授权五页首屏收口后解除。Start/Prepare/Interview 已与 Report/Resume 一并完成当前首屏、响应式与中文展示语义调整，未改变后端契约 |
+| M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过 |
+| M4-02 | M4-01 | IMPLEMENTED | 受事实约束回答优化/简历草稿、Operation/retry、迁移/API、五页 UI 与 Product Polish 均已实现并通过 fixture 回归/浏览器烟测；生产模型 live 与负责人独立验收待做 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
@@ -68,13 +68,11 @@
 
 ## 4. 当前唯一首要任务
 
-**M4-02 两个新页面 Product Polish 与独立验收。**
+**M4-02 生产 Content Generator 受控 live 与负责人独立验收。**
 
-M4-02 已按 API-first 实现功能基线：`report.coach` 和 `resume.compose` 通过真实 openJiuwen `Start → Generator → SemanticValidation → End` 编排，模型候选必须通过 Schema、允许 ID、逐字引文、Claim 绑定、数字/责任边界和占位符校验后才原子落库。Report/Resume 页面使用真实 API/Operation/retry，null 分数不显示成 0，简历必须显式确认后才显示打印动作。
+功能、五页 UI 和本地 fixture 证据已经闭合：HTTP/API 事实边界不变，Report/Resume 的生成仍通过真实 openJiuwen Workflow 与严格语义校验，五页当前展示不重算服务端结论。生产内容模型的质量、延迟、usage/cost 仍未验证，负责人独立验收仍 `NOT_RUN`；不能由本轮 16 项前端回归和 synthetic fixture 视觉证据升级为 `VERIFIED/ACCEPTED`。
 
-fixture 浏览器纵切面已经跑通完成面试→报告→回答优化→简历草稿→确认→打印媒体；这证明程序行为和页面连接，不证明生产内容模型质量、延迟、费用或独立验收。M3-03 前三页继续 `VERIFIED / FROZEN`，下一轮只优化 Report/Resume 两个新页面，不借机改前三页、业务契约或事实边界。生产内容模型 live 仍受 O04 持续预算约束。
-
-M4-02 回滚点：公开 `main` 开工基线 commit `4e4e7b43332c7d4e964d58ece3854275ef689a72`。只按 `docs/handoffs/2026-09-19-m4-02.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
+本轮回滚点：负责人给定基线 commit `59e509e30291e284c5bfd2f2796b294171f5504a`。代码按可靠性、Report/Resume、Start/Prepare/Interview、证据/文档/测试四组独立提交回退；不使用 reset/stash，不覆盖后续用户修改。
 
 更早回滚点：M1-03 开工基线 `runtime/evidence/m1-03/task-start.txt`。M1-03 全部新增路径：`domain/claims.py`、`adapters/knowledge.py`、`adapters/db/profiles.py`、`application/{profiles,operations_runner}.py`、`api/*`、`__main__.py`、`tests/unit/{test_profile_confirm,test_knowledge_activation}.py`、`tests/test_api_contract.py`、`contracts/openapi.json`、`Makefile`、`apps/web/src/{api.ts,App.tsx}`；改动文件 `smoke/knowledge.py`、`adapters/db/{documents,profiles}.py`、`application/documents.py`、`adapters/pdf.py`、`apps/web/tsconfig.json`、`config/environment.env.example`、`api.md`。回滚=删除新增 + 按 `docs/handoffs/2026-09-19-m1-03.md` 恢复改动文件哈希。不使用 reset/stash。
 
@@ -849,3 +847,17 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 本轮外部模型和 embedding 网络调用均为 0，usage/cost 为 null；浏览器使用 `ScriptedContentGenerator` 替换模型边界，但编排为真实 openJiuwen Workflow。生产内容模型 live、质量/延迟/成本、独立验收和新页面 Product Polish 均 NOT_RUN，因此状态保守记为 IMPLEMENTED，不写 VERIFIED/ACCEPTED。
 - 最终完整性：规范校验 **46/46**；doctor **18 PASS / 0 WARN / 0 FAIL**，223 个 Git 跟踪/待跟踪文件密钥扫描 0 命中；`CHECKSUMS.sha256` **222/222 OK**；`git diff --check` 无输出。
 - 接口、数据模型、架构、Prompt/事实约束、验收、UI Contract、README、CHANGELOG、process 与 handoff 已同步。交接：`docs/handoffs/2026-09-19-m4-02.md`；唯一下一任务为两个新页面 Product Polish 与独立验收。
+
+## 40. 2026-09-19｜五页首屏收口与展示语义修正（IMPLEMENTED）
+
+- 授权与基线：负责人明确要求在 `59e509e30291e284c5bfd2f2796b294171f5504a` 上收口五页首屏、响应式、展示语义、Operation 终态和 lost-202 恢复，并要求四组提交和推送。该明确指令解除 §36 的旧视觉冻结；不授权改 FastAPI、OpenAPI、数据库、Workflow、Policy 或事实边界。
+- 可靠性：`useOperationMonitor` 以首个 terminal snapshot 单调收敛，观察终态时同步停止 interval、EventSource 和 in-flight fetch。Report improvements、ResumeDraft 创建、Report retry、Resume retry 使用 operation-scope recoverable command，在未取得明确响应时保留原 body 与 `Idempotency-Key`，显式重试逐字段复用。
+- 展示：四步导航统一为资料/准备/面试/复盘；用户可见状态、criterion kind/finding/level 均使用中文映射，未知内部值走中性文案。null 分数保持“未形成总分/未评分”，真实 0 分保持“0 分”；Report/Resume 不显示裸 assessment、criterion、status、Claim ID。
+- 页面：Start 为材料摘要/五条分页事实双栏；Prepare 为要求覆盖/五题计划双栏并只对已登记 competency 映射中文；Interview 保持完整题面、回答框局部滚动与首屏提交；Report 左侧五题导航、右侧单题评分/优化页签；Resume 左侧正文、右侧按 `item_id/claim_id` 的当前条目来源审计。分页、页签、题目和条目选择均为零写请求。
+- 响应式：修复 AnyUI 全局 `html/body height:100vh` 造成的移动端根滚动锁死；桌面工作区优先内部滚动，移动端解除固定高度。打印态解除 Resume 工作区高度、overflow 和 max-height，只输出 accepted 完整正文。
+- 浏览器证据：实际 Vite + 显式 synthetic fixture API 完成两轮五页视觉检查。1366×768 五个主 CTA 坐标为 `189–241 / 189–241 / 647–699 / 685–727 / 194–236`；1440×900 与 1920×1080 全部首屏可见。390×844 全部无横向溢出且 Interview/Report 动作可经根页面滚动到达；1093×614、683×384 等效布局视口覆盖 125%/200%。ignored 截图位于 `runtime/evidence/ui-first-screen-closure/`。
+- 压力输入：21 条候选事实、17 条 JD、五题报告、20 条简历正文均由指定工作区滚动；6,000 字回答 textarea 为 `108/3184`，提交动作底部 `698.77`。accepted 打印正文在 1366px print emulation 下为单栏、无裁剪、无横向溢出。
+- 语义注入：Report null 显示“未形成总分/本次回答信息不足”，另一根题 score=0 显示“0 分”；优化失败与简历生成失败保持 failed 并显示错误，不伪装 ready/accepted。只读交互网络捕获的写请求数组均为空。
+- 回归：Node 24.21.0 下 Vitest **16/16 passed**、TypeScript `--noEmit` exit 0、Vite build exit 0（112 modules）；后端 **272 passed / 2 skipped / 0 failed / 73 warnings**；Ruff format/check 73 files 全绿；规范 **46/46**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性清单 **221/221 OK**；`git diff --check` 无输出。
+- 提交分组：`9778e32` 可靠性，`9909f40` Report/Resume，`f64ee1d` Start/Prepare/Interview，本节、测试、验证报告、CHANGELOG、handoff 与完整性清单归入最终证据/文档提交。HTTP API、`api.md`、OpenAPI、Python DTO、数据库、迁移、依赖与配置均核对无变化。
+- 模型与状态：浏览器数据为显式 synthetic fixture；外部模型和 embedding 调用 0，provider/model/usage/cost 均为 null。生产 Content Generator live、负责人独立验收仍 `NOT_RUN`，故 M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。

@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## Unreleased — 2026-09-19｜五页首屏收口与展示语义修正
+
+- 重构 Start、Prepare、Interview、Report、Resume 五页信息密度：桌面首屏保留真实主 CTA，移动端恢复根页面滚动；21 条事实、17 条 JD、6,000 字回答、五题报告和 20 条简历正文由各自工作区局部滚动承载。
+- Start 候选事实按服务端顺序每页 5 条；Prepare 使用受控能力中文词典和未知方向 fallback；Report 按 `root_question_id` 提供单题导航及“评分依据 / 回答优化”；Resume 按 `item_id/claim_id` 展示当前条目来源，不暴露裸内部 ID。
+- 统一四步导航、业务状态、criterion/finding/level 与失败文案；null 分数和 0 分严格分开。Report 页签/问题、Start 分页、Resume 条目选择均为只读交互，没有写 API。
+- Operation monitor 首次观察终态后立即停止 interval/EventSource/fetch，迟到 running 不覆盖终态。Report improvements、ResumeDraft 创建及两类 retry 对网络未明确响应保留原 request body 与 `Idempotency-Key`，显式重试逐字段复用。
+- 打印媒体解除屏幕工作区高度/overflow，accepted 简历只打印完整正文。HTTP API、OpenAPI、Python DTO、数据库、迁移和依赖无变化。
+- Node 24.21.0 下前端 16/16、TypeScript、Vite 112 modules 全绿；后端 272 passed / 2 skipped、Ruff 全绿、规范 46/46。Chromium 两轮视觉检查覆盖 1366×768、1440×900、1920×1080、390×844、125%/200%，五页无横向溢出；fixture 外部模型调用 0，生产内容模型与独立验收仍 NOT_RUN。
+
+
 ## Unreleased — 2026-09-19｜M4-02 事实约束生成与 Report/Resume 功能基线 IMPLEMENTED
 
 - API-first 新增显式 `report.coach` / `resume.compose` Operation、Report 改写生命周期、ResumeDraft 生成/读取/确认、两个 ready 事件和 parent-linked retry；`InterviewView` 返回 `profile_id`，浏览器不猜资源关系。

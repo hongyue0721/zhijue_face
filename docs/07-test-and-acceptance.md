@@ -375,3 +375,48 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | `git diff --check` | exit 0；无空白错误 |
 
 本轮外部模型和 embedding 网络调用均为 0，usage/cost 为 null。fixture 只替换 Generator 外部模型边界，不能证明生产内容模型质量、延迟或费用；生产 live、独立验收及两个新页面 Product Polish 均 NOT_RUN。M4-02 因此记为 IMPLEMENTED，不写 VERIFIED/ACCEPTED。
+
+## 五页首屏收口与展示语义验证（2026-09-19）
+
+本轮只调整 `apps/web` 展示层与浏览器侧 operation/幂等恢复。HTTP API、OpenAPI、Python DTO、数据库和迁移已核对无变化。浏览器数据全部来自显式 synthetic fixture API；没有调用生产 Answer Analyzer、Content Generator、embedding 或外部模型，usage/cost 为 null。
+
+### 行为与可靠性
+
+| 场景 | 实际结果 | 证据 |
+|---|---|---|
+| 首个终态单调收敛 | `preferObservedOperation` 保留先观察到的 terminal snapshot；`stopOperationTransport` 同时取消 interval、EventSource 和 in-flight fetch；迟到 running 不覆盖 succeeded/failed | `apps/web/tests/contracts.test.ts` |
+| lost-202 原命令重放 | Report improvements、ResumeDraft 创建、Report retry、Resume retry 均先持久化 recoverable command；网络无明确响应时显式重试逐字段复用原 body 与 `Idempotency-Key` | 同上；16 项前端契约回归 |
+| 只读交互零写入 | 浏览器分别切换 Report 问题/页签、Start 候选事实分页、Resume 条目；捕获到的 POST/PUT/PATCH/DELETE 数组均为空 | 本轮浏览器网络捕获 |
+| null / 0 / failed | 注入 Report null 显示“未形成总分/本次回答信息不足”，另一题 0 显示“0 分”；回答优化和简历生成失败分别显示失败文案与错误提示，不伪装 ready/accepted | 浏览器响应注入 + 前端契约测试 |
+| 关联关系 | Report 按 `root_question_id` 关联 Assessment/改善稿；Resume 按 `item_id` 关联正文与 change、按 `claim_id` 映射来源正文；主界面未暴露裸内部 ID | 五页 fixture 视觉检查 |
+| 打印 | accepted Resume 的 print media 隐藏页头和审计区，正文为单栏；屏幕高度、overflow 和 max-height 均解除，1366px 下无横向溢出 | Chromium print emulation |
+
+### 首屏、响应式与压力输入
+
+| 检查 | 实际结果 |
+|---|---|
+| 1366×768 | 五页主 CTA 的纵向坐标依次为 Start `189–241`、Prepare `189–241`、Interview `647–699`、Report `685–727`、Resume `194–236`；全部处于初始视口且横向溢出为 0 |
+| 1440×900 | 五页 CTA 依次为 `189–241`、`189–241`、`845–897`、`807–849`、`194–236`；全部初始可见，横向溢出为 0 |
+| 1920×1080 | 五页 CTA 依次为 `189–241`、`189–241`、`845–897`、`807–849`、`194–236`；全部初始可见，横向溢出为 0 |
+| 390×844 | 五页横向溢出均为 0；Start/Prepare/Resume CTA 初始可见，Interview/Report 分别在页面 `1093–1145`、`1219–1261`，可通过根页面纵向滚动到达 |
+| 125% / 200% | 以 1093×614、683×384 等效布局视口检查五页；全部横向溢出为 0，主 CTA 均可通过根页面滚动到达 |
+| 内部滚动 | 21 条事实：Start `clientHeight=550 / scrollHeight=764`；17 条 JD 展开：Prepare `540/1334`；Report 改善详情 `386/446`；20 条简历正文 `560/1570` |
+| 6,000 字回答 | Textarea `clientHeight=108 / scrollHeight=3184`，计数 `6000 / 6000`，提交 CTA 底部 `698.77` 仍处于 1366×768 初始视口 |
+
+最终截图位于 ignored 的 `runtime/evidence/ui-first-screen-closure/`：五页各一张 1366×768 与 390×844，共 10 张。施工中先完成第一轮五页视觉检查，修正移动端被 AnyUI 全局 `html/body height:100vh` 锁死的根滚动和打印正文裁剪后，再执行上述第二轮最终截图与坐标检查。证据不含真实简历、真实回答、密钥或服务端绝对路径。
+
+### 实际回归与状态
+
+| 命令 | 结果 |
+|---|---|
+| Node 24.21.0 执行 Vitest | exit 0；**16/16 passed** |
+| Node 24.21.0 执行 `tsc --noEmit` | exit 0 |
+| Node 24.21.0 执行 Vite build | exit 0；**112 modules transformed** |
+| `cd services/api && .venv/bin/python -m pytest tests -q` | exit 0；**272 passed / 2 skipped / 0 failed / 73 warnings** |
+| Ruff format/check | exit 0；73 files already formatted；All checks passed |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；**46/46 passed** |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；**18 PASS / 0 WARN / 0 FAIL** |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；**221/221 OK** |
+| `git diff --check` | exit 0；无空白错误 |
+
+本节证明 fixture 展示语义、浏览器交互和本地回归，不证明生产 Content Generator 的质量、延迟、成本或负责人独立验收。M4-02 继续为 `IMPLEMENTED`，不写 `ACCEPTED`。
