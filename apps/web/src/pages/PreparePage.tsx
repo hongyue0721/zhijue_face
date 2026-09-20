@@ -5,20 +5,25 @@ import {
   api,
   newCommandKey,
   type CreateInterviewOptions,
+  type CoverageEntryView,
   type InterviewView,
   type OperationView,
   type ProfileView,
 } from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
-import { CoverageMap } from "../components/prepare/CoverageMap";
 import { InterviewPlan } from "../components/prepare/InterviewPlan";
 import { JDInput } from "../components/prepare/JDInput";
 import { JDSourceBadge } from "../components/prepare/JDSourceBadge";
 import { TechnicalDetails } from "../components/prepare/TechnicalDetails";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewPath, preparePath, startPath } from "../routing";
-import { interviewRoleText } from "../presentation";
+import {
+  coverageExplanation,
+  coverageStatusText,
+  interviewRoleText,
+  requirementTitle,
+} from "../presentation";
 import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
 
 const REQUIREMENT_TIER_COPY = {
@@ -30,23 +35,42 @@ const REQUIREMENT_TIER_COPY = {
 
 function JobSummary({ interview }: { interview: InterviewView }) {
   const counts = { required: 0, preferred: 0, responsibility: 0, contextual: 0 };
+  const coverageCounts: Record<CoverageEntryView["status"], number> = {
+    supported: 0,
+    claimed: 0,
+    unverified: 0,
+    unknown: 0,
+    contradicted: 0,
+  };
   for (const requirement of interview.jd_requirements) counts[requirement.tier] += 1;
+  for (const entry of interview.coverage_map) coverageCounts[entry.status] += 1;
   return (
     <section className="surface-card job-summary" aria-labelledby="job-summary-title">
       <div className="job-summary-heading">
         <div>
-          <p className="eyebrow">本场岗位</p>
-          <h2 id="job-summary-title">{interviewRoleText(interview)}</h2>
+          <p className="eyebrow">岗位概览</p>
+          <h2 id="job-summary-title">要求与资料覆盖</h2>
         </div>
         <JDSourceBadge source={interview.jd_source} />
       </div>
       <div className="requirement-counts" aria-label="岗位要求分类统计">
         {Object.entries(counts).map(([tier, count]) => (
-          <span key={tier}><strong>{REQUIREMENT_TIER_COPY[tier as keyof typeof counts].count}</strong> {count}</span>
+          <span key={tier}>
+            <strong>{REQUIREMENT_TIER_COPY[tier as keyof typeof counts].count}</strong> {count}
+          </span>
         ))}
       </div>
+      <div className="coverage-counts" aria-label="资料覆盖统计">
+        <span><strong>已有支持</strong> {coverageCounts.supported}</span>
+        <span><strong>材料自述</strong> {coverageCounts.claimed}</span>
+        <span><strong>待验证</strong> {coverageCounts.unverified}</span>
+        <span><strong>材料未体现</strong> {coverageCounts.unknown}</span>
+        <span><strong>存在冲突</strong> {coverageCounts.contradicted}</span>
+      </div>
       <details className="requirement-details">
-        <summary>查看完整岗位要求（{interview.jd_requirements.length}）</summary>
+        <summary>
+          查看完整岗位要求与覆盖详情（{interview.jd_requirements.length}）
+        </summary>
         <div className="requirement-details-body">
           <h3>完整岗位要求</h3>
           <ul className="requirement-list">
@@ -54,6 +78,18 @@ function JobSummary({ interview }: { interview: InterviewView }) {
               <li key={requirement.id}>
                 <Tag>{REQUIREMENT_TIER_COPY[requirement.tier].item}</Tag>
                 <span>{requirement.statement}</span>
+              </li>
+            ))}
+          </ul>
+          <h3>资料覆盖</h3>
+          <ul className="requirement-list coverage-detail-list">
+            {interview.coverage_map.map((entry) => (
+              <li key={entry.competency_id}>
+                <Tag>{coverageStatusText[entry.status]}</Tag>
+                <span>
+                  <strong>{requirementTitle(interview.jd_requirements, entry.requirement_ids)}</strong>
+                  <small>{coverageExplanation(entry)}</small>
+                </span>
               </li>
             ))}
           </ul>
@@ -196,30 +232,19 @@ export function PreparePage({
 
   return (
     <main className="page-container prepare-page">
-      <div className="page-intro">
-        <h1>{interview ? interviewRoleText(interview) : "输入目标岗位"}</h1>
-        <p>
-          {interview
-            ? "岗位要求与本场验证计划已准备，可以核对后开始面试。"
-            : "填写真实岗位描述，或明确选择演示岗位配置后生成本场计划。"}
-        </p>
-      </div>
-      <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
-      {!interview ? (
-        <JDInput disabled={!serviceReady} busy={busy} onGenerate={createPlan} />
-      ) : (
-        <>
-          <JobSummary interview={interview} />
-          <div className="plan-grid">
-            <CoverageMap entries={interview.coverage_map} requirements={interview.jd_requirements} />
-            <InterviewPlan slots={interview.root_plan.slots} requirements={interview.jd_requirements} />
+      {interview ? (
+        <header className="compact-page-heading prepare-ready-heading">
+          <div>
+            <p className="eyebrow">面试准备</p>
+            <h1>{interviewRoleText(interview)}</h1>
+            <p>
+              {interview.jd_requirements.length} 项岗位要求
+              {" · "}{interview.root_plan.slots.length} 个主问题方向
+              {" · "}后续追问按回答动态决定
+            </p>
           </div>
-          <section className="surface-card ready-card plan-ready">
-            <div>
-              <p className="eyebrow">准备完成</p>
-              <h2>本场验证计划已准备</h2>
-              <p>后续追问、澄清和切题将由回答动态决定。</p>
-            </div>
+          <div className="heading-actions">
+            <Tag>本场计划已准备</Tag>
             <Button
               type="primary"
               size="large"
@@ -229,7 +254,26 @@ export function PreparePage({
             >
               开始模拟面试
             </Button>
-          </section>
+          </div>
+        </header>
+      ) : (
+        <div className="page-intro">
+          <h1>输入目标岗位</h1>
+          <p>填写真实岗位描述，或明确选择演示岗位配置后生成本场计划。</p>
+        </div>
+      )}
+      <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
+      {!interview ? (
+        <JDInput disabled={!serviceReady} busy={busy} onGenerate={createPlan} />
+      ) : (
+        <>
+          <div className="prepare-workspace">
+            <JobSummary interview={interview} />
+            <InterviewPlan
+              slots={interview.root_plan.slots}
+              requirements={interview.jd_requirements}
+            />
+          </div>
           <TechnicalDetails interview={interview} />
         </>
       )}

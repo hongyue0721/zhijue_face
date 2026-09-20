@@ -9,11 +9,13 @@ function sourceLabel(claim: ClaimView): string {
 
 export function ClaimConfirmList({
   claims,
+  totalCount,
   busyClaimId,
   disabled,
   onDecision,
 }: {
   claims: ClaimView[];
+  totalCount: number;
   busyClaimId: string | null;
   disabled: boolean;
   onDecision: (claimId: string, action: "accept" | "reject") => void;
@@ -24,7 +26,7 @@ export function ClaimConfirmList({
       <div className="section-heading">
         <p className="eyebrow">资料确认</p>
         <h2 id="facts-title">需要你确认的信息</h2>
-        <p>只有你明确确认的内容才会进入资料快照；不采用不会被当成能力不足。</p>
+        <p>共 {totalCount} 条待确认；只有明确确认的内容才会进入资料快照。</p>
       </div>
       <div className="claim-list">
         {claims.map((claim) => (

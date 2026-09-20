@@ -181,16 +181,16 @@ export function InterviewPage({
 
   return (
     <main className="page-container interview-page">
-      <div className="interview-heading">
+      <header className="compact-page-heading interview-heading">
         <div>
           <p className="eyebrow">模拟面试</p>
           <h1>{interviewRoleText(interview)}</h1>
+          <InterviewProgress total={total} question={question} />
         </div>
         <Tag className={`status-tag--${lifecycleTone}`}>
           {lifecycleText}
         </Tag>
-      </div>
-      <InterviewProgress total={total} question={question} />
+      </header>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       {interview.status === "ready" ? (
         <Alert type="warn" title="面试尚未开始">

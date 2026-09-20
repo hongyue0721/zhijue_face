@@ -26,9 +26,9 @@ export function ManualFactForm({
   return (
     <section className="surface-card manual-fact" aria-labelledby="manual-fact-title">
       <div>
-        <p className="eyebrow">没有可确认候选事实</p>
+        <p className="eyebrow">补充经历</p>
         <h2 id="manual-fact-title">手工补充一条事实</h2>
-        <p>系统不会因为解析为空就编造结果。补充内容提交后仍需要你确认。</p>
+        <p>系统不会补造资料；你提交的内容仍需经过确认才能进入资料快照。</p>
       </div>
       <label className="field-label">
         项目或技能事实

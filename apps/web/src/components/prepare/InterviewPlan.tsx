@@ -1,5 +1,5 @@
 import type { InterviewSlotView, JDRequirementView } from "../../api";
-import { materialStatusText, requirementTitle } from "../../presentation";
+import { competencyDisplayName, materialStatusText, requirementTitle } from "../../presentation";
 
 export function InterviewPlan({
   slots,
@@ -20,8 +20,11 @@ export function InterviewPlan({
           <li key={slot.slot_id}>
             <span className="slot-number">{String(index + 1).padStart(2, "0")}</span>
             <div>
-              <strong>{requirementTitle(requirements, slot.jd_requirement_ids)}</strong>
-              <p>{materialStatusText(slot.current_verification_status)}</p>
+              <strong>{competencyDisplayName(slot.competency, index)}</strong>
+              <p>
+                {requirementTitle(requirements, slot.jd_requirement_ids)}
+                {" · "}{materialStatusText(slot.current_verification_status)}
+              </p>
             </div>
           </li>
         ))}

@@ -1,10 +1,10 @@
+import { Button, Tag } from "@any-design/anyui/react";
 import { useCallback, useEffect, useState } from "react";
 import { api, newCommandKey, type DocumentView, type OperationView, type ProfileView } from "../api";
 import { ClaimConfirmList } from "../components/profile/ClaimConfirmList";
 import { DocumentStatus } from "../components/profile/DocumentStatus";
 import { DocumentUpload } from "../components/profile/DocumentUpload";
 import { ManualFactForm } from "../components/profile/ManualFactForm";
-import { ProfileReadyCard } from "../components/profile/ProfileReadyCard";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
@@ -36,6 +36,8 @@ export function StartPage({
   const [factBusy, setFactBusy] = useState(false);
   const [busyClaimId, setBusyClaimId] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [claimPage, setClaimPage] = useState(0);
+  const [manualFactVisible, setManualFactVisible] = useState(false);
 
   const applyProfile = useCallback((next: ProfileView) => {
     setProfile(next);
@@ -90,6 +92,14 @@ export function StartPage({
   const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
   const operationActive = operation?.status === "queued" || operation?.status === "running";
   const commandBusy = submitting || operationActive;
+  const claimPageSize = 5;
+  const pendingClaimCount = profile?.proposed_claims.length ?? 0;
+  const claimPageCount = Math.max(1, Math.ceil(pendingClaimCount / claimPageSize));
+  const visibleClaimPage = Math.min(claimPage, claimPageCount - 1);
+  const visibleClaims = profile?.proposed_claims.slice(
+    visibleClaimPage * claimPageSize,
+    (visibleClaimPage + 1) * claimPageSize,
+  ) ?? [];
 
   const upload = async (file: File) => {
     setError(null);
@@ -151,34 +161,112 @@ export function StartPage({
 
   return (
     <main className={`page-container start-page ${profile ? "start-page--progress" : "start-page--initial"}`}>
-      <div className={`page-intro ${profile ? "" : "centered-intro"}`}>
-        <p className="eyebrow">资料导入</p>
-        <h1>准备你的面试资料</h1>
-        <p>上传简历，让系统建立本场面试使用的候选人资料。</p>
-      </div>
-      <ErrorNotice error={error ?? operationError} onReload={profileId ? () => void reloadProfile() : undefined} />
-      {!document && !operationActive ? (
-        <DocumentUpload disabled={!serviceReady} busy={submitting} onSelect={upload} />
-      ) : null}
-      <DocumentStatus selectedName={selectedName} operation={operation} document={document} />
-      {profile && !commandBusy ? (
-        <ClaimConfirmList
-          claims={profile.proposed_claims}
-          busyClaimId={busyClaimId}
-          disabled={!serviceReady}
-          onDecision={confirmClaim}
-        />
-      ) : null}
-      {profile && profile.proposed_claims.length === 0 && !commandBusy ? (
-        <ManualFactForm disabled={!serviceReady} busy={factBusy} onSubmit={addFact} />
-      ) : null}
       {profile ? (
-        <ProfileReadyCard
-          profile={profile}
-          disabled={!serviceReady || commandBusy}
-          onContinue={() => navigate(preparePath(profile.id))}
-        />
-      ) : null}
+        <header className="compact-page-heading start-ready-heading">
+          <div>
+            <p className="eyebrow">资料导入</p>
+            <h1>核对本场面试资料</h1>
+            <p>
+              已确认 {profile.confirmed_claims.length} 条
+              {" · "}待确认 {profile.proposed_claims.length} 条
+              {" · "}材料 {profile.documents.length} 份
+            </p>
+          </div>
+          <div className="heading-actions">
+            <Tag>{profile.latest_snapshot_id ? "资料快照已更新" : "等待资料确认"}</Tag>
+            <Button
+              type="primary"
+              size="large"
+              disabled={!serviceReady || commandBusy || !profile.latest_snapshot_id}
+              onClick={() => navigate(preparePath(profile.id))}
+            >
+              进入面试准备
+            </Button>
+          </div>
+        </header>
+      ) : (
+        <div className="page-intro centered-intro">
+          <p className="eyebrow">资料导入</p>
+          <h1>准备你的面试资料</h1>
+          <p>上传简历，让系统建立本场面试使用的候选人资料。</p>
+        </div>
+      )}
+      <ErrorNotice
+        error={error ?? operationError}
+        onReload={profileId ? () => void reloadProfile() : undefined}
+      />
+      {!profile ? (
+        <>
+          <DocumentUpload disabled={!serviceReady} busy={submitting} onSelect={upload} />
+          <DocumentStatus selectedName={selectedName} operation={operation} document={document} />
+        </>
+      ) : (
+        <section className="start-workspace" aria-label="资料核对工作区">
+          <div className="start-material-column">
+            {!document && !operationActive ? (
+              <DocumentUpload disabled={!serviceReady} busy={submitting} onSelect={upload} />
+            ) : null}
+            <DocumentStatus selectedName={selectedName} operation={operation} document={document} />
+            <Button
+              type="secondary"
+              onClick={() => setManualFactVisible((current) => !current)}
+            >
+              {manualFactVisible ? "收起补充经历" : "补充经历"}
+            </Button>
+            {manualFactVisible ? (
+              <ManualFactForm
+                disabled={!serviceReady || commandBusy}
+                busy={factBusy}
+                onSubmit={addFact}
+              />
+            ) : null}
+          </div>
+
+          <div className="start-claims-column">
+            {profile.proposed_claims.length ? (
+              <>
+                <ClaimConfirmList
+                  claims={visibleClaims}
+                  totalCount={profile.proposed_claims.length}
+                  busyClaimId={busyClaimId}
+                  disabled={!serviceReady || commandBusy}
+                  onDecision={confirmClaim}
+                />
+                {claimPageCount > 1 ? (
+                  <nav className="claim-pagination" aria-label="待确认资料分页">
+                    <Button
+                      type="secondary"
+                      size="small"
+                      disabled={visibleClaimPage === 0 || commandBusy}
+                      onClick={() => setClaimPage((current) => Math.max(0, current - 1))}
+                    >
+                      上一页
+                    </Button>
+                    <span>第 {visibleClaimPage + 1} / {claimPageCount} 页</span>
+                    <Button
+                      type="secondary"
+                      size="small"
+                      disabled={visibleClaimPage >= claimPageCount - 1 || commandBusy}
+                      onClick={() => setClaimPage((current) => current + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </nav>
+                ) : null}
+              </>
+            ) : (
+              <section className="surface-card claims-empty-state">
+                <p className="eyebrow">资料确认</p>
+                <h2>没有待确认信息</h2>
+                <p>当前没有新的候选事实；可继续使用已确认资料，或手工补充经历。</p>
+                <Button type="secondary" onClick={() => setManualFactVisible(true)}>
+                  手工补充经历
+                </Button>
+              </section>
+            )}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

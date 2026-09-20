@@ -100,7 +100,7 @@ export function AnswerComposer({
           modelValue={value}
           onUpdateModelValue={setText}
           placeholder="请写下你的真实做法、排查过程和验证依据。"
-          rows={10}
+          rows={5}
           maxlength={6000}
           readonly={retry}
           disabled={submitting || !serviceReady}
