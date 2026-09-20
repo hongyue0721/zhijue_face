@@ -110,8 +110,12 @@ def test_sniff_kind_uses_magic_not_extension():
 def test_import_text_pdf_produces_blocks_with_hash(service):
     data = make_pdf(["项目经历：ESP32-S3 FreeRTOS Queue", "技能：C 语言 STM32 CAN DMA"])
     document = service.import_document(
-        profile_id="profile_1", data=data, filename="resume.pdf", kind="resume"
-    )
+        profile_id="profile_1",
+        expected_revision=0,
+        data=data,
+        filename="resume.pdf",
+        kind="resume",
+    ).document
     assert document.sha256 == hashlib.sha256(data).hexdigest()
     assert document.extract_status == "parsed"
     assert document.page_count == 2
@@ -127,10 +131,11 @@ def test_import_text_pdf_produces_blocks_with_hash(service):
 def test_scanned_document_becomes_requires_text_not_empty_success(service):
     document = service.import_document(
         profile_id="profile_1",
+        expected_revision=0,
         data=make_pdf(["", ""]),
         filename="scan.pdf",
         kind="resume",
-    )
+    ).document
     # T02：扫描件不得输出"解析成功，识别了零项"的假成功。
     assert document.extract_status == "requires_text"
     assert any("文字层" in w or "粘贴" in w for w in document.warnings)
@@ -140,10 +145,11 @@ def test_mixed_pages_keep_readable_and_warn_on_missing(service):
     # T03：一页可读一页扫描 → 保留可读页，缺页明确提示。
     document = service.import_document(
         profile_id="profile_1",
+        expected_revision=0,
         data=make_pdf(["有文字层的一页", ""]),
         filename="mixed.pdf",
         kind="resume",
-    )
+    ).document
     assert document.extract_status == "parsed"
     assert document.warnings  # 明确记录了缺文字层页
     blocks = service.list_blocks(document.id, cursor=None, limit=20)
@@ -154,6 +160,7 @@ def test_encrypted_document_fails_without_persisting(service):
     with pytest.raises(DocumentRejected) as exc:
         service.import_document(
             profile_id="profile_1",
+            expected_revision=0,
             data=encrypt_pdf(make_pdf(["x"])),
             filename="locked.pdf",
             kind="resume",
@@ -168,6 +175,7 @@ def test_oversize_upload_rejected_before_parse(service):
     with pytest.raises(DocumentRejected) as exc:
         service.import_document(
             profile_id="profile_1",
+            expected_revision=0,
             data=b"%PDF-1.4" + b"\x00" * (service.limits.max_bytes + 1),
             filename="huge.pdf",
             kind="resume",
@@ -181,11 +189,19 @@ def test_document_count_per_profile_limit(service):
     data = make_pdf(["内容"])
     for i in range(service.limits.max_documents):
         service.import_document(
-            profile_id="profile_1", data=data, filename=f"d{i}.pdf", kind="project"
+            profile_id="profile_1",
+            expected_revision=i,
+            data=data,
+            filename=f"d{i}.pdf",
+            kind="project",
         )
     with pytest.raises(DocumentRejected) as exc:
         service.import_document(
-            profile_id="profile_1", data=data, filename="more.pdf", kind="project"
+            profile_id="profile_1",
+            expected_revision=service.limits.max_documents,
+            data=data,
+            filename="more.pdf",
+            kind="project",
         )
     assert exc.value.code == "DOCUMENT_LIMIT"
 
@@ -193,16 +209,18 @@ def test_document_count_per_profile_limit(service):
 def test_replacement_creates_new_document_not_overwrite(service):
     first = service.import_document(
         profile_id="profile_1",
+        expected_revision=0,
         data=make_pdf(["旧内容"]),
         filename="r.pdf",
         kind="resume",
-    )
+    ).document
     second = service.import_document(
         profile_id="profile_1",
+        expected_revision=1,
         data=make_pdf(["新内容"]),
         filename="r.pdf",
         kind="resume",
-    )
+    ).document
     assert first.id != second.id  # 原件不可覆盖，替换产生新 Document（docs/03 §3）
     assert second.filename_display == first.filename_display
 
@@ -210,8 +228,12 @@ def test_replacement_creates_new_document_not_overwrite(service):
 def test_blocks_pagination_cursor_stable(service):
     pages = [f"第{i}页 内容" for i in range(1, 6)]
     doc = service.import_document(
-        profile_id="profile_1", data=make_pdf(pages), filename="p.pdf", kind="resume"
-    )
+        profile_id="profile_1",
+        expected_revision=0,
+        data=make_pdf(pages),
+        filename="p.pdf",
+        kind="resume",
+    ).document
     page1 = service.list_blocks(doc.id, cursor=None, limit=2)
     assert [b.text for b in page1.items] == ["第1页 内容", "第2页 内容"]
     assert page1.next_cursor is not None

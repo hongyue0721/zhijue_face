@@ -73,7 +73,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 | POST `/profiles` | display_name、synthetic | 201 ProfileView | 新档案 revision=0，synthetic 默认 true |
 | GET `/profiles/{id}` | 无 | 200 ProfileView | 服务端完整快照；刷新恢复用 |
 | POST `/profiles/{id}/facts` | expected_revision、items:[{section,text}] | 201 ProfileView | 手填事实形成 user_input SourceBlock 和 proposed Claim；不自动“真实认证” |
-| POST `/profiles/{id}/documents` | multipart：file、kind、expected_revision | 202 OperationAccepted | kind=resume/project；先校验再保存，解析异步 |
+| POST `/profiles/{id}/documents` | multipart：file、kind、expected_revision | 202 OperationAccepted | kind=resume/project；校验并提取 SourceBlock 后，live 通过 P-EXTRACT Workflow 选择逐字候选事实，作为 proposed Claim 与 Document 原子提交；不自动确认 |
 | GET `/documents/{id}` | 无 | 200 DocumentView | 查看提取/索引状态 |
 | GET `/documents/{id}/blocks` | cursor?、limit 默认20最大100 | 200 {items,next_cursor} | 页块文本及位置，用于确认和引用回查 |
 | POST `/profiles/{id}/confirm` | expected_revision、decisions:[{claim_id,action,corrected_text?}] | 202 OperationAccepted | action=accept/reject/correct；写确认快照并更新 Knowledge |
@@ -81,7 +81,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 手填 items 一次最多 50 条，section 为 basic/education/project/skill/award/other，text 长度 1—2,000。合计字符上限沿用配置。展示姓名/联系方式不会自动进入模型评价上下文。
 
-上传最大 10 MiB、最多 5 页；新传入文件或事实后增加 Profile revision，未确认的新内容不改变已经绑定旧快照的面试；加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，提示用 `/facts` 粘贴文本。扫描判定是提示，不是精确文档类型认证。
+上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。
 
 confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必须提供 corrected_text，创建新的 user_input 依据；用户不能把随意改写的内容继续绑定为原文 exact_quote。confirm 完成后 Profile revision 加一；Knowledge 失败则 index_status=failed，不允许开始需该版本的新面试。
 

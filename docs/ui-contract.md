@@ -20,10 +20,10 @@
 |---|---|---|---|
 | 服务可用状态 | `GET /api/v1/health/ready` | `status`、`run_mode` | 不展示模型名、密钥、token；503 不自动切换 fixture |
 | Profile | `POST /api/v1/profiles`、`GET /api/v1/profiles/{id}` | `id`、`revision`、`documents`、claims、`latest_snapshot_id` | 不从本地文件名生成候选事实 |
-| PDF 上传 | `POST /api/v1/profiles/{id}/documents` | multipart `file`、`kind=resume`、`expected_revision`；`Idempotency-Key` | 浏览器不得手工设置 multipart `Content-Type` boundary |
-| 文档处理状态 | `GET /api/v1/operations/{id}` + `GET /api/v1/documents/{id}` | Operation `status/error/result`；Document `extract_status/index_status/warnings/page_count` | SSE 关闭不等于成功；`pending` 不显示成完成 |
+| PDF 上传 | `POST /api/v1/profiles/{id}/documents` | multipart `file`、`kind=resume`、`expected_revision`；`Idempotency-Key`；成功 Operation result 含 `resource_revision/proposed_claim_count/extraction_metadata` | 浏览器不得手工设置 multipart `Content-Type` boundary；202 不冒充候选事实已生成 |
+| 文档处理状态 | `GET /api/v1/operations/{id}` + `GET /api/v1/documents/{id}` + `GET /api/v1/profiles/{id}` | Operation `status/error/result`；Document `extract_status/index_status/warnings/page_count`；Profile `proposed_claims` | SSE 关闭不等于成功；只有 operation succeeded 后重读 Document/Profile；`pending` 不显示成完成 |
 | 解析文本抽屉 | `GET /api/v1/documents/{id}/blocks` | `items[].page_number/block_index/text` | 不从浏览器重新解析 PDF |
-| 候选事实 | `ProfileView.proposed_claims` | `text/source_quotes/status`；保持服务端顺序，每页 5 条在浏览器只读分页 | 解析为空时不生成示例事实；翻页不得发起写请求 |
+| 候选事实 | `ProfileView.proposed_claims` | `text/source_quotes/status`；上传候选 text 必须等于 SourceBlock 的 exact_quote；保持服务端顺序，每页 5 条在浏览器只读分页 | 解析为空时不生成示例事实；翻页不得发起写请求；未确认不得进入快照 |
 | 手工事实 | `POST /api/v1/profiles/{id}/facts` | `expected_revision`、`items[].section/text` | 提交后仍保持 proposed，等待用户确认 |
 | 事实确认 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action`、operation | 只有 operation succeeded 后重新读取 Profile；不本地伪造 Snapshot |
 | 资料就绪 | `ProfileView.latest_snapshot_id` | 非空 ID | `Document.index_status` 不能替代 Profile Snapshot 门槛 |

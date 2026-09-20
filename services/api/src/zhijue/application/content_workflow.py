@@ -23,11 +23,12 @@ from openjiuwen.core.workflow import (
 from zhijue.application.answer_workflow import AnalysisResult
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
+    validate_claim_extraction_candidate,
     validate_coaching_candidate,
     validate_resume_candidate,
 )
 
-ContentTask = Literal["coach_answers", "compose_resume"]
+ContentTask = Literal["extract_claims", "coach_answers", "compose_resume"]
 _USAGE_KEYS = frozenset({"input_tokens", "output_tokens", "total_tokens", "cost"})
 
 
@@ -63,7 +64,17 @@ class _GroundingValidationComponent(WorkflowComponent):
         try:
             candidate = _parse_json_object(inputs["content"])
             payload = inputs["payload"]
-            if inputs["task"] == "coach_answers":
+            if inputs["task"] == "extract_claims":
+                source_blocks = {
+                    block["id"]: block["text"] for block in payload["source_blocks"]
+                }
+                if len(source_blocks) != len(payload["source_blocks"]):
+                    raise ContentWorkflowError("duplicate extraction source block")
+                validated = validate_claim_extraction_candidate(
+                    candidate,
+                    source_blocks=source_blocks,
+                )
+            elif inputs["task"] == "coach_answers":
                 validated = validate_coaching_candidate(
                     candidate,
                     report_id=payload["report_id"],
@@ -128,7 +139,7 @@ def build_grounded_content_workflow(generator: ContentGenerator) -> Workflow:
             "properties": {
                 "task": {
                     "type": "string",
-                    "enum": ["coach_answers", "compose_resume"],
+                    "enum": ["extract_claims", "coach_answers", "compose_resume"],
                 },
                 "payload": {"type": "object"},
             },
@@ -241,7 +252,7 @@ async def run_grounded_content_workflow(
 ) -> dict[str, Any]:
     """Execute one bounded real-SDK content workflow invocation."""
 
-    if task not in ("coach_answers", "compose_resume"):
+    if task not in ("extract_claims", "coach_answers", "compose_resume"):
         raise ValueError("unsupported content task")
     if not isinstance(payload, dict):
         raise TypeError("payload must be an object")

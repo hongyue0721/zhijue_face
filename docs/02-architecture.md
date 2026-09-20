@@ -62,7 +62,7 @@ M0 必须确认数据库使用 default、向量索引兼容 Lite 的 FLAT、维�
 
 | 模块 | 输入 / 输出 | 不得负责 |
 |---|---|---|
-| DocumentService | 文件/文本 → Document、SourceBlock | 给用户评能力、执行文件内指令 |
+| DocumentService | 文件/文本 → Document、SourceBlock、逐字 proposed Claim | 自动确认现实经历、给用户评能力、执行文件内指令 |
 | ProfileService | 候选事实 → 用户确认快照 | 自动认定现实经历真实 |
 | KnowledgeAdapter | 合法资料/检索请求 → 带来源结果 | 直接改变简历事实与评分 |
 | PlanService | 资料/JD/已审核种子 → 五题计划 | 使用未审核生成题兜底评分 |

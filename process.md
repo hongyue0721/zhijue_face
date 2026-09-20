@@ -874,3 +874,16 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 安全留痕：施工中私密 env 被错误读取到会话工具输出；未写入 Git/runtime 证据/文档。负责人获知后明确选择继续使用当前 Key 完成本轮。该选择不消除泄露风险，后续仍建议轮换，且任何新 Key 都不得发到聊天。
 - 最终代码回归：专项 **22 passed / 10 warnings**；Ruff 74 files 全绿；后端 **273 passed / 2 skipped / 0 failed / 73 warnings**；前端 **16/16 passed**、TypeScript 与 Vite 112 modules 通过；规范 **46/46 passed**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性 **223/223 OK**；空白检查通过。
 - HTTP API、`api.md`、OpenAPI、Python DTO、数据库、迁移、依赖、前端与配置模板均无变化。生产 Content Generator 单样本 live 门槛解除，但负责人独立验收仍 NOT_RUN；M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。
+
+## 42. 2026-09-20｜M4-02 PDF 上传待确认事实缺口修复（IMPLEMENTED）
+
+- 负责人独立验收真实 `/start` 后报告“上传 PDF 没有待确认事实”。现场 API 日志和旧 runtime 数据确认：document.import succeeded、PDF 已解析为 1 个 SourceBlock，但 Claim=0、Profile revision=0。旧代码只实现 Document/SourceBlock 保存，未实现 P-EXTRACT，且完全忽略 multipart `expected_revision`；这是后端业务缺口，不是 UI 渲染问题。
+- API-first 在 `api.md` 冻结上传语义：文本解析后由真实 openJiuwen P-EXTRACT Workflow 选择单个 SourceBlock 内的连续逐字候选；`text == exact_quote`，未知块、改写、联系方式、重复和超过 50 项确定性拒绝。Document、SourceBlock、proposed Claim 与 Profile revision 原子提交；stale revision 在解析和外部调用前拒绝。扫描 PDF 保持 `requires_text`，不调用模型、不伪造事实。
+- 实现新增 `contracts/claim-extraction-result.schema.json`，扩展 `ContentTask.extract_claims`、生产 model prompt、DocumentService 编排和 DocumentRepository 原子写入。FastAPI route 现在消费 `expected_revision`，Operation result 返回 `resource_revision/document_id/extract_status/index_status/proposed_claim_count/extraction_metadata`。HTTP route、OpenAPI 外形、数据库 Schema、迁移、依赖均未改变。
+- 先补的两个 API 回归真实失败：正常文本上传 revision 预期 1 实际 0；stale revision 预期冲突却成功。实现后专项 **79 passed / 12 warnings**；新增回归覆盖真实 openJiuwen Workflow、模型 transport prompt、Schema/允许块/逐字边界、stale 无部分写入、scan-only 无模型调用。
+- 生产 live 使用 synthetic 两页 PDF 经实际 Vite `/start` 上传。P-EXTRACT 1 次 HTTP，约 2.86 秒，Profile revision=1，4 个 proposed Claim 在 Chromium 页面真实显示，且均可回查 SourceBlock；usage 461/658/1119，cost=null。证据数据库为 ignored `runtime/acceptance-upload-fix-smoke-20260920T100007Z/business.db`。这不证明真实简历召回率、p95、批量稳定性或价格。
+- 最终回归：Ruff **74 files / all checks passed**；后端 **281 passed / 2 skipped / 0 failed / 74 warnings**；锁定 Node 24 前端 **16/16 passed**、TypeScript 通过、Vite **112 modules**；规范 **47/47**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性清单 **225/225 OK**；空白检查通过。
+- 文档同步：`api.md`、contracts README、根/服务 README、架构、数据模型、Prompt/事实、UX、UI Contract、测试验收、风险、CHANGELOG、process 与交接。旧用户上传的原始 PDF 字节按隐私策略未保存，不能安全服务端重放；必须在修复后的空白 runtime 重新上传一次。
+- 当前服务：Vite `127.0.0.1:5199` 与 live API `127.0.0.1:8000` 均 ready；API 使用空白 `runtime/acceptance-m4-02-owner-fixed-20260920T102600Z`，`/start` 文件选择控件可用。M4-02 仍为 `IMPLEMENTED`，不写 ACCEPTED；等待负责人重新上传原 PDF 做独立复验。
+- SDK/运行链：openJiuwen 0.1.18（锁定兼容 commit `72c4985111b8`），真实 Workflow；业务存储 SQLite，既有 Knowledge/Milvus Lite 已配置但本次未调用；provider/model 为当前私有 `deepseek-flash` 配置，P-EXTRACT prompt `p-extract.1`、schema `1.0.0`。
+- 唯一下一任务：负责人在当前 `/start` 重新上传原 PDF，确认待确认事实与材料逐字一致；通过后再登记独立验收状态，不自动扩展题库、OCR 或下一阶段。

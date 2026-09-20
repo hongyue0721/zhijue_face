@@ -456,3 +456,41 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | `git diff --check` | exit 0；无空白错误 |
 
 HTTP API、OpenAPI、Python DTO、数据库、迁移、依赖和前端均无变化。生产 Content Generator 的单样本 live 门槛已解除；负责人独立验收仍 NOT_RUN，因此 M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。
+
+## M4-02 PDF 上传待确认事实缺口修复（2026-09-20）
+
+### 独立验收复现与根因
+
+负责人在 live `/start` 上传真实 PDF 后报告没有待确认事实。后端访问日志证明上传 Operation 成功；旧 runtime 中 Document 为 `parsed`、存在 1 个 SourceBlock，但 Claim 为 0、Profile revision 仍为 0。根因不是页面漏渲染：旧 `DocumentService` 只保存 Document/SourceBlock，P-EXTRACT 从未实现，且上传入口忽略 `expected_revision`。原始 PDF 字节按既有隐私策略未保留，因此不能在服务端安全重放或补写用户事实。
+
+先补的两个 API 回归真实失败：正常文本 PDF 期望 revision 1 但得到 0；stale `expected_revision` 期望冲突但被接受。没有把空结果改成前端示例事实，也没有从文件名或模型常识补造经历。
+
+### 修复边界
+
+- live 上传在文本解析后通过生产 `OpenAICompatibleContentGenerator` 和真实 openJiuwen `Start → Generator → SemanticValidation → End` 执行 P-EXTRACT；
+- 模型只能输出允许 SourceBlock 中的连续逐字片段，且 `text == exact_quote`；未知块、改写、电子邮箱/URL/手机号等联系方式、重复和超过 50 项全部拒绝；
+- Document、SourceBlock、proposed Claim、Profile revision 原子提交；stale revision 在解析/付费调用前拒绝，模型或验证失败不留半成品；
+- `requires_text` 扫描 PDF 不调用 P-EXTRACT，继续显示明确降级；合法文本却没有候选时保留 warning，不生成演示事实；
+- fixture 只使用明确标记的确定性逐行选择器，测试不冒充 live 模型。
+
+### 实际 live 与页面证据
+
+使用 synthetic 两页 PDF 在生产 live 配置的 Vite 页面上传：Operation succeeded，Profile revision 从 0 增至 1，Document 为 2 页/parsed/index pending，实际显示 **4 条待确认事实**。数据库逐项保留 Claim → SourceBlock → exact_quote 关系；浏览器页面显示相同 4 条，不读本地 fixture。
+
+P-EXTRACT 仅发 **1 次真实 HTTP**，Operation 从 `2026-09-20T10:25:49.515760Z` 到 `10:25:52.378730Z`，约 2.86 秒；provider/model 为当前私有 `deepseek-flash` 配置，prompt `p-extract.1`，schema `1.0.0`，usage 为 input 461 / output 658 / total 1119，cost=null。证据数据库位于 ignored `runtime/acceptance-upload-fix-smoke-20260920T100007Z/business.db`；输入完全 synthetic，不含负责人简历。随后 API 已切换到新的空白 `runtime/acceptance-m4-02-owner-fixed-20260920T102600Z`，Vite 和 API 均保持 ready，`/start` 文件控件可用。
+
+### 回归结果
+
+| 命令/场景 | 结果 |
+|---|---|
+| 初始上传回归 | exit 1；`test_document_upload_accepts_202_and_imports_text` 与 `test_document_upload_rejects_stale_profile_revision_without_partial_write` 共 2 failed，分别证明 revision 未增长和 stale revision 被接受 |
+| `pytest tests/test_api_contract.py tests/unit/test_document_import.py tests/unit/test_grounded_content.py tests/unit/test_answer_workflow.py -q` | exit 0；79 passed / 12 warnings |
+| Ruff format/check + `pytest tests -q` | exit 0；74 files already formatted；All checks passed；**281 passed / 2 skipped / 0 failed / 74 warnings** |
+| 锁定 Node 24 执行 Vitest、`tsc --noEmit`、Vite build | exit 0；16/16 passed；TypeScript 通过；112 modules transformed |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；**47/47 passed** |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；**18 PASS / 0 WARN / 0 FAIL** |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；**225/225 OK** |
+| `git diff --check` | exit 0；无空白错误 |
+| 实际 Chromium `/start` | synthetic PDF 显示 4 条待确认事实；重启后的空白 owner runtime 文件选择控件可用 |
+
+本节验证缺口复现、真实 P-EXTRACT、来源约束、原子写入和实际页面展示；不证明真实简历召回率、批量稳定性、p95、价格或负责人复验通过。M4-02 仍为 `IMPLEMENTED`；负责人需要重新上传一次原 PDF，完成独立验收后才能写 ACCEPTED。

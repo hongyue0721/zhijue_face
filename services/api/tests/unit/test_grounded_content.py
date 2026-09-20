@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 import pytest
 
+from zhijue.application.answer_workflow import AnalysisResult
+from zhijue.application.content_workflow import run_grounded_content_workflow
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
+    validate_claim_extraction_candidate,
     validate_coaching_candidate,
     validate_resume_candidate,
 )
@@ -29,6 +35,130 @@ def _coaching_candidate(rewritten_answer: str, *, refs: list[dict[str, str]]):
             }
         ],
     }
+
+
+def test_claim_extraction_accepts_only_verbatim_source_spans():
+    source_blocks = {
+        "block_project": "项目经历\n使用 STM32 HAL 和 DMA 完成串口接收。",
+        "block_skill": "专业技能\n熟悉 FreeRTOS Queue。",
+    }
+    candidate = {
+        "schema_version": "1.0.0",
+        "claims": [
+            {
+                "text": "使用 STM32 HAL 和 DMA 完成串口接收。",
+                "source_block_id": "block_project",
+                "exact_quote": "使用 STM32 HAL 和 DMA 完成串口接收。",
+                "section": "project",
+            },
+            {
+                "text": "熟悉 FreeRTOS Queue。",
+                "source_block_id": "block_skill",
+                "exact_quote": "熟悉 FreeRTOS Queue。",
+                "section": "skill",
+            },
+        ],
+    }
+
+    assert (
+        validate_claim_extraction_candidate(candidate, source_blocks=source_blocks)
+        == candidate
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        {
+            "text": "主导 STM32 项目。",
+            "source_block_id": "block_project",
+            "exact_quote": "使用 STM32 HAL。",
+            "section": "project",
+        },
+        {
+            "text": "使用 STM32 HAL。",
+            "source_block_id": "block_foreign",
+            "exact_quote": "使用 STM32 HAL。",
+            "section": "project",
+        },
+        {
+            "text": "使用 STM32 HAL。",
+            "source_block_id": "block_project",
+            "exact_quote": "不存在的原文",
+            "section": "project",
+        },
+    ],
+)
+def test_claim_extraction_rejects_rewording_foreign_blocks_and_fake_quotes(claim):
+    with pytest.raises(GroundedContentValidationError):
+        validate_claim_extraction_candidate(
+            {"schema_version": "1.0.0", "claims": [claim]},
+            source_blocks={"block_project": "使用 STM32 HAL。"},
+        )
+
+
+@pytest.mark.parametrize("contact", ["demo@example.com", "13800138000"])
+def test_claim_extraction_rejects_contact_data(contact):
+    with pytest.raises(GroundedContentValidationError, match="contact data"):
+        validate_claim_extraction_candidate(
+            {
+                "schema_version": "1.0.0",
+                "claims": [
+                    {
+                        "text": contact,
+                        "source_block_id": "block_basic",
+                        "exact_quote": contact,
+                        "section": "basic",
+                    }
+                ],
+            },
+            source_blocks={"block_basic": contact},
+        )
+
+
+def test_claim_extraction_runs_through_real_openjiuwen_workflow():
+    class Extractor:
+        async def generate(self, *, task, payload):
+            assert task == "extract_claims"
+            return AnalysisResult(
+                content=json.dumps(
+                    {
+                        "schema_version": "1.0.0",
+                        "claims": [
+                            {
+                                "text": "使用 STM32 DMA。",
+                                "source_block_id": "block_demo",
+                                "exact_quote": "使用 STM32 DMA。",
+                                "section": "project",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+            )
+
+    result = asyncio.run(
+        run_grounded_content_workflow(
+            generator=Extractor(),
+            task="extract_claims",
+            payload={
+                "document_kind": "resume",
+                "source_blocks": [
+                    {
+                        "id": "block_demo",
+                        "page_number": 1,
+                        "text": "使用 STM32 DMA。",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert result["candidate"]["claims"][0]["exact_quote"] == "使用 STM32 DMA。"
+    assert result["usage"]["total_tokens"] == 15
 
 
 def test_coaching_accepts_only_exact_answer_quotes_and_snapshot_claims():

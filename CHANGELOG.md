@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-20｜PDF 上传待确认事实缺口修复
+
+- 独立验收确认真实 PDF 已解析为 Document/SourceBlock，但旧 `document.import` 从未生成 Claim，页面因而显示 0 条待确认事实；同时 `expected_revision` 被忽略。原始回归稳定复现 revision 未增长与 stale upload 被接受。
+- API-first 将上传语义闭合为 P-EXTRACT：live 模式通过真实 openJiuwen Workflow 让生产 Content Generator 只选择 SourceBlock 内逐字候选，服务端拒绝未知块、非逐字引文、联系方式、重复项和超过 50 项的输出。Document、SourceBlock、proposed Claim 与 Profile revision 在同一事务提交；扫描 PDF 不调用模型，也不伪造候选事实。
+- 新增 `claim-extraction-result.schema.json`、真实 Workflow/模型 transport/语义校验/上传原子性回归；上传成功 Operation result 返回 revision、candidate count 与去敏 extraction metadata。路由、OpenAPI 外形、数据库 Schema、迁移和依赖不变，`api.md` 与前后端展示契约已同步。
+- synthetic 两页 PDF 经实际 Vite + FastAPI live 页面显示 4 条可逐字回查的待确认事实；P-EXTRACT 1 次真实 HTTP，2.86 秒，usage 461/658/1119，cost=null。该单样本不证明真实简历召回率、p95 或价格；负责人需要在已重启的干净 runtime 重新上传原 PDF 完成独立复验。
+- 最终后端 281 passed / 2 skipped / 74 warnings，Ruff 74 files 全绿；前端 16/16、TypeScript、Vite 112 modules 通过；规范 47/47；doctor 18 PASS / 0 WARN / 0 FAIL；完整性 225/225。M4-02 保持 IMPLEMENTED，不写 ACCEPTED。
+
 
 ## Unreleased — 2026-09-20｜M4-02 生产 Content Generator synthetic live
 

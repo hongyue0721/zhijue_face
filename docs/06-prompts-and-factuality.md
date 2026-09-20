@@ -18,6 +18,7 @@
 | P-COACH | 原回答、已验证反馈、允许事实 | 改写答案+改写说明+待补问题 | 编造个人经历、数据、实验结果 |
 
 各 Prompt 存文件、版本和变更理由。任何 Prompt 修改都有回归用例，不只凭一条输出更好就替换。
+P-EXTRACT 固定输出 `schema_version + claims[]`；每项只有 `text / source_block_id / exact_quote / section`。`text` 必须与 `exact_quote` 逐字符相同，quote 必须是对应 SourceBlock 的连续子串，section 只能是 basic/education/project/skill/award/other。最多 50 项；模型只负责从不可信材料中选择候选片段，不能总结、拼接或改写。服务端同时拒绝电子邮箱、URL 和手机号等联系方式，并在同一事务写 Document、SourceBlock、proposed Claim 和 Profile revision；验证失败不落部分材料或候选事实。
 
 ## 3. 结构化输出处理
 

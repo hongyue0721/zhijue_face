@@ -387,6 +387,13 @@ def test_content_generator_requests_exact_contract_shapes():
                 model_settings(model_max_retries=0), client=client
             )
             await generator.generate(
+                task="extract_claims",
+                payload={
+                    "document_kind": "resume",
+                    "source_blocks": [{"id": "block_demo", "text": "使用 STM32 DMA。"}],
+                },
+            )
+            await generator.generate(
                 task="coach_answers",
                 payload={"report_id": "report_demo", "answers_by_root": {}},
             )
@@ -396,9 +403,28 @@ def test_content_generator_requests_exact_contract_shapes():
             )
 
     asyncio.run(scenario())
-    assert len(captured) == 2
+    assert len(captured) == 3
 
-    coaching = json.loads(captured[0].content)
+    extraction = json.loads(captured[0].content)
+    extraction_prompt = extraction["messages"][0]["content"]
+    assert all(
+        field in extraction_prompt
+        for field in (
+            '"schema_version"',
+            '"claims"',
+            '"text"',
+            '"source_block_id"',
+            '"exact_quote"',
+            '"section"',
+        )
+    )
+    extraction_data = json.loads(extraction["messages"][1]["content"])
+    assert extraction_data["requested_output"] == "extract_claims"
+    assert extraction_data["data_classification"] == (
+        "untrusted_candidate_and_target_data"
+    )
+
+    coaching = json.loads(captured[1].content)
     coaching_prompt = coaching["messages"][0]["content"]
     assert all(
         field in coaching_prompt
@@ -417,7 +443,7 @@ def test_content_generator_requests_exact_contract_shapes():
         "untrusted_candidate_and_target_data"
     )
 
-    resume = json.loads(captured[1].content)
+    resume = json.loads(captured[2].content)
     resume_prompt = resume["messages"][0]["content"]
     assert all(
         field in resume_prompt

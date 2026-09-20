@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhijue.local/contracts/claim-extraction-result.schema.json",
+  "title": "ClaimExtractionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "claims"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "claims": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_block_id", "exact_quote", "section"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "source_block_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exact_quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "section": {
+            "enum": ["basic", "education", "project", "skill", "award", "other"]
+          }
+        }
+      }
+    }
+  }
+}

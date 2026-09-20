@@ -127,3 +127,9 @@
 - K30：`response_format=json_object` 不是 JSON Schema 下发。首轮模型返回合法 JSON，却使用字段别名并遗漏多个必填字段；服务端正确拒绝。Prompt 现显式列出精确结构，transport 回归检查实际 system message。Schema/领域校验仍是最终门槛，不能因单次 Prompt 成功而删除。
 - O04 的费用授权阻塞已解除：负责人明确自有 Key 可无限授权；程序每 operation 三次总尝试硬上限和 smoke 的每任务一次 HTTP 仍保留。provider 未返回费用，cost 继续为 null，不用“无限授权”推算价格。
 - 私密配置曾被错误读取到会话工具输出；负责人知情后选择继续当前 Key。本轮 Key 未进入 Git、runtime 证据或文档，但泄露风险不会因继续使用而消失，仍应轮换；任何新 Key 不得进入聊天。
+
+## M4-02 上传候选事实缺口修复（2026-09-20）
+
+- K31：此前 document.import 只解析 Document/SourceBlock，没有执行 Claim 提取，导致真实 PDF 显示“解析完成”但待确认事实为零。修复后 live 路径必须经真实 P-EXTRACT Workflow 选择 `text == exact_quote` 的单块逐字候选，并在同一事务写 Document、SourceBlock、proposed Claim 与 Profile revision；任何校验失败都不留半成品。
+- K32：扫描 PDF 的 `requires_text` 不运行 P-EXTRACT；这仍是 P0 明示降级，不是 OCR。模型返回空候选时必须保留可见 warning，不能用本地演示事实补齐。
+- K33：一次 synthetic 两页 PDF 已在浏览器看到 4 条待确认事实，调用 usage 为 461/658/1119，cost=null，端到端 Operation 用时约 2.86 秒。该证据只证明上传链路与来源约束，不证明真实简历召回率、语言泛化、p95 或价格。

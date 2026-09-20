@@ -468,6 +468,9 @@ def test_document_upload_accepts_202_and_imports_text(client):
     assert operation["status"] == "succeeded"
     document_id = operation["result"]["document_id"]
     assert operation["result"]["extract_status"] == "parsed"
+    assert operation["result"]["resource_revision"] == 1
+    assert operation["result"]["proposed_claim_count"] == 1
+    assert operation["result"]["extraction_metadata"]["run_mode"] == "fixture"
 
     document = client.get(f"/api/v1/documents/{document_id}").json()["data"]
     assert document["kind"] == "resume"
@@ -480,6 +483,51 @@ def test_document_upload_accepts_202_and_imports_text(client):
     assert blocks["items"][0]["text"] == "项目经历：STM32 UART DMA 接收"
     assert blocks["items"][0]["origin"] == "text_layer"
     assert blocks["items"][0]["page_number"] is None
+
+    profile = client.get(f"/api/v1/profiles/{profile_id}").json()["data"]
+    assert profile["revision"] == 1
+    assert len(profile["proposed_claims"]) == 1
+    claim = profile["proposed_claims"][0]
+    assert claim["text"] == "项目经历：STM32 UART DMA 接收"
+    assert claim["source_block_ids"] == [blocks["items"][0]["id"]]
+    assert claim["source_quotes"] == [
+        {
+            "source_block_id": blocks["items"][0]["id"],
+            "exact_quote": claim["text"],
+            "text_context": claim["text"],
+            "origin": "text_layer",
+            "section": "project",
+        }
+    ]
+
+
+def test_document_upload_rejects_stale_profile_revision_without_partial_write(client):
+    profile_id = create_profile(client)
+    updated = client.post(
+        f"/api/v1/profiles/{profile_id}/facts",
+        json={
+            "expected_revision": 0,
+            "items": [{"section": "skill", "text": "使用 FreeRTOS Queue"}],
+        },
+    ).json()["data"]
+    assert updated["revision"] == 1
+
+    accepted = client.post(
+        f"/api/v1/profiles/{profile_id}/documents",
+        data={"kind": "resume", "expected_revision": 0},
+        files={"file": ("stale.txt", b"STM32 DMA", "text/plain")},
+        headers={"Idempotency-Key": "upload-stale-key-00001"},
+    ).json()["data"]
+    operation = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+        "data"
+    ]
+    assert operation["status"] == "failed"
+    assert operation["error"]["code"] == "REVISION_CONFLICT"
+
+    profile = client.get(f"/api/v1/profiles/{profile_id}").json()["data"]
+    assert profile["revision"] == 1
+    assert profile["documents"][0]["kind"] == "user_input"
+    assert len(profile["proposed_claims"]) == 1
 
 
 def test_document_upload_requires_idempotency_key(client):

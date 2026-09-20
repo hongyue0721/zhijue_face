@@ -70,7 +70,7 @@ export function DocumentStatus({
             <span>1</span><div><strong>文件已接收</strong><small>业务后端已受理上传请求</small></div>
           </li>
           <li className={document?.extract_status === "parsed" ? "complete" : failed ? "failed" : operationActive ? "active" : undefined}>
-            <span>2</span><div><strong>{document ? extractText(document.extract_status) : "正在提取文本"}</strong><small>正在读取 PDF 文字内容</small></div>
+            <span>2</span><div><strong>{document ? extractText(document.extract_status) : "正在提取文本与候选事实"}</strong><small>读取 PDF 文字并选择可逐字回查的候选事实</small></div>
           </li>
           <li className={document?.index_status === "ready" ? "complete" : document?.index_status === "failed" ? "failed" : document?.index_status === "indexing" ? "active" : undefined}>
             <span>3</span><div><strong>{document ? indexText(document.index_status) : "等待索引状态"}</strong><small>正在准备面试检索材料</small></div>

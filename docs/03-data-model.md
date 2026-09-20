@@ -52,7 +52,7 @@
 ## 5. 来源定位与一致性
 
 1. 提取后的 SourceBlock 为不可变文本，保留原始文件 hash、页码和 block_index。
-2. Claim 引用 `source_block_id + exact_quote`。精确引文必须是块文本子串；对外只返回必要片段。
+2. Claim 引用 `source_block_id + exact_quote`。上传材料的 P-EXTRACT 只能选择一个块内的连续逐字片段，Claim text 必须与 exact_quote 完全相同；模型改写、未知块、虚构引文、联系方式和重复候选在 Document/Claim 原子提交前拒绝。对外只返回必要片段。
 3. 用户更正产生 `user_input` 新块和 supersedes 关系，不篡改原 PDF 来源。不把人工更正文案标成 OCR 正确识别。
 4. 检索 chunk 必须映射回一个或多个 SourceBlock。若分块失去来源映射，不能用于“材料直接证明”提问。
 5. 对模型生成的摘要再检查来源的语义支持。禁止用字符串相似度把错误陈述强行重绑到最像的一句，造成伪溯源。

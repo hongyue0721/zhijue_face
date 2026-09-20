@@ -37,7 +37,7 @@ PYTHONPATH=src .venv/bin/python -m smoke.content_model \
 - 非法输入/超时配置、真实节点抛错、超时取消、失败后新执行、重复执行、证据 hash 与拒绝覆盖均有测试。
 - JSON 记录时间、版本、平台、官方源码路径/hash、Agent MRO、实际输出/hash。不同进程的输出 hash 可比；这不代表跨进程会话恢复。
 
-`run_mode=live` 只表示相应框架/模型入口真实运行，输入仍需明确标记。M0 Workflow smoke 无模型；Knowledge 使用 BGE-M3 的历史累计调用见根目录 process。M3-01 已用合成回答、approved Seed 0.2.1、生产 `OpenAICompatibleAnswerAnalyzer` 和真实 openJiuwen handle-answer Workflow 跑通 `deepseek-flash`；M4-02 已用 synthetic 回答/Claim、生产 `OpenAICompatibleContentGenerator` 和真实 openJiuwen grounded-content Workflow 分别跑通 coaching/resume。两者都只是单样本，不证明效果泛化、p95、限流恢复或费用。PROBE 候选人文案仍由已验证 criterion 与冻结 Rubric 确定性聚焦，不为措辞新增模型调用。
+`run_mode=live` 只表示相应框架/模型入口真实运行，输入仍需明确标记。M0 Workflow smoke 无模型；Knowledge 使用 BGE-M3 的历史累计调用见根目录 process。M3-01 已用合成回答、approved Seed 0.2.1、生产 `OpenAICompatibleAnswerAnalyzer` 和真实 openJiuwen handle-answer Workflow 跑通 `deepseek-flash`；M4-02 已用 synthetic 回答/Claim、生产 `OpenAICompatibleContentGenerator` 和真实 openJiuwen grounded-content Workflow 分别跑通 coaching/resume。PDF/文本上传现在通过真实 P-EXTRACT Workflow 从不可变 SourceBlock 选择逐字 proposed Claim，并与 Document/Profile revision 原子提交；候选事实不会自动确认或直接参与评分。以上都只是单样本，不证明效果泛化、p95、限流恢复或费用。PROBE 候选人文案仍由已验证 criterion 与冻结 Rubric 确定性聚焦，不为措辞新增模型调用。
 
 M4-01 由 `ReportingService` 读取已持久化 Observation 和冻结 Rubric，按根题合并主答/追问并计算 coverage/score；`POST /interviews/{id}/control` 串行处理 skip/end，`GET /interviews/{id}/report` 只读取唯一持久化 Report。未测、跳过、覆盖不足和冲突均保持 null；报告失败后的 retry 复用 Observation，不再次调用 Analyzer。Answer、Operation、Assessment、Report 与 durable events 仍由同一 FastAPI/SQLite 写入方管理。
 

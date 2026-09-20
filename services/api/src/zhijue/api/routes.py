@@ -375,24 +375,27 @@ async def _import_and_activate(
     kind: str,
     expected_revision: int,
 ) -> dict[str, Any]:
-    """上传后的异步链：导入 → 推进 revision → 若已有快照则重新激活其 Knowledge。
+    """Import → P-EXTRACT → atomic Document/Claim/revision commit.
 
-    导入本身不产生 Claim（自动提议 Claim 属 M2+ 的模型接线），因此这里
-    只保证"材料已入库、索引状态随激活推进"，不假装产生了已确认事实。
+    The user still decides whether every proposed Claim is accepted. Knowledge
+    activation remains behind that explicit confirmation boundary.
     """
-    document = await asyncio.to_thread(
+    imported = await asyncio.to_thread(
         services.documents.import_document,
         profile_id=profile_id,
+        expected_revision=expected_revision,
         data=data,
         filename=filename,
         kind=kind,
     )
+    document = imported.document
     return {
-        "resource_revision": services.profiles.get_profile(profile_id).revision,
+        "resource_revision": imported.resource_revision,
         "document_id": document.id,
         "extract_status": document.extract_status,
         "index_status": document.index_status,
-        "requested_expected_revision": expected_revision,
+        "proposed_claim_count": imported.proposed_claim_count,
+        "extraction_metadata": imported.extraction_metadata,
     }
 
 

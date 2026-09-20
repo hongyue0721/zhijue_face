@@ -51,6 +51,10 @@ _HIGH_RISK_ASSERTIONS = (
     "built",
 )
 _TECHNICAL_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_+./#-]*")
+_CONTACT_DATA = re.compile(
+    r"(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|https?://|www\.|(?<!\d)1[3-9]\d{9}(?!\d))",
+    re.IGNORECASE,
+)
 
 
 class GroundedContentValidationError(ValueError):
@@ -66,7 +70,7 @@ def _contracts_root() -> Path:
     )
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=3)
 def _validator(filename: str) -> Draft202012Validator:
     schema_path = _contracts_root() / filename
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -116,6 +120,44 @@ def _reject_unbound_assertions(text: str, source_texts: list[str]) -> None:
         raise GroundedContentValidationError(
             "generated content introduced an unbound technical token"
         )
+
+
+def validate_claim_extraction_candidate(
+    candidate: Any, *, source_blocks: dict[str, str]
+) -> dict[str, Any]:
+    """Accept only verbatim, source-owned spans as proposed Claim candidates."""
+
+    document = _validate_schema(candidate, "claim-extraction-result.schema.json")
+    seen_texts: set[str] = set()
+    seen_refs: set[tuple[str, str]] = set()
+    for claim in document["claims"]:
+        block_id = claim["source_block_id"]
+        exact_quote = claim["exact_quote"]
+        block_text = source_blocks.get(block_id)
+        if block_text is None:
+            raise GroundedContentValidationError(
+                "claim extraction referenced an unknown source block"
+            )
+        if exact_quote not in block_text:
+            raise GroundedContentValidationError(
+                "claim extraction quote is not verbatim"
+            )
+        if claim["text"] != exact_quote:
+            raise GroundedContentValidationError(
+                "claim extraction may not rewrite source text"
+            )
+        if _CONTACT_DATA.search(exact_quote) is not None:
+            raise GroundedContentValidationError(
+                "claim extraction may not persist contact data"
+            )
+        reference = (block_id, exact_quote)
+        if claim["text"] in seen_texts or reference in seen_refs:
+            raise GroundedContentValidationError(
+                "claim extraction returned a duplicate candidate"
+            )
+        seen_texts.add(claim["text"])
+        seen_refs.add(reference)
+    return document
 
 
 def validate_coaching_candidate(

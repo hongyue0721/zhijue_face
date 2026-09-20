@@ -183,6 +183,11 @@ def build_services(
     )
     readiness["seed_bank_version"] = seed_bank.version_fingerprint()
     reporting = ReportingService(engine=engine, operations=operation_repo)
+    generator_metadata = (
+        generator.public_summary()
+        if generator is not None and hasattr(generator, "public_summary")
+        else {}
+    )
     content = ContentGenerationService(
         engine=engine,
         operations=operation_repo,
@@ -190,11 +195,7 @@ def build_services(
         run_mode=config.run_mode,
         workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
         model_attempt_limit=getattr(generator, "max_total_attempts", 3),
-        generator_metadata=(
-            generator.public_summary()
-            if generator is not None and hasattr(generator, "public_summary")
-            else {}
-        ),
+        generator_metadata=generator_metadata,
     )
     return Services(
         config=config,
@@ -210,7 +211,12 @@ def build_services(
             model_attempt_limit=getattr(analyzer, "max_total_attempts", 3),
         ),
         documents=DocumentService(
-            engine=engine, repo=document_repo, limits=config.limits
+            engine=engine,
+            repo=document_repo,
+            limits=config.limits,
+            generator=generator,
+            run_mode=config.run_mode,
+            generator_metadata=generator_metadata,
         ),
         profiles=ProfileService(repo=profile_repo, knowledge=knowledge),
         operations=operation_repo,
