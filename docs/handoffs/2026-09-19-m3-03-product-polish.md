@@ -4,9 +4,9 @@
 
 工作目录/分支：仓库根目录 / `main`  
 基线 commit：`8a58d1ac872f9e6c23baa2ea0e203d254870c0c9`  
-本次 commit 或尚未提交的文件：尚未提交；修改限于 `apps/web` 展示层、UX/UI Contract、测试记录、README、CHANGELOG、process、handoff 与完整性清单  
+Product Polish commit：`bae74d50d8af2821f93501ee700eccc059af5196`（`style(web): polish M3-03 demo UI`），已推送至公开 `main`；本交接最初编写时的“尚未提交”状态由本行补记为最终发布事实
 应用版本 / 规范版本：M3-03 / 1.0.0  
-当前阶段和任务状态：M3-03 三页 Product Polish 本地 VERIFIED；完成后冻结视觉，M4 未开始  
+当前阶段和任务状态：M3-03 三页 Product Polish 本地 VERIFIED；后续最终小范围收尾完成后正式 FROZEN，M4 未开始
 运行模式：浏览器视觉检查为 intercepted fixture HTTP response；业务文本模型 live NOT_RUN
 
 ## 本次真实完成
@@ -48,6 +48,13 @@ api.md：已检查无变更；HTTP 路径、字段、状态、错误、幂等和
 process.md：已更新  
 架构/数据/测试/配置/CHANGELOG：架构、数据和配置无变化；`docs/07-test-and-acceptance.md`、`docs/08-ux.md`、`docs/ui-contract.md`、README、CHANGELOG 已同步  
 新风险、待负责人事项：业务文本模型 live、评分/报告、跨代理 UTF-8 分块、`EVENT_HISTORY_GONE` 与跨新标签页失败 operation 恢复仍沿用既有边界；本轮没有扩大或掩盖  
-唯一下一任务：保持 M3-03 视觉冻结；等待 M4 Report 后端完成后再评审第四页，不自动开发  
+唯一下一任务：保持 M3-03 视觉冻结；负责人提供私密业务模型配置与费用上限后执行 M3-01 业务文本模型 live 验证，完成前不启动 M4
 继续时先运行的命令：在 `apps/web` 使用 Node 24 执行 `pnpm test && pnpm build`  
 回滚方式：以基线 `8a58d1ac872f9e6c23baa2ea0e203d254870c0c9` 按本交接文件清单逐文件恢复；禁止 `reset --hard`、stash 或覆盖用户修改
+
+## 后续状态补记
+
+- Product Polish 的实际版本落盘与公开推送事实见上方 commit；没有改写本交接记录的施工过程与当时 10/10 验证结果。
+- 后续最终收尾仅对齐 JD 8,000 / 200 字符限制，并把 Prepare ready 顺序调整为岗位摘要→Coverage/Plan→开始动作→技术详情；因此上表“1366×768 主 CTA 首屏可见”只描述 Product Polish 当时验收，不再是冻结版要求。
+- 冻结版仍不包含 Report、评分、雷达图、回答优化或 Resume Draft；业务文本模型 live 继续 `NOT_RUN`，不能把 fixture Analyzer 描述为真实模型验证。
+- 最终收尾验证：锁定 Node 24.21.0 / pnpm 10.34.5 下 Vitest 11/11、TypeScript + Vite build 112 modules；1366×768、1440×900、390×844 Prepare 顺序正确且无横向溢出；规范 44/44、doctor 18 PASS、完整性 204/204。

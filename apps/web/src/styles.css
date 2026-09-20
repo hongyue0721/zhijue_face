@@ -605,6 +605,25 @@ blockquote {
   font-weight: 700;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.field-hint,
+.character-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.character-count {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
 .jd-input {
   width: min(900px, 100%);
   margin-inline: auto;

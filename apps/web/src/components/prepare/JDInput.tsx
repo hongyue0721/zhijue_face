@@ -1,6 +1,10 @@
 import { Button, Input, Textarea } from "@any-design/anyui/react";
 import { useState } from "react";
-import type { CreateInterviewOptions } from "../../api";
+import {
+  JD_SOURCE_NAME_MAX_LENGTH,
+  JD_TEXT_MAX_LENGTH,
+  type CreateInterviewOptions,
+} from "../../api";
 
 export function JDInput({
   disabled,
@@ -22,6 +26,12 @@ export function JDInput({
       setValidation("请填写岗位名称与岗位描述正文，或明确选择演示岗位配置。欠缺输入不会被自动补成真实岗位。");
       return;
     }
+    if (name.length > JD_SOURCE_NAME_MAX_LENGTH || text.length > JD_TEXT_MAX_LENGTH) {
+      setValidation(
+        `岗位名称不得超过 ${JD_SOURCE_NAME_MAX_LENGTH} 字符，岗位描述正文不得超过 ${JD_TEXT_MAX_LENGTH} 字符。`,
+      );
+      return;
+    }
     setValidation(null);
     onGenerate({ jd_text: text, jd_source_name: name });
   };
@@ -39,19 +49,26 @@ export function JDInput({
           modelValue={jobName}
           onUpdateModelValue={setJobName}
           placeholder="例如：嵌入式软件开发实习生"
+          maxlength={JD_SOURCE_NAME_MAX_LENGTH}
           disabled={disabled || busy}
         />
       </label>
       <label className="field-label">
-        岗位描述正文
+        <span className="field-label-row">
+          <span>岗位描述正文</span>
+          <span className="field-hint">最大 {JD_TEXT_MAX_LENGTH} 字符</span>
+        </span>
         <Textarea
           modelValue={jdText}
           onUpdateModelValue={setJdText}
           placeholder="粘贴岗位职责、任职要求与优先条件"
           rows={10}
-          maxlength={30000}
+          maxlength={JD_TEXT_MAX_LENGTH}
           disabled={disabled || busy}
         />
+        <span className="character-count" aria-live="polite">
+          {jdText.length} / {JD_TEXT_MAX_LENGTH}
+        </span>
       </label>
       <div className="button-row split-actions">
         <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>

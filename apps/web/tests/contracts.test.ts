@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  JD_SOURCE_NAME_MAX_LENGTH,
+  JD_TEXT_MAX_LENGTH,
   api,
   requestRetryReason,
   type CoverageEntryView,
@@ -43,6 +45,13 @@ function errorResponse(
     headers: { "Content-Type": "application/json" },
   });
 }
+describe("frontend request limits", () => {
+  it("matches the CreateInterviewRequest JD length limits", () => {
+    expect(JD_TEXT_MAX_LENGTH).toBe(8_000);
+    expect(JD_SOURCE_NAME_MAX_LENGTH).toBe(200);
+  });
+});
+
 describe("browser API boundary", () => {
   const fetchMock = vi.fn(async () => ok(accepted));
 

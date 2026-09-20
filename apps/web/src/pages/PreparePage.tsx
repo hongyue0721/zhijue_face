@@ -207,11 +207,15 @@ export function PreparePage({
       ) : (
         <>
           <JobSummary interview={interview} />
+          <div className="plan-grid">
+            <CoverageMap entries={interview.coverage_map} requirements={interview.jd_requirements} />
+            <InterviewPlan slots={interview.root_plan.slots} requirements={interview.jd_requirements} />
+          </div>
           <section className="surface-card ready-card plan-ready">
             <div>
               <p className="eyebrow">准备完成</p>
               <h2>本场验证计划已准备</h2>
-              <p>开始后将根据当前五题计划生成本场主问题；后续是否追问、澄清或进入下一题，将根据你的回答动态决定。</p>
+              <p>后续追问、澄清和切题将由回答动态决定。</p>
             </div>
             <Button
               type="primary"
@@ -223,10 +227,6 @@ export function PreparePage({
               开始模拟面试
             </Button>
           </section>
-          <div className="plan-grid">
-            <CoverageMap entries={interview.coverage_map} requirements={interview.jd_requirements} />
-            <InterviewPlan slots={interview.root_plan.slots} requirements={interview.jd_requirements} />
-          </div>
           <TechnicalDetails interview={interview} />
         </>
       )}

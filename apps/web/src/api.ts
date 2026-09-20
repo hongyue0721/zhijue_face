@@ -241,6 +241,9 @@ export interface CreateInterviewOptions {
   jd_source_name?: string;
 }
 
+export const JD_TEXT_MAX_LENGTH = 8_000;
+export const JD_SOURCE_NAME_MAX_LENGTH = 200;
+
 export interface ErrorBody {
   code: string;
   message: string;

@@ -3,7 +3,7 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M3 / IN_PROGRESS（M3-03 三页 P0 前端本地 VERIFIED；M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED）**
+**当前阶段：M3 / IN_PROGRESS（M3-03 三页 P0 前端 VERIFIED / FROZEN；M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED）**
 **当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 后端首题/回答/有限 Policy/可靠性 + 资料导入、岗位准备、五题模拟面试三页前端。业务模型 live、评分和报告仍未完成。**
 
 ## 1. 当前真实状态
@@ -44,8 +44,8 @@
 | M2-03 | M2-02 | VERIFIED | 真实浏览器展示资料快照、synthetic 来源警示、Coverage Map、5 Slots 与首题审核门禁；点击生成计划 operation succeeded，URL 可恢复，刷新后仍为 5 Slots |
 | M3-01 | M2-03 + Seed Level 2 | IMPLEMENTED | 真实 openJiuwen handle-answer Workflow、Observation 语义校验与确定性 Policy 已在 fixture 验证；缺显式业务模型私密配置，live NOT_RUN，不能标 VERIFIED |
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；不代表文本模型 live |
-| M3-03 | M3-02 | VERIFIED | 三页 P0 前端与真实操作链保持不变；capacity code、主问题生成文案、四类 JD source 和 follow-up intent 映射已按当前后端契约修正并补回归 |
-| M4-01 | M3-03 | PLANNED | 评分与报告 |
+| M3-03 | M3-02 | VERIFIED | 视觉状态 `FROZEN`；三页 P0 前端已完成最终收尾，JD 输入限制与后端 8,000 / 200 字符契约一致，Prepare 顺序固定为岗位摘要→Coverage/Plan→开始动作→技术详情，不再继续修改前三页视觉 |
+| M4-01 | M3-03 | PLANNED | 评分与报告；虽然结构依赖由 M3-03 闭合，当前阶段门禁仍要求先完成 M3-01 业务文本模型 live 验证 |
 | M4-02 | M4-01 | PLANNED | 事实约束改写和简历入口 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
@@ -788,7 +788,7 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 输入与输出：只消费现有 Profile/Document/Interview/Operation 响应；输出限于品牌、视觉 Token、信息层级、中文展示文案、Requirement 前端聚合/折叠和响应式样式。Requirement tier 数量只由 `InterviewView.jd_requirements` 派生，不构造业务事实。
 - 允许修改：`apps/web` 展示层、`docs/08-ux.md`、`docs/ui-contract.md`、测试记录、README、CHANGELOG、process、handoff 与完整性清单。后端、契约、迁移和依赖不在修改范围。
 - 计划验收：保持现有 10 项 contract tests 全通过，production build 通过；真实浏览器检查 1366×768、1440×900、1920×1080、390×844，并覆盖 `/start` 初始态、Prepare 计划完成态、Interview 主问题与 PROBE/CLARIFY 态。
-- 回滚：以本节开工基线按文件恢复，不使用 reset、stash 或覆盖用户修改。完成本轮后冻结 M3-03 视觉，等待 M4 Report 后端完成。
+- 回滚：以本节开工基线按文件恢复，不使用 reset、stash 或覆盖用户修改。完成本轮后冻结 M3-03 视觉；项目唯一首要任务仍是 M3-01 业务文本模型 live 验证，不提前启动 M4。
 
 - 实际交付：Header 品牌图形由“知”统一为“职”，品牌显示“职觉 ZhiJue / AI 面试陪练”，步骤和模块 Eyebrow 全部中文化；普通业务卡片阴影归零，问题卡仅保留 `0 6px 18px rgba(32, 48, 74, 0.04)`，主卡片/问题卡 12px、Input/Button 9px、Tag 6px，并补 Linux 中文字体回退。
 - `/start` 初始态继续居中；上传完成后的 Document、Claim 确认和资料就绪改为左对齐低密度信息层级，候选原文与资料版本默认折叠。没有生成额外 Claim，也没有改 Profile/Document 门槛。
@@ -797,5 +797,17 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 锁定 Node 24.21.0 / pnpm 10.34.5：`pnpm test` **10/10 passed**、`pnpm build` exit 0、TypeScript + Vite **112 modules**。首次命令因 `corepack` 不在默认 PATH 而 exit 127；定位仓库 `toolchain/node24/bin` 后完成最终锁定环境验证，没有修改代码绕过。
 - 实际 Chromium + Vite intercepted fixture response 检查：1366×768 Prepare、1440×900 Start/PROBE、1920×1080 MAIN、390×844 Start/CLARIFY 均无横向溢出；390px 顺序为 Question→Answer→Context，按钮与 Textarea 宽度 274/324px 可操作。证据位于 ignored 的 `runtime/evidence/m3-03-product-polish/`，不冒充 FastAPI/openJiuwen/model live。
 - 规范校验 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**；`CHECKSUMS.sha256` **204/204** 一致。本轮业务模型调用 0，provider/model/token/cost 均为 null；后端全量 247 passed / 2 skipped 为 M3-03 既有基线，本轮因后端/API/OpenAPI 0 变化未重跑。
-- 后端、OpenAPI、`api.md`、数据库、迁移、依赖、三页路由、Policy、Answer Workflow、Operation/SSE、retry 状态机和业务流程均为 0 变化。M3-03 视觉从本节起冻结，唯一下一任务是等待 M4 Report 后端完成后评审第四页。
-- 交接：`docs/handoffs/2026-09-19-m3-03-product-polish.md`。版本尚未提交；由负责人决定 commit/push 时点。
+- 后端、OpenAPI、`api.md`、数据库、迁移、依赖、三页路由、Policy、Answer Workflow、Operation/SSE、retry 状态机和业务流程均为 0 变化。Product Polish 完成时进入视觉冻结；后续小范围契约收尾见 §36。项目唯一首要任务始终是 M3-01 业务文本模型 live 验证，不因前三页完成而跳到 M4。
+- 交接：`docs/handoffs/2026-09-19-m3-03-product-polish.md`。Product Polish 已由 commit `bae74d50d8af2821f93501ee700eccc059af5196`（`style(web): polish M3-03 demo UI`）落盘并推送至公开 `main`；原“版本尚未提交”是交接编写时状态，本行补记最终发布事实。
+
+## 36. 2026-09-19T18:34:13-07:00｜M3-03 最终小范围收尾（VERIFIED / FROZEN）
+
+- 开工 HEAD：公开 `main` 的 `bae74d50d8af2821f93501ee700eccc059af5196`，本地 `main...origin/main` 干净。重新读取 Python DTO、`api.md`、OpenAPI、Prepare 实现、前端 API/测试及进度文档后确认：`jd_text.max_length=8000`、`jd_source_name.max_length=200`，后端契约未改变。
+- `apps/web/src/api.ts` 以单一常量导出两个上限；`JDInput` 同时复用常量设置 `maxlength`，显示 `当前字符数 / 8000`，并在提交前明确拒绝超限值，不截断后静默提交。契约回归从 10 项增至 **11/11 passed**。
+- Prepare ready DOM 固定为 Job Summary → Coverage / 五题 Plan → Start CTA → Technical Details。Coverage、Plan 和 Requirement 仍逐项按 `InterviewView.coverage_map`、`root_plan.slots`、`jd_requirements` 的服务端顺序渲染，没有按 `competency_id` 造名称、改 priority 或生成计划。
+- 锁定 Node 24.21.0 / pnpm 10.34.5：`corepack pnpm@10.34.5 test` exit 0，1 file、**11/11 passed**；`corepack pnpm@10.34.5 build` exit 0，TypeScript `--noEmit` + Vite **112 modules**。首次直接调用 `pnpm` 因当前 PATH 不含该命令 exit 127，随后使用仓库锁定的 corepack 工具链完成最终验证，没有修改代码绕过。
+- 规范校验前三轮均为 **43/44、exit 1**。根因是任务板状态写成非枚举复合值 `VERIFIED / FROZEN`，校验器没有登记 M3-03，继而报告 M4-01 依赖未知；中途调整依赖文本不能解决状态行未被解析的问题。最终保持机器状态 `VERIFIED`，把 `FROZEN` 作为产物状态写入说明，第四轮 **44/44、exit 0**；这不把 M3-01 从 `IMPLEMENTED / live NOT_RUN` 升级。
+- 最终规范校验 **44/44、exit 0**；doctor **18 PASS / 0 WARN / 0 FAIL**；重建 `CHECKSUMS.sha256` 后 **204/204 OK**。后端代码与契约均未改，因此未重复运行后端 pytest；沿用的 247 passed / 2 skipped 仅是 M3-03 既有基线。
+- 实际 Chromium + Vite intercepted fixture response 检查 1366×768、1440×900、390×844：三档均无横向溢出，DOM 和视觉顺序均为岗位摘要→Coverage/Plan→开始动作→技术详情；CTA 允许在 Coverage/Plan 后通过纵向滚动到达。另在实际 JD 输入页确认 `maxlength=8000/200`、`最大 8000 字符` 和实时计数。证据位于 ignored 的 `runtime/evidence/m3-03-product-polish/`，不冒充 FastAPI/openJiuwen/model live。
+- `/start`、`/interviews/:id`、Stepper、颜色、阴影、圆角、移动布局和业务状态机均未修改；FastAPI、OpenAPI、`api.md`、数据库、Workflow、Policy、Operation/SSE 与 retry 为 0 变化。当前仍是真实 FastAPI/SQLite/openJiuwen Workflow/Operation/SSE + fixture Answer Analyzer；业务模型 live、token、cost、效果与延迟仍 `NOT_RUN` / null。
+- M3-03 从本节起正式 `FROZEN`，不再继续修改前三页视觉，也不启动 Report UI、评分、雷达图、improved answer 或 Resume Draft。唯一下一任务：负责人提供 O04 私密业务模型配置和费用上限后执行 M3-01 业务文本模型 live 验证；完成前不启动 M4。

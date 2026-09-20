@@ -1,5 +1,14 @@
 # CHANGELOG
 
+
+## Unreleased — 2026-09-19｜M3-03 最终收尾与冻结
+
+- 对齐后端 `CreateInterviewRequest` 真值：`jd_text` 最多 8,000 字符、`jd_source_name` 最多 200 字符。前端由同一组导出常量驱动两个 `maxlength`、提交前校验及 JD 正文实时字符计数，不截断超限内容后静默提交。
+- Prepare ready DOM 调整为岗位摘要 → Coverage/五题 Plan → 开始动作 → 技术详情；数据仍只来自 `InterviewView.jd_requirements`、`coverage_map`、`root_plan.slots`，服务端顺序、priority 和业务流程不变。
+- Product Polish commit `bae74d50d8af2821f93501ee700eccc059af5196` 已推送至公开 `main`。修正 handoff/process 中遗留的“尚未提交”和“下一任务等待 M4”冲突；当前唯一下一任务仍为 M3-01 业务文本模型 live 验证。
+- 锁定 Node 24.21.0 / pnpm 10.34.5：Vitest **11/11 passed**，TypeScript + Vite production build **112 modules**。实际 Vite 页面以 intercepted fixture response 检查 1366×768、1440×900、390×844，Prepare 顺序正确且无横向溢出。
+- FastAPI、OpenAPI、`api.md`、数据库、Workflow、Policy、Operation/SSE、retry、`/start` 与面试页均为 0 变化；业务文本模型 live 仍 `NOT_RUN`。M3-03 三页前端正式 `FROZEN`，M4 未启动。
+
 ## Unreleased — 2026-09-19｜M3-03 三页 Product Polish
 
 - 在不改变 FastAPI、OpenAPI、`api.md`、数据库、路由、Interview/Answer 状态机、Operation/SSE 与 retry 的前提下，完成三页纯展示层精修；业务能力、API 与状态机均为 0 变化。
