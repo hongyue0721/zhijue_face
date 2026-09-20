@@ -3,8 +3,8 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M3 / VERIFIED（M3-01 业务文本模型 live、M3-02 后端可靠性、M3-03 三页 P0 前端均 VERIFIED；前三页视觉 FROZEN；M4 未开始）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 后端首题/回答/有限 Policy/可靠性 + 三页前端 + `deepseek-flash` 真实回答分析。评分和报告仍未完成。**
+**当前阶段：M4 / VERIFIED（M4-01 确定性评分与报告后端 VERIFIED；M3 全部 VERIFIED；前三页视觉 FROZEN；M4-02 未开始）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性/三页前端 + M4-01 control、确定性评分与持久化报告。Report UI、回答优化和简历草稿仍未完成。**
 
 ## 1. 当前真实状态
 
@@ -22,7 +22,7 @@
 | 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` 业务 Workflow 第二次调用通过，10.650749 秒，usage 1156/2544/3700。首轮失败 usage 与全部费用均 NOT_MEASURED/null；单样本不形成 p95 或效果结论 |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer 的三页浏览器纵切面已通过；另以生产模型适配器、approved Seed 和真实 Workflow 跑通一次 `deepseek-flash` 合成回答。评分、报告、真实模型浏览器整场与跨代理 SSE 组合仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer 的三页浏览器纵切面已通过；生产模型适配器跑通一次 `deepseek-flash` 合成回答；M4 fixture 五题完成、确定性评分和报告 API smoke 通过。Report UI、真实模型浏览器整场与跨代理 SSE 组合仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -45,8 +45,8 @@
 | M3-01 | M2-03 + Seed Level 2 | VERIFIED | `deepseek-flash` 合成回答经生产 Answer Analyzer、真实 openJiuwen Workflow、Observation 语义校验和确定性 Policy 通过；首次失败按契约拒绝并修正 Prompt/日志边界，证据见 §37 |
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；真实模型单样本与本地可靠性证据分开记录 |
 | M3-03 | M3-02 | VERIFIED | 视觉状态 `FROZEN`；三页 P0 前端已完成最终收尾，JD 输入限制与后端 8,000 / 200 字符契约一致，Prepare 顺序固定为岗位摘要→Coverage/Plan→开始动作→技术详情，不再继续修改前三页视觉 |
-| M4-01 | M3-03 + M3-01 | PLANNED | 当前唯一下一任务：评分与报告；不得把单次 live Observation 直接冒充评分或产品效果 |
-| M4-02 | M4-01 | PLANNED | 事实约束改写和简历入口 |
+| M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过；Report UI 不在本任务 |
+| M4-02 | M4-01 | PLANNED | 当前唯一下一任务：事实约束的回答优化与简历草稿入口；不得补造事实，付费 live 前先明确 O04 总预算 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
@@ -62,19 +62,19 @@
 | O01 | 确认校内截止和系统上传字段 | 未提供 | 不能承诺报名资格/必交物 |
 | O02 | 确认真实团队与指导教师 | 未提供 | 正式报名门槛 |
 | O03 | 确认国产 OS 软件组适配口径 | 未提供 | 提交前合规与环境验收 |
-| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权本轮受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供 | M3-01 live 已完成；后续批量评测或 M4 付费 live 前仍须明确费用上限，未知 cost 保持 null |
+| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权 M3 受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供。M4-01 额外付费调用 0 次 | M3-01 live 和 M4-01 确定性实现已完成；M4-02 或批量 live 前仍须明确费用上限，未知 cost 保持 null |
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
 
 ## 4. 当前唯一首要任务
 
-**M4-01 评分与报告。**
+**M4-02 事实约束的回答优化与简历入口。**
 
-M3-01 业务文本模型 live 门禁已解除：生产 `OpenAICompatibleAnswerAnalyzer`、approved Seed 0.2.1 与真实 openJiuwen handle-answer Workflow 在 synthetic 回答上通过，服务端 Observation 校验后由确定性 Policy 输出 `NEXT`。这是一条单样本结构与边界证据，不是效果、p95 或成本评测。
+M4-01 已按 API-first 完成：主答/追问 Observation 按冻结 Rubric 合并，coverage/score 由程序计算；自然五题、skip/end、回答中 end、唯一 Assessment/Report、`report.ready` 和失败后无模型重调 retry 均有回归。fixture 五题实际烟测得到 complete、5 根 scored、overall_score=67。这证明程序闭环，不证明真实模型整场效果。
 
-M3-03 三页前端保持 `VERIFIED / FROZEN`。M4-01 必须先同步评分/报告 API 契约，再实现后端评分与报告；不得在冻结三页里先画假分数或用本次 Observation 直接冒充报告。后续付费 live 批量调用前，O04 的持续费用上限仍需负责人明确。
+M3-03 三页前端继续 `VERIFIED / FROZEN`。M4-02 若需要新增 Report/优化/简历页面，必须先按 `api.md` 同步契约并明确新的页面范围；不能把后端 Report 存在写成 Report UI 已完成，也不能把 null 评分显示为 0。若需要外部模型调用，O04 的持续总预算仍须负责人明确；M4-01 本轮没有产生额外模型或 embedding 网络调用。
 
-M3-03 回滚点：公开 `main` 基线 commit `f2f3af2`。只按 `docs/handoffs/2026-09-19-m3-03.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
+M4-01 回滚点：公开 `main` 开工基线 commit `a74b6a37e99bf7850b7b5dabbbcafc31096739e0`。只按 `docs/handoffs/2026-09-19-m4-01.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
 
 更早回滚点：M1-03 开工基线 `runtime/evidence/m1-03/task-start.txt`。M1-03 全部新增路径：`domain/claims.py`、`adapters/knowledge.py`、`adapters/db/profiles.py`、`application/{profiles,operations_runner}.py`、`api/*`、`__main__.py`、`tests/unit/{test_profile_confirm,test_knowledge_activation}.py`、`tests/test_api_contract.py`、`contracts/openapi.json`、`Makefile`、`apps/web/src/{api.ts,App.tsx}`；改动文件 `smoke/knowledge.py`、`adapters/db/{documents,profiles}.py`、`application/documents.py`、`adapters/pdf.py`、`apps/web/tsconfig.json`、`config/environment.env.example`、`api.md`。回滚=删除新增 + 按 `docs/handoffs/2026-09-19-m1-03.md` 恢复改动文件哈希。不使用 reset/stash。
 
@@ -821,3 +821,18 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 最终 Ruff format/check 覆盖 src/tests/smoke/migrations，**63 files / all checks passed**；全量 pytest **248 passed / 2 skipped / 0 failed / 55 warnings**；规范校验 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**；`CHECKSUMS.sha256` **206/206 OK**；`git diff --check` 无输出。API、OpenAPI、数据库 Schema、迁移、前端、依赖、动作枚举和 Policy 决策规则均无变化。
 - 状态：M3-01 从 `IMPLEMENTED / live NOT_RUN` 升为 `VERIFIED`，不写 ACCEPTED。两次真实业务模型 HTTP 调用中一失败、一成功；只登记成功样本的 provider usage，不把一次成功扩张为模型效果、p95、429/超时恢复或成本结论。
 - 唯一下一任务：M4-01 评分与报告。先同步 `api.md`，再实现后端契约、持久化、评分/UNKNOWN 边界和报告；前三页视觉继续冻结，不先造 Report UI。
+
+## 38. 2026-09-19｜M4-01 确定性评分与报告（VERIFIED）
+
+- 开工 HEAD：公开 `main` 的 `a74b6a37e99bf7850b7b5dabbbcafc31096739e0`，工作区干净。按 API-first 先同步 `api.md`，冻结 control、ReportView、null/UNKNOWN、coverage、score、幂等、事件与恢复语义，再修改实现；前三页视觉继续冻结。
+- 新增 `domain/scoring.py` 与 `application/reporting.py`。每根题从冻结 Rubric 取 criterion/kind/weight，主答与追问按 criterion 合并且单次计权；supported+contradicted 保留 disputed，coverage<60%、未测或跳过均不造 0。至少三根 scored 后才按根题等权和 decimal ROUND_HALF_UP 生成 overall_score。
+- `POST /interviews/{id}/control` 支持 skip/end，`GET /interviews/{id}/report` 只读唯一持久化 Report。自然 END 或 control END 在短事务写五个 Assessment、Report、`report.ready` 与 completed；`improved_answers=[]` 明确保留给 M4-02。重复 end 返回同一 operation，skip/end 不调用模型。
+- 回答进行中 end 会先记录 `stop_requested` 并停止暴露当前题，当前回答仍可安全提交 validated Observation，随后由串行 runner 汇总。Observation 已成功而报告写入失败时，retry 只重跑确定性报告，不再次调用 Analyzer。重启恢复把 queued/running 都标 interrupted，因为两者的内存 callable 均未持久化。
+- 数据迁移新增 `7f1b9c4d2a60_m4_01_report_uniqueness.py`：Assessment `(interview_id,root_question_id)` 唯一，Report `interview_id` 唯一。OpenAPI 更新为 18 paths；Python DTO、FastAPI routes/error/retry 分发、`apps/web/src/api.ts` 的 control/report 类型与客户端方法同步。冻结三页没有 Report UI 或控制按钮。
+- 先写的 `tests/unit/test_scoring.py` 首次真实红灯为 `ModuleNotFoundError: zhijue.domain.scoring`；实现后 5 passed。新增/扩展回归覆盖 60% 边界、half-up、冲突/null、主答/追问合并、自然五题、main/followup skip、回答中 end、重复 end、报告失败后无模型重调、迁移唯一约束与 OpenAPI 快照。
+- 后端全量命令 `.venv/bin/ruff format --check src tests smoke migrations && .venv/bin/ruff check src tests smoke migrations && .venv/bin/python -m pytest tests -q` exit 0：67 files formatted，Ruff all checks passed，**261 passed / 2 skipped / 0 failed / 63 warnings**。专项评分/API/runtime/migration 回归 **52 passed / 21 warnings**；规范校验 **44/44**。
+- 临时 TestClient 烟测运行真实 FastAPI、真实 openJiuwen Workflow、SQLite 和 ScriptedAnalyzer fixture，连续五个回答后得到 `completion=complete / scored_root_count=5 / overall_score=67 / status=completed`；临时脚本已删除。该结果证明程序闭环，不证明真实模型质量。
+- 前端最终以仓库锁定 Node 24.21.0 / pnpm 10.34.5 运行：`pnpm test` **11/11 passed**，`pnpm build` exit 0、112 modules，无 engine warning。此前默认 shell 的 Node 26.8.1 也通过但产生版本警告；最终结论只采用锁定工具链结果。
+- 本轮外部模型和 embedding 网络调用均为 0，新增费用未发生；fixture 的 `model_calls=5` 不是付费调用。Report UI、真实模型浏览器五题整场、429/timeout、p95 和成本仍 NOT_RUN。M4-01 只写 VERIFIED，不写 ACCEPTED。
+- 最终完整性：doctor **18 PASS / 0 WARN / 0 FAIL**，密钥扫描 212 个 Git 跟踪文件 0 命中；`CHECKSUMS.sha256` **211/211 OK**；`git diff --check` 无输出。
+- 修改范围：`api.md`、OpenAPI、后端 scoring/reporting/interview/API/operation recovery、SQLAlchemy/Alembic、前端网络类型、评分/API/runtime/migration tests，以及 README、架构/数据/Workflow/评分/验收/UI/risk 文档、CHANGELOG、process、handoff 和完整性清单。交接：`docs/handoffs/2026-09-19-m4-01.md`；唯一下一任务为 M4-02。

@@ -28,6 +28,7 @@ from zhijue.adapters.db.operations import (
 from zhijue.api.errors import ApiError, RequestContext, envelope
 from zhijue.api.schemas import (
     ConfirmRequest,
+    ControlInterviewRequest,
     CreateInterviewRequest,
     CreateProfileRequest,
     FactsRequest,
@@ -690,6 +691,70 @@ def submit_answer(
     )
 
 
+@router.post("/interviews/{interview_id}/control", status_code=202)
+def control_interview(
+    interview_id: str,
+    payload: ControlInterviewRequest,
+    request: Request,
+    background: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    key = _require_idempotency_key(idempotency_key)
+    services = request.app.state.services
+    accepted = services.interviews.accept_control(
+        interview_id,
+        expected_revision=payload.expected_revision,
+        action=payload.action,
+        command=OperationCommand(
+            kind=f"interview.control.{payload.action}",
+            resource_type="interview",
+            resource_id=interview_id,
+            scope=canon_scope(
+                WORKSPACE_ID,
+                "POST",
+                f"/api/v1/interviews/{interview_id}/control",
+            ),
+            idempotency_key=key,
+            input=payload.model_dump(),
+        ),
+        capacity_available=services.runner.capacity_available,
+    )
+    if accepted.created:
+
+        async def _run() -> dict[str, Any]:
+            try:
+                return await asyncio.to_thread(
+                    services.interviews.process_control,
+                    operation_id=accepted.operation.id,
+                )
+            except Exception:
+                await asyncio.to_thread(
+                    services.interviews.release_failed_operation,
+                    accepted.operation.id,
+                )
+                raise
+
+        background.add_task(
+            services.runner.submit,
+            OperationJob(
+                operation_id=accepted.operation.id,
+                kind=accepted.operation.kind,
+                resource_id=interview_id,
+                run=_run,
+            ),
+        )
+    return envelope(
+        _accepted(accepted.operation).model_dump(),
+        _ctx(request).request_id,
+    )
+
+
+@router.get("/interviews/{interview_id}/report")
+def get_interview_report(interview_id: str, request: Request) -> dict[str, Any]:
+    report = request.app.state.services.reports.get_view(interview_id)
+    return envelope(report, _ctx(request).request_id)
+
+
 @router.post("/operations/{operation_id}/retry", status_code=202)
 def retry_operation(
     operation_id: str,
@@ -712,8 +777,13 @@ def retry_operation(
 
         async def _run() -> dict[str, Any]:
             try:
-                return await services.interviews.process_answer(
-                    operation_id=accepted.operation.id
+                if accepted.operation.kind == "interview.answer":
+                    return await services.interviews.process_answer(
+                        operation_id=accepted.operation.id
+                    )
+                return await asyncio.to_thread(
+                    services.interviews.process_control,
+                    operation_id=accepted.operation.id,
                 )
             except Exception:
                 await asyncio.to_thread(

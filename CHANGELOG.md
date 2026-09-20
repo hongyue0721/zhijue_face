@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-19｜M4-01 评分与报告 VERIFIED
+
+- `api.md` 先行落地 `POST /interviews/{id}/control` 与 `GET /interviews/{id}/report`：skip/end 通过 Operation 串行执行，重复 end 返回同一操作；报告读取只返回持久化结果，不触发模型。
+- 新增纯确定性 scoring domain 和 `ReportingService`。主答/追问按冻结 criterion 合并且只计一次权重；coverage 低于 60%、未测、跳过或 disputed 均保持 null；至少三根 scored 根题后按根题等权、decimal ROUND_HALF_UP 生成总分。
+- 自然五题结束与主动 end 均在短事务写五个唯一 Assessment、单场唯一 Report、`report.ready` 和 completed。回答中 end 先记录 stop request，允许当前 validated Observation 安全落库后再汇总；skip 不调用模型。
+- 报告写入失败后的 operation retry 复用已保存 Observation/Decision，不重新调用 Analyzer。进程启动恢复同时把 queued/running 标为 interrupted，因为内存 `BackgroundTasks` callable 均未持久化，不能伪装自动重放。
+- 新增 Alembic `7f1b9c4d2a60` 唯一约束、OpenAPI 快照、Python DTO、前端 control/report 类型与客户端方法；冻结三页没有新增 Report UI 或控制按钮，M4-02 回答优化/简历草稿未开始。
+- 全量后端 261 passed / 2 skipped / 63 warnings，Ruff 全绿；规范 44/44；锁定 Node 24.21.0 / pnpm 10.34.5 下前端 11/11、production build 112 modules；doctor 18/0/0，完整性清单 211/211。真实 FastAPI/openJiuwen Workflow/SQLite + fixture Analyzer 五题烟测得到 complete、5 scored roots、overall_score=67；本轮付费模型/embedding 调用 0。
+
 
 ## Unreleased — 2026-09-19｜M3-01 业务文本模型 live VERIFIED
 

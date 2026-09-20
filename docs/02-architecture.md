@@ -132,11 +132,13 @@ zhijue-demo/
 
 完成节点结果通过验证后，使用短事务提交回答观察、下一问题、revision 和事件。**不得在持有 SQLite 写事务期间等待 LLM。** 会话以 active_operation_id 和 expected_revision 控制并发，完成前不允许第二个评分操作。
 
-进程重启：未开始的 queued 可重新入队；running 改为 interrupted，用户明确点击重试。不能把 in-process 任务当作耐久队列，也不能承诺框架原生断点跨重启恢复，除非已经实测。
+进程重启时，queued 与 running 都转为 interrupted：两者依赖的 `BackgroundTasks` callable 都没有持久化，不能把 queued 假装成可安全自动重放。已保存 Answer 继续保留；answer/control 的可重试 operation 通过 parent-linked retry 恢复，其他命令由客户端重新发起新命令。不能承诺框架原生断点跨重启恢复，除非已经实测。
 
-**M3 后端实况（2026-09-19）**：`handle_answer` 已使用项目锁定的 openJiuwen Workflow 真实执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`；不是本地同名替代。OpenAI-compatible 模型适配只读取显式指定、权限不宽于 0600 的私密 env 文件，最多三次总 transport attempt；业务 Observation 在进入纯规则 Policy 前必须通过冻结 Rubric、ID、精确引文和 reference 语义校验。当前私密文件没有文本模型变量，故业务模型 live 为 NOT_RUN；fixture 只替换外部模型边界。
+**M3/M4 后端实况（2026-09-19）**：`handle_answer` 使用项目锁定的 openJiuwen Workflow 真实执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`；不是本地同名替代。OpenAI-compatible 模型适配只读取显式指定、权限不宽于 0600 的私密 env 文件，最多三次总 transport attempt；`deepseek-flash` 已完成一次通过的 synthetic 业务分析。业务 Observation 在进入纯规则 Policy 前必须通过冻结 Rubric、ID、精确引文和 reference 语义校验。
 
-Answer、Operation 与 Interview 受理状态原子落 SQLite；成功结果、下一题和 durable event 再作短事务提交。运行中崩溃转 interrupted，retry 新建父子操作且复用 Answer 原文。SDK INFO 级输入/输出日志和 SDK 文件 sink 在业务应用中关闭，避免私人回答进入日志。实现仍是单进程 `BackgroundTasks` + 有界串行 runner，不宣称分布式队列或 exactly-once 上游计费。
+Answer、Operation 与 Interview 受理状态原子落 SQLite；成功 Observation/Decision/下一题和 durable event 再作短事务提交。M4 的 `ReportingService` 只消费已持久化的冻结 Rubric 与 validated Observation：主答/追问按 criterion 合并，程序计算 coverage/score，在同一事务写每根 Assessment、唯一 Report、`report.ready` 和 completed 状态；读取报告不调用模型。skip/end 使用同一串行 runner，end 可在回答 operation 进行中先记录 `stop_requested`，等待回答安全释放后汇总。
+
+运行中崩溃转 interrupted，retry 新建父子操作且复用 Answer 原文；若模型分析已成功而报告落库失败，retry 只重跑确定性汇总，不再次调用 Analyzer。SDK INFO 级输入/输出日志和 SDK 文件 sink 在业务应用中关闭，避免私人回答进入日志。实现仍是单进程 `BackgroundTasks` + 有界串行 runner，不宣称分布式队列或 exactly-once 上游计费。
 
 ## 8. 国产操作系统的边界
 

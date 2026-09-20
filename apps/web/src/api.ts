@@ -196,14 +196,17 @@ export interface QuestionView {
 
 export interface RootResultView {
   root_question_id: string;
-  observation_id: string;
+  observation_id: string | null;
   action: PolicyAction;
   reason_code: string;
   reason_summary: string;
   target: {
-    competency_id: string;
-    criterion_id: string | null;
-    followup_intent: string;
+    competency_id?: string;
+    criterion_id?: string | null;
+    followup_intent?: string;
+    control_operation_id?: string;
+    question_id?: string | null;
+    question_kind?: QuestionView["kind"] | null;
   } | null;
 }
 
@@ -234,6 +237,67 @@ export interface InterviewView {
   stop_requested: boolean;
   report_id: string | null;
   limitations: string[];
+}
+
+export type RootAssessmentStatus =
+  | "scored"
+  | "insufficient"
+  | "disputed"
+  | "skipped"
+  | "unmeasured";
+
+export interface ReportCriterionResult {
+  criterion_id: string;
+  kind: "technical" | "expression" | "evidence_reasoning";
+  weight: number;
+  level: 0 | 1 | 2 | 3 | null;
+  finding: "supported" | "missing" | "contradicted" | "not_assessable" | "disputed";
+  answer_quotes: Array<{ answer_id: string; exact_quote: string }>;
+  knowledge_refs: string[];
+  explanations: string[];
+}
+
+export interface RootAssessmentView {
+  id: string;
+  root_question_id: string;
+  status: RootAssessmentStatus;
+  score: number | null;
+  coverage: number;
+  criterion_results: ReportCriterionResult[];
+  answer_ids: string[];
+}
+
+export interface ReportView {
+  id: string;
+  revision: number;
+  interview_id: string;
+  completion: "complete" | "incomplete";
+  overall_score: number | null;
+  coverage: {
+    planned_root_count: number;
+    asked_root_count: number;
+    answered_root_count: number;
+    scored_root_count: number;
+    insufficient_root_count: number;
+    disputed_root_count: number;
+    skipped_root_count: number;
+    unmeasured_root_count: number;
+    skipped_question_count: number;
+    overall_eligible: boolean;
+  };
+  root_assessments: RootAssessmentView[];
+  improved_answers: unknown[];
+  limitations: unknown[];
+  run_metadata: {
+    run_mode: string;
+    seed_bank_version: string;
+    rubric_version: string;
+    prompt_versions: Record<string, unknown>;
+    policy_version: string;
+    model_fingerprint: string | null;
+    sdk_version: string | null;
+    scoring_version: string;
+  };
 }
 
 export interface CreateInterviewOptions {
@@ -428,6 +492,21 @@ export const api = {
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(input),
     }),
+
+  controlInterview: (
+    interviewId: string,
+    expectedRevision: number,
+    action: "skip" | "end",
+    idempotencyKey: string,
+  ) =>
+    request<OperationAccepted>(`/interviews/${interviewId}/control`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ expected_revision: expectedRevision, action }),
+    }),
+
+  getReport: (interviewId: string, signal?: AbortSignal) =>
+    request<ReportView>(`/interviews/${interviewId}/report`, { signal }),
 
   retryOperation: (operationId: string, expectedRevision: number, idempotencyKey: string) =>
     request<OperationAccepted>(`/operations/${operationId}/retry`, {

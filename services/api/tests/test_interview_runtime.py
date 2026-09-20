@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from collections import deque
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from zhijue.adapters.db.models import Answer, Operation
+from zhijue.adapters.db.models import Answer, Assessment, Operation, Report
 from zhijue.adapters.db.operations import OperationCommand, canon_scope
 from zhijue.api.app import AppConfig, create_app
 from zhijue.application.answer_workflow import AnalysisResult
@@ -432,10 +433,422 @@ def test_five_adequate_answers_end_without_inventing_extra_questions(tmp_path):
             view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
 
         assert actions == ["NEXT", "NEXT", "NEXT", "NEXT", "END"]
-        assert view["status"] == "finishing"
+        assert view["status"] == "completed"
         assert view["current_question"] is None
+        assert view["report_id"] is not None
         assert len(view["root_results"]) == 5
         assert len(analyzer.calls) == 5
+
+        report_response = client.get(f"/api/v1/interviews/{interview_id}/report")
+        assert report_response.status_code == 200
+        report = report_response.json()["data"]
+        assert set(report) == {
+            "id",
+            "revision",
+            "interview_id",
+            "completion",
+            "overall_score",
+            "coverage",
+            "root_assessments",
+            "improved_answers",
+            "limitations",
+            "run_metadata",
+        }
+        assert report["completion"] == "complete"
+        assert report["overall_score"] == 67
+        assert report["coverage"] == {
+            "planned_root_count": 5,
+            "asked_root_count": 5,
+            "answered_root_count": 5,
+            "scored_root_count": 5,
+            "insufficient_root_count": 0,
+            "disputed_root_count": 0,
+            "skipped_root_count": 0,
+            "unmeasured_root_count": 0,
+            "skipped_question_count": 0,
+            "overall_eligible": True,
+        }
+        assert len(report["root_assessments"]) == 5
+        assert report["improved_answers"] == []
+        assert report["run_metadata"]["scoring_version"] == "1.0.0"
+        with Session(client.app.state.services.engine) as session:
+            assert session.scalar(select(func.count(Assessment.id))) == 5
+            assert session.scalar(select(func.count(Report.id))) == 1
+
+
+def test_report_is_not_readable_before_finish(tmp_path):
+    app = create_app(
+        _config(tmp_path),
+        knowledge=InMemoryKnowledge(),
+        analyzer=ScriptedAnalyzer(),
+    )
+    with TestClient(app) as client:
+        active = _prepare_active_interview(client)
+        response = client.get(f"/api/v1/interviews/{active['id']}/report")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REPORT_NOT_READY"
+
+
+def test_explicit_end_is_idempotent_and_keeps_unmeasured_roots_null(tmp_path):
+    analyzer = ScriptedAnalyzer("adequate")
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        answer = client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "turn-end-0001",
+                "answer_text": "我说明一项可核对的处理过程。",
+            },
+            headers={"Idempotency-Key": "runtime-end-answer-0001"},
+        ).json()["data"]
+        assert (
+            client.get(f"/api/v1/operations/{answer['operation_id']}").json()["data"][
+                "status"
+            ]
+            == "succeeded"
+        )
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        revision_before_end = view["revision"]
+
+        accepted = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": revision_before_end, "action": "end"},
+            headers={"Idempotency-Key": "runtime-end-control-0001"},
+        ).json()["data"]
+        operation = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+            "data"
+        ]
+        assert operation["status"] == "succeeded"
+        assert operation["result"]["action"] == "END"
+        replay = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": revision_before_end, "action": "end"},
+            headers={"Idempotency-Key": "runtime-end-control-0002"},
+        ).json()["data"]
+        assert replay["operation_id"] == accepted["operation_id"]
+
+        completed = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+        report_again = client.get(f"/api/v1/interviews/{interview_id}/report").json()[
+            "data"
+        ]
+
+        assert completed["status"] == "completed"
+        assert completed["current_question"] is None
+        assert completed["stop_requested"] is True
+        assert report_again == report
+        assert report["completion"] == "incomplete"
+        assert report["overall_score"] is None
+        assert report["coverage"]["asked_root_count"] == 2
+        assert report["coverage"]["answered_root_count"] == 1
+        assert report["coverage"]["scored_root_count"] == 1
+        assert report["coverage"]["unmeasured_root_count"] == 4
+        assert all(
+            item["score"] is None
+            for item in report["root_assessments"]
+            if item["status"] == "unmeasured"
+        )
+        assert len(analyzer.calls) == 1
+        events = client.app.state.services.operations.events_after(
+            accepted["operation_id"], 0
+        )
+        assert [event.event_type for event in events] == [
+            "operation.started",
+            "policy.decided",
+            "report.ready",
+            "operation.completed",
+        ]
+        with Session(client.app.state.services.engine) as session:
+            assert session.scalar(select(func.count(Report.id))) == 1
+
+
+def test_skipping_followup_keeps_main_observation_but_marks_session_incomplete(
+    tmp_path,
+):
+    analyzer = ScriptedAnalyzer("probe")
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        root_id = view["current_question"]["root_id"]
+        answer = client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "turn-skip-probe-0001",
+                "answer_text": "我先给出当前能确认的部分。",
+            },
+            headers={"Idempotency-Key": "runtime-skip-answer-0001"},
+        ).json()["data"]
+        assert (
+            client.get(f"/api/v1/operations/{answer['operation_id']}").json()["data"][
+                "result"
+            ]["action"]
+            == "PROBE"
+        )
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        assert view["current_question"]["kind"] == "probe"
+        skipped = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": view["revision"], "action": "skip"},
+            headers={"Idempotency-Key": "runtime-skip-control-0001"},
+        ).json()["data"]
+        skip_operation = client.get(
+            f"/api/v1/operations/{skipped['operation_id']}"
+        ).json()["data"]
+        assert skip_operation["result"]["action"] == "NEXT"
+        assert len(analyzer.calls) == 1
+
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        ended = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": view["revision"], "action": "end"},
+            headers={"Idempotency-Key": "runtime-skip-end-0001"},
+        ).json()["data"]
+        assert (
+            client.get(f"/api/v1/operations/{ended['operation_id']}").json()["data"][
+                "status"
+            ]
+            == "succeeded"
+        )
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+        first_root = next(
+            item
+            for item in report["root_assessments"]
+            if item["root_question_id"] == root_id
+        )
+        assert first_root["status"] == "scored"
+        assert first_root["score"] is not None
+        assert report["completion"] == "incomplete"
+        assert report["overall_score"] is None
+        assert report["coverage"]["skipped_root_count"] == 0
+        assert report["coverage"]["skipped_question_count"] == 1
+
+
+def test_end_accepted_during_answer_waits_then_reports_saved_observation(tmp_path):
+    analyzer = ScriptedAnalyzer("adequate")
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        active = _prepare_active_interview(client)
+        services = client.app.state.services
+        interview_id = active["id"]
+        answer_command = OperationCommand(
+            kind="interview.answer",
+            resource_type="interview",
+            resource_id=interview_id,
+            scope=canon_scope(
+                "local", "POST", f"/api/v1/interviews/{interview_id}/answers"
+            ),
+            idempotency_key="runtime-concurrent-end-answer",
+            input={
+                "expected_revision": active["revision"],
+                "question_id": active["current_question"]["id"],
+                "client_turn_id": "turn-concurrent-end-0001",
+                "answer_text": "回答已受理后请求结束。",
+            },
+        )
+        accepted_answer = services.interviews.accept_answer(
+            interview_id,
+            expected_revision=active["revision"],
+            question_id=active["current_question"]["id"],
+            client_turn_id="turn-concurrent-end-0001",
+            answer_text="回答已受理后请求结束。",
+            command=answer_command,
+        )
+        services.operations.transition(
+            accepted_answer.operation.id, OperationStatus.RUNNING
+        )
+        pending = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        end_command = OperationCommand(
+            kind="interview.control.end",
+            resource_type="interview",
+            resource_id=interview_id,
+            scope=canon_scope(
+                "local", "POST", f"/api/v1/interviews/{interview_id}/control"
+            ),
+            idempotency_key="runtime-concurrent-end-control",
+            input={"expected_revision": pending["revision"], "action": "end"},
+        )
+        accepted_end = services.interviews.accept_control(
+            interview_id,
+            expected_revision=pending["revision"],
+            action="end",
+            command=end_command,
+        )
+        stopping = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        assert stopping["status"] == "finishing"
+        assert stopping["stop_requested"] is True
+        assert stopping["current_question"] is None
+        assert stopping["active_operation_id"] == accepted_answer.operation.id
+
+        answer_result = asyncio.run(
+            services.interviews.process_answer(
+                operation_id=accepted_answer.operation.id
+            )
+        )
+        assert answer_result["action"] == "NEXT"
+        assert answer_result["report_id"] is None
+        assert (
+            client.get(f"/api/v1/interviews/{interview_id}").json()["data"]["report_id"]
+            is None
+        )
+        services.operations.transition(
+            accepted_end.operation.id, OperationStatus.RUNNING
+        )
+        end_result = services.interviews.process_control(
+            operation_id=accepted_end.operation.id
+        )
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+
+        assert end_result["report_id"] == report["id"]
+        assert report["coverage"]["answered_root_count"] == 1
+        assert report["coverage"]["scored_root_count"] == 1
+        assert len(analyzer.calls) == 1
+
+
+def test_skipping_main_root_persists_skipped_null_assessment(tmp_path):
+    analyzer = ScriptedAnalyzer()
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        skipped_root_id = view["current_question"]["root_id"]
+        accepted = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": view["revision"], "action": "skip"},
+            headers={"Idempotency-Key": "runtime-main-skip-0001"},
+        ).json()["data"]
+        operation = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+            "data"
+        ]
+        assert operation["status"] == "succeeded"
+        assert operation["result"]["action"] == "NEXT"
+        assert analyzer.calls == []
+
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        ended = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": view["revision"], "action": "end"},
+            headers={"Idempotency-Key": "runtime-main-skip-end-0001"},
+        ).json()["data"]
+        assert (
+            client.get(f"/api/v1/operations/{ended['operation_id']}").json()["data"][
+                "status"
+            ]
+            == "succeeded"
+        )
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+        skipped = next(
+            item
+            for item in report["root_assessments"]
+            if item["root_question_id"] == skipped_root_id
+        )
+
+        assert skipped["status"] == "skipped"
+        assert skipped["score"] is None
+        assert report["coverage"]["skipped_root_count"] == 1
+        assert report["coverage"]["skipped_question_count"] == 1
+        assert report["completion"] == "incomplete"
+        assert report["overall_score"] is None
+        assert analyzer.calls == []
+
+
+def test_report_failure_retry_does_not_reanalyze_or_duplicate_scores(
+    tmp_path, monkeypatch
+):
+    analyzer = ScriptedAnalyzer(*(["adequate"] * 5))
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        for turn_index in range(4):
+            accepted = client.post(
+                f"/api/v1/interviews/{interview_id}/answers",
+                json={
+                    "expected_revision": view["revision"],
+                    "question_id": view["current_question"]["id"],
+                    "client_turn_id": f"turn-report-retry-{turn_index:04d}",
+                    "answer_text": "先完成前四根题的受控回答。",
+                },
+                headers={"Idempotency-Key": f"runtime-report-retry-{turn_index:04d}"},
+            ).json()["data"]
+            assert (
+                client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+                    "data"
+                ]["status"]
+                == "succeeded"
+            )
+            view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+
+        original_create = client.app.state.services.reports.create_in_session
+
+        def fail_report_once(*args, **kwargs):
+            raise RuntimeError("synthetic report persistence failure")
+
+        monkeypatch.setattr(
+            client.app.state.services.reports,
+            "create_in_session",
+            fail_report_once,
+        )
+        accepted = client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "turn-report-retry-final",
+                "answer_text": "第五根题回答已保存且分析成功。",
+            },
+            headers={"Idempotency-Key": "runtime-report-retry-final"},
+        ).json()["data"]
+        failed = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+            "data"
+        ]
+        assert failed["status"] == "failed"
+        assert failed["error"]["code"] == "INTERNAL_ERROR"
+        assert len(analyzer.calls) == 5
+        failed_view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        assert failed_view["status"] == "finish_failed"
+        assert failed_view["report_id"] is None
+
+        monkeypatch.setattr(
+            client.app.state.services.reports,
+            "create_in_session",
+            original_create,
+        )
+        retried = client.post(
+            f"/api/v1/operations/{accepted['operation_id']}/retry",
+            json={"expected_revision": failed_view["revision"]},
+            headers={"Idempotency-Key": "runtime-report-retry-command"},
+        ).json()["data"]
+        retry_operation = client.get(
+            f"/api/v1/operations/{retried['operation_id']}"
+        ).json()["data"]
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+
+        assert retry_operation["status"] == "succeeded"
+        assert retry_operation["parent_operation_id"] == accepted["operation_id"]
+        assert retry_operation["result"]["report_id"] == report["id"]
+        assert len(analyzer.calls) == 5
+        assert len(report["root_assessments"]) == 5
+        with Session(client.app.state.services.engine) as session:
+            assert session.scalar(select(func.count(Assessment.id))) == 5
+            assert session.scalar(select(func.count(Report.id))) == 1
 
 
 def test_restart_marks_running_answer_interrupted_and_releases_interview(tmp_path):

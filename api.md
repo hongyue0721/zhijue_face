@@ -2,7 +2,7 @@
 
 **契约版本 1.0.0。** 根目录此文件为人类可读接口语义真源。后端由 FastAPI 导出 OpenAPI 到 `contracts/openapi.json`，前端类型由生成类型派生；不得另外手写一份独立含义的 OpenAPI。
 
-**实现状态（2026-09-19，M3-01/M3-02 后端）**：已实现并测试资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`，规划与面试链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`，以及 `GET /operations/{id}`、`GET /operations/{id}/events`（SSE）、`POST /operations/{id}/retry`、`GET /health/live`、`GET /health/ready`。开始/回答链真实经过 openJiuwen Workflow；业务模型可由显式私密配置启用，fixture 分析器只用于测试。简历草稿、面试 control、报告、runtime/info、`DELETE /profiles/{id}` 仍为 **PLANNED**；前端面试界面尚未设计或实现。
+**实现状态（2026-09-19，M4-01 后端）**：已实现并测试资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`，以及 `GET /operations/{id}`、`GET /operations/{id}/events`（SSE）、`POST /operations/{id}/retry`、`GET /health/live`、`GET /health/ready`。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report，读取报告不调用模型。fixture 分析器只用于测试。简历草稿、runtime/info、`DELETE /profiles/{id}` 仍为 **PLANNED**；前三页前端保持 FROZEN，本轮只同步 control/report 网络类型，未新增 Report UI。
 
 ## 1. 全局约定
 
@@ -108,7 +108,7 @@ P0 没有服务端 PDF 导出接口。浏览器对已接受文案使用打印布
 | POST `/interviews/{id}/control` | expected_revision、action | 202 OperationAccepted | action=skip/end；skip 仅当前题，end 请求停止提问并串行生成现有报告 |
 | GET `/interviews/{id}/report` | 无 | 200 ReportView | 无结果时 409 REPORT_NOT_READY；不临时再调用模型 |
 
-end 在回答操作进行中也可受理：设置 stop_requested 并返回唯一的结束 operation；不再接收新答案、不再展示新问题，等原操作安全释放后汇总。结束不保证远端调用立即取消或退费。重复 end 返回相同操作；细则见 docs/04-workflow-policy.md。
+end 在回答操作进行中也可受理：服务端原子记录 `stop_requested=true` 和唯一结束 operation；不再接受新答案、不再向 InterviewView 暴露待答问题，结束 operation 在当前回答安全释放后串行汇总。结束不保证远端调用立即取消或退费。重复 end 返回同一 operation。skip 仅在没有 active operation 且仍有 current_question 时受理：跳过主问题会使该根题 `status=skipped`、`score=null`；跳过追问保留该根题已有 Observation，但整场 `completion=incomplete`。两种 control 都不调用模型。
 
 role_preset P0 只支持 `embedded_junior`。JD 不提供时使用显著标注的预置（`SYNTHETIC_DEMO_JD`）；不将其称为某企业真实招聘要求。JD 最多 8,000 字符。五主问题与追问上限由服务端配置，客户端不得无限增加。
 
@@ -129,7 +129,16 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 
 创建 operation 时校验逻辑预算；队列上限为 8，满时返回 429 CAPACITY_LIMITED，不接受后丢失任务。
 
-ReportView：id、revision、interview_id、completion、overall_score（可 null）、coverage、root_assessments、improved_answers、limitations、run_metadata。completion=complete/incomplete；不包含 hire/no_hire 等招聘决定。
+`ReportView` 精确字段：
+
+- `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improved_answers / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
+- `coverage` 为 `{planned_root_count, asked_root_count, answered_root_count, scored_root_count, insufficient_root_count, disputed_root_count, skipped_root_count, unmeasured_root_count, skipped_question_count, overall_eligible}`。这些是范围计数，不把未测根题换算成 0 分。
+- 每个 `root_assessments[]` 为 `{id, root_question_id, status, score, coverage, criterion_results, answer_ids}`；`status` 只取 `scored / insufficient / disputed / skipped / unmeasured`。`score` 可为 null；coverage 是该根题可评分 criterion 权重占冻结总权重的比例。
+- 每个 `criterion_results[]` 为 `{criterion_id, kind, weight, level, finding, answer_quotes, knowledge_refs, explanations}`。同一根题的主回答与追问按 criterion 合并，权重只计算一次；`supported` 与 `contradicted` 同时出现时保留 `finding=disputed` 且 `level=null`，不得自行挑一个版本。
+- `run_metadata` 只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`；未知模型或 SDK 字段为 null，不填造默认值。
+- `improved_answers` 在 M4-01 固定为空数组，M4-02 才能通过受约束的 P-COACH 结果填充；读取报告不会临时调用模型。
+
+根题计算严格采用冻结 Rubric：可评分项为 level 属于 0—3 且 finding 不为 `not_assessable/disputed` 的 criterion；`coverage=sum(可评分权重)/sum(冻结权重)`。可评分集合为空、coverage<0.60 或存在 disputed criterion 时根题 score=null。否则 `score=round_half_up(100 * sum(weight*level/3)/sum(可评分权重))`。至少三根题 `status=scored` 才提供 overall_score，按各根题等权算术平均并 `round_half_up`；JD priority 不进入分数。Report 与 Assessment 在同一事务落库，每场只允许一份；`report.ready` 与业务状态同事务追加。GET 无报告时返回 409 `REPORT_NOT_READY`，不得现场补算或重复调用模型。
 
 ## 7. 操作、事件与运行信息 API
 

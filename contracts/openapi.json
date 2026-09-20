@@ -49,6 +49,30 @@
         "title": "ConfirmRequest",
         "type": "object"
       },
+      "ControlInterviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "skip",
+              "end"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "action"
+        ],
+        "title": "ControlInterviewRequest",
+        "type": "object"
+      },
       "CreateInterviewRequest": {
         "additionalProperties": false,
         "description": "api.md §6：POST /interviews。",
@@ -683,6 +707,114 @@
           }
         },
         "summary": "Submit Answer"
+      }
+    },
+    "/api/v1/interviews/{interview_id}/control": {
+      "post": {
+        "operationId": "control_interview_api_v1_interviews__interview_id__control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interview_id",
+            "required": true,
+            "schema": {
+              "title": "Interview Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlInterviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Control Interview Api V1 Interviews  Interview Id  Control Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Control Interview"
+      }
+    },
+    "/api/v1/interviews/{interview_id}/report": {
+      "get": {
+        "operationId": "get_interview_report_api_v1_interviews__interview_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interview_id",
+            "required": true,
+            "schema": {
+              "title": "Interview Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Interview Report Api V1 Interviews  Interview Id  Report Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Interview Report"
       }
     },
     "/api/v1/interviews/{interview_id}/start": {

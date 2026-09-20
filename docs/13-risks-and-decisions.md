@@ -60,7 +60,7 @@
 ## M0-01 审计补记（2026-09-18）
 
 - K04 历史：最初真实 SimpleKnowledgeBase 已通过解析/入库/检索/重启，但 delete 因 pymilvus list 返回兼容失败。随后 M0-03-DEL 锁定基于 v0.1.18 + PR #1344 的兼容 commit，已完成两次四进程删除及删除后重启验证；正式 0.1.18 wheel 的失败事实仍保留。
-- K16：本地 BGE-small 方案已由负责人指定的远程 BAAI/bge-m3 取代；使用 SDK 自带 OpenAIEmbedding，无新增推理依赖。合成文本实测 1024 维；业务回答模型适配已实现，但外部文本模型 live 因缺显式配置仍 NOT_RUN。
+- K16：本地 BGE-small 方案已由负责人指定的远程 BAAI/bge-m3 取代；使用 SDK 自带 OpenAIEmbedding，无新增推理依赖。合成文本实测 1024 维。业务回答模型随后以 `deepseek-flash` 完成一次 synthetic live 分析；这解除“完全未运行”，不形成效果、p95 或成本结论。
 - K17：0.1.18 官方 WorkflowAgent 依赖 legacy ControllerAgent/WorkflowAgentConfig。保留官方入口、锁版本并记录弃用警告；不假造替代类，不擅自迁移框架。
 - K18 历史：规范校验器曾因任务状态假设和第三方扫描范围产生 28/31。范围和状态校验已修正，当前终态为 44/44；历史失败记录保留在 process，不再是现行 blocker。
 - 已有 ADR-001—010 不重开；本轮验证范围见 [ADR-011](adr/011-workflow-smoke-scope.md)。外部 O01—O06 仍按 process.md 记录，不因本地技术测试而解除。
@@ -104,3 +104,11 @@
 - K05 仍为高风险，但“业务模型完全未运行”已解除：`deepseek-flash` 在生产适配器和真实 openJiuwen Workflow 上完成一次 synthetic 回答分析。第一轮真实输出因 `finding` 类型错误被 Schema 拒绝，证明严格服务端校验必要；补全 Prompt 结构约束后第二轮通过。
 - K13 新增并闭合一条日志边界：openJiuwen 会记录组件异常，详细 JSON Schema 错误可能携带模型生成的回答派生文本。SemanticValidation 现只向 SDK 抛固定错误；纯领域校验仍保留详细诊断，回归断言私密 marker 不进入异常或捕获日志。
 - 未解除项：单样本不代表模型质量、p95、真实 429/超时恢复或费用；成功 usage 为 1156/2544/3700，首轮失败 usage 和两次费用均 NOT_MEASURED/null。后续批量或 M4 付费 live 前仍需负责人明确持续费用上限。
+
+## M4-01 评分与报告风险更新（2026-09-19）
+
+- K22：评分器是确定性聚合器，不是新的事实发现器。它只消费已通过语义校验的 Observation 和冻结 Rubric；若上游 Observation 错，确定性本身不能保证评价正确。supported/contradicted 冲突必须保留 disputed/null，不能靠最后写入覆盖。
+- K23：Report/Assessment 唯一约束、短事务和 retry 防止重复业务结果，但单进程 `BackgroundTasks` 不提供持久队列或 exactly-once 上游调用。重启时 queued/running 都必须转 interrupted；不能把丢失 callable 的 queued 假装成会自动恢复。
+- K24：M4 烟测使用 ScriptedAnalyzer fixture，证明真实 FastAPI/openJiuwen Workflow/SQLite/评分/报告闭环，不证明真实模型五题效果。Report UI、浏览器完整报告、真实模型 429/timeout 与整场成本均 NOT_RUN。
+- K25：默认 shell 为 Node v26.8.1，直接执行会因 package 要求 `>=24 <25` 产生 engine warning；最终已显式使用仓库 `toolchain/node24/bin` 的 Node 24.21.0 / pnpm 10.34.5 完成 11 项测试与 production build。后续命令仍必须显式选择锁定工具链，不能依赖默认 PATH。
+- O04 持续费用上限仍未给出。M4-01 使用 0 次付费模型/embedding 网络调用；M4-02 或批量 live 若要继续调用外部模型，仍需先得到明确总预算，未知费用保持 null。

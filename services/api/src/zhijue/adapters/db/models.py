@@ -221,6 +221,14 @@ class Assessment(TimestampMixin, Base):
         String(24)
     )  # scored/skipped/insufficient/disputed/...
 
+    __table_args__ = (
+        UniqueConstraint(
+            "interview_id",
+            "root_question_id",
+            name="uq_assessment_interview_root",
+        ),
+    )
+
 
 class Report(TimestampMixin, Base):
     __tablename__ = "report"
@@ -235,6 +243,8 @@ class Report(TimestampMixin, Base):
     improved_answers: Mapped[list[Any]] = mapped_column(JSON, default=list)
     limitations: Mapped[list[Any]] = mapped_column(JSON, default=list)
     run_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (UniqueConstraint("interview_id", name="uq_report_interview"),)
 
 
 class Operation(TimestampMixin, Base):

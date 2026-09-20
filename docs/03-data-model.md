@@ -33,8 +33,8 @@
 | Answer | id、question_id、client_turn_id、accepted_operation_id、raw_text、created_at、assistance、evaluation_status | 原文不可覆盖；一题一份已接受作答；client_turn 与原 operation 可恢复、可幂等重放 |
 | Observation | id、answer_id、question_id、root_question_id、criteria、relevance、knowledge_status、clarification_needed、validation_flags | 仅保存通过语义校验的观察；模型原始输出隔离为调试数据 |
 | Decision | id、observation_id（控制动作时可 null）、action、reason_code、target、policy_version | 动作由代码决定，不由模型直接决定 |
-| Assessment | id、root_id、criterion_results、score、coverage、status | score 可以 null；未评不是 0 |
-| Report | id、interview_id、root_assessments、coverage、limitations、suggestions | 区分 complete/incomplete；结果保留版本 |
+| Assessment | id、interview_id、root_question_id、criterion_results、score、coverage、status | `(interview_id,root_question_id)` 唯一；score 可以 null；未评不是 0 |
+| Report | id、interview_id、revision、completion、overall_score、coverage、root_assessments、improved_answers、limitations、run_metadata | `interview_id` 唯一；区分 complete/incomplete；结果保留版本 |
 | Operation | id、kind、resource_id、idempotency_key、input_hash、status、attempts | 状态队列独立于业务状态 |
 | OperationEvent | operation_id、seq、event_type、payload、created_at | `(operation_id,seq)` 唯一；只追加 |
 | TrainingMemory | profile_id、competency_id、observed_gap、evidence_ids、status | P1；未测试技能不得写成弱项；用户可删除 |
@@ -60,19 +60,20 @@
 
 ## 6. 评分数据
 
-每条 criterion：`criterion_id / kind / weight / level / finding / answer_quotes / knowledge_refs / explanation`。
+Observation 中每条 criterion：`criterion_id / kind / weight / level / finding / answer_quotes / knowledge_refs / explanation`。Report 合并同一根题的多轮 Observation 后使用 `explanations[]`，不丢弃冲突两侧依据。
 
 - kind 为 technical/expression/evidence_reasoning。
-- level 为 0、1、2、3 或 null；finding 为 supported/missing/contradicted/not_assessable。
+- level 为 0、1、2、3 或 null；Observation finding 为 supported/missing/contradicted/not_assessable，合并结果还允许 disputed。
 - technical 的明确错误评价需要适用的 reviewed 技术参考；无参考则 not_assessable。
 - missing 只是本回答未覆盖被明确问到的评价要点；未问到、非适用项用 not_assessable，不混算。
-- 不允许“客户端自己提交 overall_score”；不允许“模型解析失败后默认 75 分”。
+- supported 与 contradicted 同时出现时保留 disputed，根题 score=null；不以最后一句覆盖前一份证据。
+- 不允许客户端提交 overall_score，也不允许模型解析失败后默认 75 分。数字只由程序按冻结 Rubric 计算。
 
-分数聚合与 coverage 详见 `docs/06-prompts-and-factuality.md`。观察 Schema 见 `contracts/observation.schema.json`。
+分数聚合与 coverage 详见 `docs/06-prompts-and-factuality.md`，Report 网络形状见 `api.md` §6。观察 Schema 见 `contracts/observation.schema.json`。
 
 ## 7. 数据库存储规则
 
-业务表使用 SQLite，JSON 字段存储版本化快照；第一版不把每个词建表。使用外键约束、事务、唯一键与索引。关键唯一键：`(interview_id,client_turn_id)`、`(question_id,accepted)` 需用合适部分唯一索引/设计保证一份已接受答案；`(scope,idempotency_key)`；`(operation_id,seq)`。
+业务表使用 SQLite，JSON 字段存储版本化快照；第一版不把每个词建表。使用外键约束、事务、唯一键与索引。关键唯一键：`(interview_id,client_turn_id)`、`question_id`（一题一份 Answer）、`accepted_operation_id`、`(interview_id,root_question_id)`（一根一份 Assessment）、`report.interview_id`（一场一份 Report）、`(scope,idempotency_key)`、`(operation_id,seq)`。
 
 开发者需设计明确 SQL migration，不在请求中 `create_all()` 临时改表。连接启用 foreign_keys，配置 busy_timeout；WAL 是否启用与备份策略一起测试。[S12]
 

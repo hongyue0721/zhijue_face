@@ -36,6 +36,7 @@ from zhijue.application.answer_workflow import (
     AnswerWorkflowError,
     run_handle_answer_workflow,
 )
+from zhijue.application.reporting import ReportingService
 from zhijue.application.requisition import JDPlanningError, JDPlanningService
 from zhijue.application.seed_bank import SeedBank
 from zhijue.domain.errors import (
@@ -133,6 +134,7 @@ class InterviewService:
         planner: JDPlanningService,
         operations: OperationRepository,
         seed_bank: SeedBank,
+        reporting: ReportingService,
         analyzer: AnswerAnalyzer | None,
         workflow_timeout_seconds: float = 60,
     ) -> None:
@@ -140,6 +142,7 @@ class InterviewService:
         self._planner = planner
         self._operations = operations
         self._seed_bank = seed_bank
+        self._reporting = reporting
         self._analyzer = analyzer
         self._workflow_timeout_seconds = workflow_timeout_seconds
         self._acceptance_lock = Lock()
@@ -581,6 +584,7 @@ class InterviewService:
             "action": decision.action,
             "question_id": interview.current_question_id,
             "usage": None,
+            "report_id": interview.report_id,
         }
 
     def _load_answer_context(self, operation_id: str) -> _AnswerRunContext:
@@ -653,7 +657,10 @@ class InterviewService:
     async def process_answer(self, *, operation_id: str) -> dict[str, Any]:
         context = self._load_answer_context(operation_id)
         if context.existing_result is not None:
-            return context.existing_result
+            return self._complete_natural_end(
+                operation_id=operation_id,
+                result=context.existing_result,
+            )
         if self._analyzer is None:
             raise ServiceUnavailableError("回答分析模型尚未配置。")
 
@@ -683,12 +690,16 @@ class InterviewService:
             ObservationValidationError,
         ) as exc:
             raise UpstreamError("回答分析失败，原始回答已保留。") from exc
-        return self._commit_answer_result(
+        committed = self._commit_answer_result(
             operation_id=operation_id,
             context=context,
             observation=result["observation"],
             decision=result["decision"],
             usage=result["usage"],
+        )
+        return self._complete_natural_end(
+            operation_id=operation_id,
+            result=committed,
         )
 
     @staticmethod
@@ -729,6 +740,35 @@ class InterviewService:
             "reflection": "请围绕这个关键点说明可验证的复盘",
         }.get(intent, "请针对刚才未覆盖的关键点补充")
         return f"{prefix}：{focus}。"
+
+    def _complete_natural_end(
+        self,
+        *,
+        operation_id: str,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        if result["action"] != "END":
+            return result
+        with Session(self._engine) as session, session.begin():
+            operation = session.get(Operation, operation_id)
+            if operation is None:
+                raise ResourceNotFoundError("回答操作不存在。")
+            interview = session.get(Interview, operation.resource_id)
+            if interview is None:
+                raise ResourceNotFoundError("面试不存在。")
+            if interview.stop_requested:
+                return result
+            report = self._reporting.create_in_session(
+                session,
+                interview=interview,
+                operation_id=operation_id,
+            )
+            return {
+                **result,
+                "resource_revision": interview.revision,
+                "question_id": None,
+                "report_id": report.id,
+            }
 
     def _commit_answer_result(
         self,
@@ -784,7 +824,9 @@ class InterviewService:
             )
 
             next_question_id: str | None = None
-            if decision["action"] in {"CLARIFY", "PROBE"}:
+            if interview.stop_requested:
+                interview.status = "finishing"
+            elif decision["action"] in {"CLARIFY", "PROBE"}:
                 intent = str((target or {}).get("followup_intent") or "detail")
                 root = session.get(Question, context.root_question_id)
                 if root is None:
@@ -857,6 +899,233 @@ class InterviewService:
                 "action": decision["action"],
                 "question_id": next_question_id,
                 "usage": usage,
+                "report_id": interview.report_id,
+            }
+
+    def accept_control(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        action: str,
+        command: OperationCommand,
+        capacity_available: bool = True,
+    ) -> AcceptedInterviewOperation:
+        with self._acceptance_lock:
+            return self._accept_control_once(
+                interview_id,
+                expected_revision=expected_revision,
+                action=action,
+                command=command,
+                capacity_available=capacity_available,
+            )
+
+    def _accept_control_once(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        action: str,
+        command: OperationCommand,
+        capacity_available: bool,
+    ) -> AcceptedInterviewOperation:
+        if action not in {"skip", "end"}:
+            raise DomainError("未知面试控制动作。", code="INVALID_REQUEST")
+        with (
+            Session(self._engine, expire_on_commit=False) as session,
+            session.begin(),
+        ):
+            if action == "end":
+                existing_end = session.scalar(
+                    select(Operation)
+                    .where(
+                        Operation.resource_id == interview_id,
+                        Operation.kind == "interview.control.end",
+                    )
+                    .order_by(Operation.created_at, Operation.id)
+                )
+                if existing_end is not None:
+                    return AcceptedInterviewOperation(existing_end, created=False)
+            existing = self._existing_operation(session, command)
+            if existing is not None:
+                return AcceptedInterviewOperation(existing, created=False)
+            interview = session.get(Interview, interview_id)
+            if interview is None:
+                raise ResourceNotFoundError("面试不存在。")
+            if not capacity_available:
+                raise CapacityLimitedError()
+            if interview.revision != expected_revision:
+                raise RevisionConflictError(
+                    "面试版本已更新。",
+                    current_revision=interview.revision,
+                )
+            if interview.status not in {"active", "finishing", "finish_failed"}:
+                raise InvalidStateError("当前面试不接受控制操作。")
+            if action == "skip" and interview.active_operation_id is not None:
+                raise InvalidStateError(
+                    "面试已有进行中的操作。",
+                    code="OPERATION_IN_PROGRESS",
+                )
+            question = (
+                session.get(Question, interview.current_question_id)
+                if interview.current_question_id is not None
+                else None
+            )
+            if action == "skip" and question is None:
+                raise InvalidStateError("当前没有可跳过的问题。")
+            if question is None:
+                question = session.scalar(
+                    select(Question)
+                    .where(
+                        Question.interview_id == interview.id,
+                        Question.kind == "main",
+                    )
+                    .order_by(Question.order_index.desc(), Question.id.desc())
+                    .limit(1)
+                )
+            if question is None:
+                raise InvalidStateError("面试没有可关联的根问题。")
+            root = session.get(Question, question.root_id)
+            if root is None:
+                raise InvalidStateError("控制操作关联的根问题不存在。")
+            remaining = tuple(
+                session.scalars(
+                    select(Question.id)
+                    .where(
+                        Question.interview_id == interview.id,
+                        Question.kind == "main",
+                        Question.order_index > root.order_index,
+                    )
+                    .order_by(Question.order_index, Question.id)
+                )
+            )
+            operation = self._operations.accept_in_session(session, command)
+            decision_action = "END" if action == "end" or not remaining else "NEXT"
+            reason_code = "USER_REQUESTED_END" if action == "end" else "SKIPPED"
+            session.add(
+                Decision(
+                    id=new_id("decision"),
+                    observation_id=None,
+                    root_question_id=root.id,
+                    action=decision_action,
+                    reason_code=reason_code,
+                    reason_summary=(
+                        "用户明确请求结束面试。"
+                        if action == "end"
+                        else "用户跳过当前问题，不据此推断能力。"
+                    ),
+                    target={
+                        "control_operation_id": operation.id,
+                        "question_id": question.id,
+                        "question_kind": question.kind,
+                    },
+                    policy_version=interview.policy_version,
+                )
+            )
+            if action == "end":
+                interview.stop_requested = True
+                interview.status = "finishing"
+                if interview.active_operation_id is None:
+                    interview.active_operation_id = operation.id
+            else:
+                interview.active_operation_id = operation.id
+            interview.revision += 1
+            interview.updated_at = utc_now_rfc3339()
+            return AcceptedInterviewOperation(operation, created=True)
+
+    @staticmethod
+    def _control_decision_for_operation(
+        session: Session, operation: Operation
+    ) -> Decision:
+        operation_ids: set[str] = set()
+        current: Operation | None = operation
+        while current is not None and current.id not in operation_ids:
+            operation_ids.add(current.id)
+            current = (
+                session.get(Operation, current.parent_operation_id)
+                if current.parent_operation_id
+                else None
+            )
+        decisions = session.scalars(
+            select(Decision)
+            .where(Decision.reason_code.in_({"SKIPPED", "USER_REQUESTED_END"}))
+            .order_by(Decision.created_at, Decision.id)
+        )
+        for decision in decisions:
+            target = decision.target or {}
+            if target.get("control_operation_id") in operation_ids:
+                return decision
+        raise InvalidStateError("控制操作缺少持久化决策。")
+
+    def process_control(self, *, operation_id: str) -> dict[str, Any]:
+        with Session(self._engine) as session, session.begin():
+            operation = session.get(Operation, operation_id)
+            if operation is None:
+                raise ResourceNotFoundError("控制操作不存在。")
+            interview = session.get(Interview, operation.resource_id)
+            if interview is None:
+                raise ResourceNotFoundError("面试不存在。")
+            decision = self._control_decision_for_operation(session, operation)
+            self._operations.append_event_in_session(
+                session,
+                operation_id,
+                "policy.decided",
+                {
+                    "action": decision.action,
+                    "reason_code": decision.reason_code,
+                    "root_question_id": decision.root_question_id,
+                    "followup_intent": None,
+                },
+            )
+            if decision.action == "NEXT":
+                root = session.get(Question, decision.root_question_id)
+                if root is None:
+                    raise InvalidStateError("跳过操作关联的根问题不存在。")
+                next_question_id = session.scalar(
+                    select(Question.id)
+                    .where(
+                        Question.interview_id == interview.id,
+                        Question.kind == "main",
+                        Question.order_index > root.order_index,
+                    )
+                    .order_by(Question.order_index, Question.id)
+                    .limit(1)
+                )
+                if next_question_id is None:
+                    raise InvalidStateError("跳过操作缺少下一根问题。")
+                interview.status = "active"
+                interview.current_question_id = next_question_id
+                interview.active_operation_id = None
+                interview.revision += 1
+                interview.updated_at = utc_now_rfc3339()
+                self._operations.append_event_in_session(
+                    session,
+                    operation_id,
+                    "question.ready",
+                    {
+                        "question_id": next_question_id,
+                        "interview_revision": interview.revision,
+                    },
+                )
+                return {
+                    "resource_revision": interview.revision,
+                    "decision_id": decision.id,
+                    "action": decision.action,
+                    "question_id": next_question_id,
+                    "report_id": None,
+                }
+
+            report = self._reporting.create_in_session(
+                session,
+                interview=interview,
+                operation_id=operation_id,
+            )
+            return {
+                "resource_revision": interview.revision,
+                "decision_id": decision.id,
+                "action": decision.action,
+                "question_id": None,
+                "report_id": report.id,
             }
 
     def accept_retry(
@@ -889,6 +1158,11 @@ class InterviewService:
         capacity_available: bool = True,
         max_attempts: int = 3,
     ) -> AcceptedInterviewOperation:
+        supported_kinds = {
+            "interview.answer",
+            "interview.control.skip",
+            "interview.control.end",
+        }
         with (
             Session(self._engine, expire_on_commit=False) as session,
             session.begin(),
@@ -896,8 +1170,8 @@ class InterviewService:
             original = session.get(Operation, operation_id)
             if original is None:
                 raise ResourceNotFoundError("原操作不存在。")
-            if original.kind != "interview.answer":
-                raise InvalidStateError("该操作不支持回答重试。")
+            if original.kind not in supported_kinds:
+                raise InvalidStateError("该操作不支持面试运行时重试。")
             retry_scope = f"{original.scope}#retry_of_{original.id}"
             existing = session.scalar(
                 select(Operation).where(
@@ -922,9 +1196,10 @@ class InterviewService:
             if not capacity_available:
                 raise CapacityLimitedError()
             answer = self._answer_for_operation(session, original)
-            if answer is None:
-                raise InvalidStateError("原操作缺少可恢复回答。")
-            interview = session.get(Interview, answer.interview_id)
+            interview = session.get(
+                Interview,
+                answer.interview_id if answer is not None else original.resource_id,
+            )
             if interview is None:
                 raise ResourceNotFoundError("面试不存在。")
             if interview.revision != expected_revision:
@@ -949,13 +1224,29 @@ class InterviewService:
                 )
             except ValueError as exc:
                 raise InvalidStateError(str(exc)) from exc
-            if answer.evaluation_status != "evaluated":
+
+            state_changed = False
+            if answer is not None and answer.evaluation_status != "evaluated":
                 answer.evaluation_status = "processing"
                 interview.active_operation_id = operation.id
+                state_changed = True
+            elif answer is not None and interview.status == "finish_failed":
+                interview.status = "finishing"
+                interview.active_operation_id = operation.id
+                state_changed = True
+            elif original.kind.startswith("interview.control."):
+                interview.active_operation_id = operation.id
+                if original.kind == "interview.control.end":
+                    interview.stop_requested = True
+                    interview.status = "finishing"
+                state_changed = True
+            if state_changed:
                 interview.revision += 1
                 interview.updated_at = utc_now_rfc3339()
             return AcceptedInterviewOperation(
-                operation, created=True, answer_id=answer.id
+                operation,
+                created=True,
+                answer_id=answer.id if answer is not None else None,
             )
 
     def release_failed_operation(self, operation_id: str) -> None:
@@ -967,8 +1258,16 @@ class InterviewService:
             answer = self._answer_for_operation(session, operation)
             if answer is not None and answer.evaluation_status == "processing":
                 answer.evaluation_status = "failed"
-            if interview is not None and interview.active_operation_id == operation_id:
+            if interview is None:
+                return
+            changed = False
+            if interview.status == "finishing" and interview.report_id is None:
+                interview.status = "finish_failed"
+                changed = True
+            if interview.active_operation_id == operation_id:
                 interview.active_operation_id = None
+                changed = True
+            if changed:
                 interview.revision += 1
                 interview.updated_at = utc_now_rfc3339()
 
@@ -984,11 +1283,16 @@ class InterviewService:
                 if answer is not None and answer.evaluation_status == "processing":
                     answer.evaluation_status = "failed"
                 interview = session.get(Interview, operation.resource_id)
-                if (
-                    interview is not None
-                    and interview.active_operation_id == operation_id
-                ):
+                if interview is None:
+                    continue
+                changed = False
+                if interview.status == "finishing" and interview.report_id is None:
+                    interview.status = "finish_failed"
+                    changed = True
+                if interview.active_operation_id == operation_id:
                     interview.active_operation_id = None
+                    changed = True
+                if changed:
                     interview.revision += 1
                     interview.updated_at = utc_now_rfc3339()
 
@@ -1000,7 +1304,10 @@ class InterviewService:
             plan = dict(interview.root_plan or {})
             jd = dict(plan.get("jd_snapshot") or {})
             current_question = None
-            if interview.current_question_id is not None:
+            if (
+                interview.current_question_id is not None
+                and not interview.stop_requested
+            ):
                 question = session.get(Question, interview.current_question_id)
                 if question is not None:
                     answer = session.scalar(

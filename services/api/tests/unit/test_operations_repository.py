@@ -158,7 +158,7 @@ def test_retry_rejects_non_failed_states(repo):
         repo.retry(op.id)  # 成功终态同样拒绝
 
 
-def test_restart_marks_running_interrupted_without_replaying(repo):
+def test_restart_marks_running_and_queued_interrupted_without_replaying(repo):
     op = repo.accept(start_command())
     repo.transition(op.id, OperationStatus.RUNNING)
     queued = repo.accept(
@@ -169,11 +169,11 @@ def test_restart_marks_running_interrupted_without_replaying(repo):
         )
     )
     interrupted = repo.mark_interrupted_on_restart()
-    assert interrupted == [op.id]
+    assert set(interrupted) == {op.id, queued.id}
     assert repo.get(op.id).status == OperationStatus.INTERRUPTED
-    assert repo.get(queued.id).status == OperationStatus.QUEUED
-    # queued 可安全重新入队，但仓储本身不改它的状态。
-    assert repo.requeue_pending() == [queued.id]
+    assert repo.get(queued.id).status == OperationStatus.INTERRUPTED
+    # BackgroundTasks 的 callable 不持久化；重启后不能假装可安全自动重放。
+    assert repo.requeue_pending() == []
 
 
 def test_idempotency_scope_isolates_method_and_path(repo):

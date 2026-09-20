@@ -72,6 +72,7 @@ PUBLIC_MESSAGES: dict[str, str] = {
     "IDEMPOTENCY_CONFLICT": "相同幂等键被用于不同输入。",
     "INVALID_STATE": "当前状态不允许该操作。",
     "OPERATION_IN_PROGRESS": "当前资源已有进行中的操作。",
+    "REPORT_NOT_READY": "报告尚未生成。",
     "INVALID_REQUEST": "请求格式或参数无效。",
     "SCHEMA_VALIDATION_FAILED": "请求字段不符合契约。",
     "FILE_TOO_LARGE": "文件超过大小上限。",

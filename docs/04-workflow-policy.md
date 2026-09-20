@@ -116,24 +116,22 @@ Decision 展示 `action + reason_code + 支持引用 + 下一目标`。这是应
 
 ## 11. 运行中主动结束与版本冲突
 
-用户在模型分析期间点击结束，服务端先在短事务中设置 stop_requested=true，保存结束命令的幂等记录并增加 revision。结束汇总任务可以 queued 等待，但不能与当前任务并行修改 Interview。
+用户在模型分析期间点击结束，服务端在短事务中设置 `stop_requested=true`，保存唯一结束 operation 和 observation_id=null 的 `USER_REQUESTED_END` Decision，并增加 revision。InterviewView 立即停止暴露待答问题，但不伪称远端请求已经取消。
 
-当前任务在每个外部调用前和提交前读取终止标志。停止后不得再生成/展示新问题；能安全保存的原回答与已校验评价保存，未完成分析标为未评。可取消的上游调用尝试取消，不能保证取消退费。当前任务释放 active_operation 后，由唯一结束任务基于最终 revision 汇总现有结果。
+当前回答可安全保存的原文、validated Observation 和程序 Decision 继续落库；提交时看到 stop_requested 后不得创建或展示下一题。串行 runner 随后执行结束 operation，按最终已持久化状态生成报告。结束不保证上游取消或退费，重复 end 返回同一 operation；失败后通过 parent-linked retry 恢复，不新建第二份报告。
 
-对这种受控终止，原任务不得用旧 revision 覆盖 stop_requested；按显式停止分支提交/终止。其他非预期版本变化返回冲突并停止提交。重复 end 返回同一结束操作，不新建第二个报告任务。删除优先于结束：被删除档案的结果不得回写。
+skip 只在没有 active operation 时受理。跳过主问题产生 `status=skipped / score=null`；跳过追问保留该根题已有 Observation，但全场 completion 仍为 incomplete。skip/end 都不调用模型，不把用户跳过写成回答错误。删除仍优先于结束：被删除档案的结果不得回写。
 
-这是单进程的业务协调，不是默认具备的分布式任务系统。进程在停止中崩溃时标 interrupted；用户读取状态后明确重试结束任务，不能静默双重执行。
+这是单进程的业务协调，不是分布式任务系统。`BackgroundTasks` callable 不持久化，因此重启时 queued 与 running 均标 interrupted；已保存 Answer 不丢失，用户读取状态后明确重试或重新发起命令，不能静默双重执行。
 
-## 12. M3 后端落地状态（2026-09-19）
+## 12. M3/M4 后端落地状态（2026-09-19）
 
 `handle_answer` 已通过已安装的 openJiuwen 构造成有界 `Start → Analyzer → 语义校验 → 纯规则 Policy → End` Workflow。Analyzer 只能返回 Observation 候选；服务端逐项校验 observation/answer/question/root ID、回答原文精确引文、冻结 Rubric 的 criterion/kind/weight 和审核 reference，再由程序产生 Decision。模型输出中的 action、额外字段、伪造引文或越界 reference 均使 operation 失败，不形成能力结论。
 
 开始面试会把五个冻结 slot 一次性实例化为 Question；批准 Seed 仅作精确 competency 匹配，唯一允许的宽映射是 `embedded.rtos.fundamentals → embedded.rtos.*`，且单场 Seed 不重复。无匹配时使用 `seed_id=null` 的非技术经历/证据回退题。
 
-PROBE 的下一问由选中的最重要缺口和冻结 Rubric 确定性渲染，不新增第二次模型调用；运行测试验证文案确实对应选中 criterion 的合格阈值，且不向候选人暴露内部 criterion ID。最终根题证据合并和评分属于 M4，不在 M3 用一个临时分数替代。
+PROBE 文案由选中的最重要缺口和冻结 Rubric 确定性渲染，不新增第二次模型调用。M4 已实现根题汇总：主答/追问按 criterion 合并，重复复述不增加权重；supported 与 contradicted 并存时保留 disputed；coverage 低于 60%、未测、跳过或冲突均保持 null。至少三根 scored 根题才按等根权重生成 overall_score，JD priority 不参与计分。
 
-回答受理在同一 SQLite 事务写入 Answer 原文、operation、`active_operation_id` 和 revision；单进程的 start/answer/retry 受理共用一把短临界区锁，使并发相同 idempotency key 或 `client_turn_id` 只落一份业务记录。分析期间不持有锁或写事务；成功后再以单事务写 Observation、Decision、下一题/finishing 状态及 `policy.decided` / `question.ready` 事件。失败保留原回答并标记 failed；retry 新建 parent-linked operation、复用同一 Answer，父子累计最多三次。进程启动把遗留 running operation 标为 interrupted，并释放关联面试；不静默重放上游调用。
+回答受理在同一 SQLite 事务写入 Answer 原文、operation、`active_operation_id` 和 revision；成功后再以短事务写 Observation、Decision 和下一状态。自然 END 或 control END 通过 ReportingService 在同一事务写五个唯一 Assessment、唯一 Report、`report.ready` 和 completed。若 Observation 已提交而报告落库失败，retry 复用现有 Observation，只重跑确定性汇总，不再次调用 Analyzer。
 
-应用把 openJiuwen 运行日志提升到 WARNING 并禁用 SDK 文件 sink，避免 INFO 级 workflow 输入/输出把回答或简历写入日志。Operation 的公开错误只使用固定契约文案，内部异常不得把 SQL 参数或回答原文带回 API。
-
-测试中的 ScriptedAnalyzer 只替代外部文本模型，openJiuwen Workflow、语义校验、Policy、SQLite 事务、事件和恢复均运行真实实现。当前 `.env.local` 仅有 embedding 配置，缺少 `MODEL_PROVIDER`、`MODEL_NAME`、`API_BASE`、`API_KEY`、`MODEL_TIMEOUT`、`MODEL_MAX_RETRIES`，因此业务文本模型 live 调用仍为 `NOT_RUN`；不得把 fixture 结果记作真实模型效果或成本。
+应用把 openJiuwen 运行日志提升到 WARNING 并禁用 SDK 文件 sink，避免 INFO 级 workflow 输入/输出把回答或简历写入日志。Operation 的公开错误只使用固定契约文案，内部异常不得把 SQL 参数或回答原文带回 API。M3-01 已用 `deepseek-flash` 完成一次通过的 synthetic 业务分析；M4-01 本轮报告验证使用 fixture Analyzer，但真实 openJiuwen Workflow、SQLite、Operation、评分和报告代码均未替换。它证明程序边界，不证明真实模型评分效果、价格或 p95。

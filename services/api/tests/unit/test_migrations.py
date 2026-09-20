@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from zhijue.adapters.db.engine import make_engine
 from zhijue.adapters.db.models import (
     Answer,
+    Assessment,
     Base,
     Document,
     Interview,
@@ -22,6 +23,7 @@ from zhijue.adapters.db.models import (
     Profile,
     ProfileSnapshot,
     Question,
+    Report,
 )
 
 API_ROOT = Path(__file__).resolve().parents[2]
@@ -163,6 +165,59 @@ def test_one_accepted_answer_per_question(interview_engine):
         rows = session.query(Answer).all()
     assert [r.id for r in rows] == ["answer_1"]
     assert rows[0].raw_text == "第一条"
+
+
+def test_report_and_root_assessment_are_unique_per_interview(interview_engine):
+    with Session(interview_engine) as session:
+        session.add_all(
+            [
+                Assessment(
+                    id="assessment_1",
+                    interview_id="interview_a",
+                    root_question_id="question_a",
+                    criterion_results=[],
+                    score=None,
+                    coverage=0.0,
+                    status="unmeasured",
+                ),
+                Report(
+                    id="report_1",
+                    interview_id="interview_a",
+                    completion="incomplete",
+                    overall_score=None,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(interview_engine) as session:
+        session.add(
+            Assessment(
+                id="assessment_2",
+                interview_id="interview_a",
+                root_question_id="question_a",
+                criterion_results=[],
+                score=None,
+                coverage=0.0,
+                status="unmeasured",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+
+    with Session(interview_engine) as session:
+        session.add(
+            Report(
+                id="report_2",
+                interview_id="interview_a",
+                completion="incomplete",
+                overall_score=None,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
 
 
 def test_event_seq_unique_per_operation(base_engine):

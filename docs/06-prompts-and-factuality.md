@@ -51,15 +51,15 @@
 
 `coverage = sum(w_i for i in A) / W`
 
-`score = round(100 * sum(w_i * l_i / 3 for i in A) / sum(w_i for i in A))`
+`score = round_half_up(100 * sum(w_i * l_i / 3 for i in A) / sum(w_i for i in A))`
 
-当 A 为空或 coverage<0.60，root_score=null，显示评价范围不足。0.60 是本 Demo 操作门槛，不是统计置信阈值。
+当 A 为空、coverage<0.60 或任一 criterion 的有效证据同时包含 supported 与 contradicted 时，root_score=null；冲突项显式标 disputed，不按最后一次回答覆盖。0.60 是本 Demo 操作门槛，不是统计置信阈值。数字舍入使用 decimal `ROUND_HALF_UP`，避免语言默认银行家舍入造成边界漂移。
 
 不能在看到用户答错后把该项改为不适用提高分数。任务本来不适用的项由题目生成时确定；因技术参考不可用导致 not_assessable 必须降低 coverage 并写明原因。
 
 未提到被明确问到的关键点可以记 missing，并按 Rubric 评价该回答；没问到、跳过、网络错误、解析失败绝不能当作零分。技术判断须有对应 reviewed 参考和适用版本。
 
-总览仅在至少三根问题有有效分数时提供，P0 五根问题各权重为 1，对可评分根题取算术平均并四舍五入到整数；JD 的 3/1 只影响题目选择，不暗中改变评分权重。其他情况下 overall_score=null，仍可展示已完成单题反馈。报告同时展示已提问、已回答、可评分、跳过、未测的计数和范围。
+总览仅在至少三根问题 `status=scored` 时提供，P0 五根问题各权重为 1，对可评分根题取算术平均并用同一 `ROUND_HALF_UP` 到整数；JD 的 3/1 只影响题目选择，不暗中改变评分权重。其他情况下 overall_score=null，仍可展示已完成单题反馈。报告同时展示已计划、已提问、已回答、可评分、覆盖不足、冲突、跳过和未测的计数。
 
 ## 7. 主回答与追问如何合并
 

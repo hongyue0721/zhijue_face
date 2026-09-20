@@ -1,6 +1,6 @@
 # UI Contract｜P0 三页面试陪练
 
-更新时间：2026-09-19。适用实现：`apps/web`。本文件只登记当前 FastAPI/OpenAPI 已实现能力，不把规划字段当成页面数据。
+更新时间：2026-09-19。适用实现：`apps/web`。本文件登记当前页面实际消费的 FastAPI/OpenAPI 能力；M4-01 新增的 control/report 已进入 `api.ts` 类型和客户端，但冻结三页尚未接入，不把后端存在误写成页面已实现。
 
 ## 1. 路由与业务门槛
 
@@ -39,7 +39,9 @@
 | 已保存回答 | `current_question.accepted_answer` | `raw_text/evaluation_status` | 202 只表示接收；处理结果仍以 Operation + GET Interview 为准 |
 | 追问/澄清 | `current_question.kind`、`root_results` | `probe` 显示“为什么继续追问 / 追问方向”，`clarification` 显示“为什么需要澄清 / 澄清方向”；内容只读取 `action/reason_summary/target.followup_intent`；`counterfactual`→条件变化下的调整、`pushback`→回应反例或限制条件、`reflection`→复盘与经验总结 | `pushback` 不等于 `counterfactual`；未知 intent 使用用户可读 fallback，不暴露内部枚举或模型私有推理 |
 | 分析重试 | `POST /api/v1/operations/{operation_id}/retry` | 失败 operation ID、最新 `expected_revision` | 不重新 POST answer，不新建 Answer |
-| 面试完成 | `InterviewView.status/current_question` | finishing/completed 且无 current question | 当前无 report GET，禁止展示评分、雷达图、报告或反馈结论 |
+| 面试完成 | `InterviewView.status/current_question` | finishing/completed 且无 current question | 当前页面尚未调用 report GET；禁止自行计算或展示评分、雷达图、反馈结论 |
+| 后端控制（未接 UI） | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、`Idempotency-Key` | 当前冻结页不展示 skip/end 按钮；未来接入必须以 Operation 终态和新 Interview 快照为准 |
+| 后端报告（未接 UI） | `GET /api/v1/interviews/{id}/report` | 持久化 Report/Assessment、nullable score、completion/limitations/run_metadata | 当前冻结页不展示报告；未来不得把 null 显示成 0，也不得在浏览器重算服务端分数 |
 
 Prepare ready 的冻结展示顺序为：岗位摘要 → Coverage Map / 五题 Plan → 开始面试动作 → 默认折叠的技术详情。该顺序只调整叙事层级；Coverage、Plan、Requirement 均保持服务端数组顺序，不按 `competency_id` 生成名称、重排 priority 或补造计划。
 
@@ -61,6 +63,6 @@ Prepare ready 的冻结展示顺序为：岗位摘要 → Coverage Map / 五题 
 - PDF `requires_text`：显示真实文档警告并开放手工事实输入；不伪装 OCR 已完成。
 - 网络响应不明确：回答文本保持在当前表单中，同一次显式重试复用原 `client_turn_id` 与 `Idempotency-Key`。
 
-## 5. 当前明确不实现
+## 5. 当前页面明确不实现
 
-当前 OpenAPI 没有以下读取/控制能力，因此页面不得出现对应假按钮或假结果：运行时模型信息页、岗位搜索、简历优化、报告读取、评分雷达图、面试历史列表、Profile/Interview 列表、暂停/停止控制、视频/语音、社交登录、支付。`run_mode=fixture/replay` 必须在全局提示中明示，不能冒充 live 模型效果。
+M4-01 后端已经提供 control/report，`apps/web/src/api.ts` 也有对应类型和方法，但当前冻结三页没有按钮、报告路由或展示组件；这不是“后端没有能力”，也不能冒充 Report UI 已完成。当前 OpenAPI 仍没有运行时模型信息页、岗位搜索、简历优化、面试历史列表、Profile/Interview 列表、视频/语音、社交登录或支付，页面不得出现对应假入口。`run_mode=fixture/replay` 必须在全局提示中明示，不能冒充 live 模型效果。

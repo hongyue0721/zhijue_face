@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -717,3 +718,21 @@ def test_interview_unknown_jd_without_requirements_fails_operation(client):
 
 def test_interview_get_unknown_is_404(client):
     assert client.get("/api/v1/interviews/interview_ghost").status_code == 404
+
+
+def test_openapi_exposes_control_and_report_contracts(client):
+    document = client.get("/openapi.json").json()
+    control_path = document["paths"]["/api/v1/interviews/{interview_id}/control"]
+    report_path = document["paths"]["/api/v1/interviews/{interview_id}/report"]
+    control_schema = document["components"]["schemas"]["ControlInterviewRequest"]
+    exported = json.loads(
+        (Path(__file__).resolve().parents[3] / "contracts" / "openapi.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(control_path) == {"post"}
+    assert set(report_path) == {"get"}
+    assert control_schema["properties"]["action"]["enum"] == ["skip", "end"]
+    assert set(control_schema["required"]) == {"expected_revision", "action"}
+    assert exported == document

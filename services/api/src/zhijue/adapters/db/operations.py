@@ -305,11 +305,15 @@ class OperationRepository:
     # ---- 进程重启恢复（docs/02 §7、docs/04 §3） ---------------------------
 
     def mark_interrupted_on_restart(self) -> list[str]:
-        """把重启时遗留的 running 操作显式终止并留下可恢复事件。"""
+        """Terminate persisted queued/running work because its in-memory job was lost."""
         with Session(self._engine, expire_on_commit=False) as session, session.begin():
             operations = list(
                 session.scalars(
-                    select(Operation).where(Operation.status == OperationStatus.RUNNING)
+                    select(Operation).where(
+                        Operation.status.in_(
+                            (OperationStatus.QUEUED, OperationStatus.RUNNING)
+                        )
+                    )
                 )
             )
             for operation in operations:

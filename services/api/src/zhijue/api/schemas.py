@@ -112,6 +112,13 @@ class StartInterviewRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class ControlInterviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    action: Literal["skip", "end"]
+
+
 class SubmitAnswerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

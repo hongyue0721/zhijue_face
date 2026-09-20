@@ -40,6 +40,7 @@ from zhijue.application.documents import DocumentService
 from zhijue.application.interviews import InterviewService
 from zhijue.application.operations_runner import OperationRunner
 from zhijue.application.profiles import KnowledgeGateway, ProfileService
+from zhijue.application.reporting import ReportingService
 from zhijue.application.requisition import JDPlanningService
 from zhijue.application.seed_bank import load_seed_bank
 from zhijue.domain.extraction import ExtractionLimits
@@ -114,6 +115,7 @@ class Services:
     documents: DocumentService
     profiles: ProfileService
     interviews: InterviewService
+    reports: ReportingService
     operations: OperationRepository
     runner: OperationRunner
     _ready: bool = False
@@ -169,6 +171,7 @@ def build_services(
         live_only=True,
     )
     readiness["seed_bank_version"] = seed_bank.version_fingerprint()
+    reporting = ReportingService(engine=engine, operations=operation_repo)
     return Services(
         config=config,
         engine=engine,
@@ -176,6 +179,7 @@ def build_services(
             engine=engine,
             planner=planner,
             operations=operation_repo,
+            reporting=reporting,
             seed_bank=seed_bank,
             analyzer=analyzer,
             workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
@@ -185,6 +189,7 @@ def build_services(
         ),
         profiles=ProfileService(repo=profile_repo, knowledge=knowledge),
         operations=operation_repo,
+        reports=reporting,
         runner=OperationRunner(
             engine=engine,
             repo=operation_repo,

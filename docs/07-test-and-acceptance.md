@@ -309,3 +309,43 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | 回归 | Ruff 63 files 全绿；pytest 248 passed / 2 skipped / 55 warnings；规范 44/44 | 本轮实际命令 |
 
 结论：M3-01 业务模型结构化输出、真实 Workflow、服务端语义校验和确定性 Policy 的单样本 live 路径为 `VERIFIED`。仍未证明真实模型 429/超时、批量稳定性、p95、价格、浏览器真实模型整场或评分效果；这些边界不得由本次一次成功外推。
+
+## M4-01 评分与报告验证（2026-09-19）
+
+本轮先写纯评分行为测试再实现。首次运行 `PYTHONPATH=src .venv/bin/python -m pytest tests/unit/test_scoring.py -q` 得到 `ModuleNotFoundError: zhijue.domain.scoring`，证明红灯来自尚不存在的评分域实现；实现后同命令为 `5 passed`。
+
+### 行为覆盖
+
+- 主答与追问按 `criterion_id` 合并，criterion 权重只计一次，不能靠重复回答加分。
+- coverage 恰好 60% 可评分，低于 60% 为 null；四舍五入使用 decimal `ROUND_HALF_UP`。
+- supported 与 contradicted 同时出现保留 disputed，根题 score=null；skipped/unmeasured 都不是 0。
+- 至少三根 scored 根题才生成 overall_score，根题等权，JD priority 不进入分数。
+- 五题自然完成后一次事务写五个 Assessment、唯一 Report、`report.ready` 和 `completed`；报告读取不调用模型。
+- main skip 得到 skipped/null；followup skip 保留主答 Observation 但 completion=incomplete；重复 end 返回同一 operation。
+- 回答 operation 运行中接受 end：立即隐藏当前题，等待回答保存 validated Observation 后再汇总。
+- 报告落库失败后 retry 复用已保存 Observation/Decision，不重新调用 Analyzer，不复制 Assessment/Report。
+- Alembic up/down 及 metadata 比对覆盖 Report 单场唯一和 Assessment 单根唯一。
+- OpenAPI 快照、Python DTO、前端网络类型和 `ApiClient` 同步 control/report 契约。
+
+### 实际命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `cd services/api && .venv/bin/ruff format --check src tests smoke migrations && .venv/bin/ruff check src tests smoke migrations && .venv/bin/python -m pytest tests -q` | exit 0；67 files formatted；Ruff all checks passed；261 passed / 2 skipped / 0 failed / 63 warnings |
+| `cd services/api && .venv/bin/python -m pytest tests/unit/test_scoring.py tests/test_api_contract.py tests/test_interview_runtime.py tests/unit/test_migrations.py -q` | exit 0；52 passed / 21 warnings |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；44/44 passed |
+| 显式 `PATH=toolchain/node24/bin` 后 `cd apps/web && corepack pnpm@10.34.5 test` | exit 0；Node v24.21.0；11/11 passed |
+| 同一锁定环境 `corepack pnpm@10.34.5 build` | exit 0；TypeScript + Vite；112 modules transformed |
+| 临时 TestClient 烟测：真实 FastAPI、真实 openJiuwen Workflow、ScriptedAnalyzer fixture、连续提交五个回答后读取报告 | exit 0；`{"completion":"complete","model_calls":5,"overall_score":67,"run_mode":"fixture","scored_root_count":5,"status":"completed"}`；临时脚本已删除 |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；18 PASS / 0 WARN / 0 FAIL；212 个 Git 跟踪文件密钥扫描 0 命中 |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；211/211 OK |
+| `git diff --check` | exit 0；无空白错误 |
+
+本轮 M4 没有模型或 embedding 网络调用，也没有新增费用。烟测中的五次 `model_calls` 是进程内 fixture Analyzer 调用次数，只证明 Workflow/持久化/评分/报告闭环，不能解释成真实模型质量或成本。
+
+### 未运行与边界
+
+- Report UI 尚不存在，因此没有可执行的 Report 页面浏览器验收；冻结的三页 P0 UI 没有视觉改动。
+- 前端最终在锁定 Node 24.21.0 / pnpm 10.34.5 复验通过；默认 shell 的 Node 26 首轮虽通过但带 engine warning，不作为最终工具链结论。
+- 没有运行真实模型五题全场、429/timeout 或收费批量 benchmark；这些不属于 fixture 报告烟测的结论。
+- 首轮 Ruff 暴露 import 排序并已修复；首次通过 eval 生成 OpenAPI 时 SDK 日志混入 stdout 导致 JSON `Extra data`，随后改为直接写临时 JSON 再更新契约。尝试 `pnpm --use-node-version=24.21.0 exec node --version` 被当前 pnpm 拒绝为未知选项；doctor 随后定位仓库 `toolchain/node24/bin`，显式使用该工具链完成最终测试和构建。均未通过放松契约或删除断言处理。
