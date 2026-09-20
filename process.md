@@ -1,10 +1,10 @@
 # process｜工程事实、进度和交接
 
 **规范版本：1.0.0**  
-**记录日期：2026-09-19**  
+**记录日期：2026-09-20**
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 事实约束生成、五页功能纵切面与首屏 Product Polish IMPLEMENTED；生产内容模型 live、独立验收待做）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性 + M4 确定性评分、受约束回答优化、简历草稿与五页首屏收口。**
+**当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 功能、五页 Product Polish 与生产 Content Generator synthetic live 已完成；负责人独立验收待做）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性 + M4 确定性评分、受约束回答优化、简历草稿、五页首屏与生产内容模型单样本 live。**
 
 ## 1. 当前真实状态
 
@@ -19,10 +19,10 @@
 | openJiuwen Workflow/WorkflowAgent 局部 smoke | IMPLEMENTED，34 项回归通过；独立验收待做 | runtime/evidence/m0-02/；仅合成文本图，不是业务主链 |
 | 官方基座/补充 starter 要求 | BLOCKED | 已读 NCSS/u-j8/API/通用示例；答疑查询 HTTP 418，不能排除补充要求 |
 | openJiuwen Knowledge + Milvus Lite | VERIFIED（项目锁定兼容组合） | `runtime/evidence/m0-03-del/knowledge-locked-live-20260919T011100Z.json`、ADR-012；正式 0.1.18 wheel 失败记录保留 |
-| 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` 业务 Workflow 第二次调用通过，10.650749 秒，usage 1156/2544/3700。首轮失败 usage 与全部费用均 NOT_MEASURED/null；单样本不形成 p95 或效果结论 |
+| 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` Answer Analyzer 单样本通过，10.650749 秒、usage 1156/2544/3700；M4-02 同模型 coaching/resume 成功轮分别 27.727351/10.839200 秒、usage 669/6377/7046 与 535/2325/2860。费用均未返回、cost null；单样本不形成 p95、稳定性或效果结论 |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Content Generator 的五页纵切面已通过；生产 Answer Analyzer 曾跑通一次 `deepseek-flash` 合成回答。本轮另以显式 synthetic fixture API 完成五页两轮视觉、状态语义、lost-202 幂等恢复与只读交互验收；生产内容生成模型 live、独立验收与跨代理 SSE 组合仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Generator 的五页纵切面和两轮 UI 验收通过；生产 Answer Analyzer、生产 Content Generator 的 synthetic 单样本均通过真实 Workflow/语义校验。真实模型五题浏览器整场、429/timeout、跨代理 SSE 组合与负责人独立验收仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -46,7 +46,7 @@
 | M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；真实模型单样本与本地可靠性证据分开记录 |
 | M3-03 | M3-02 | VERIFIED | 业务链继续 VERIFIED；原视觉冻结由负责人本轮明确授权五页首屏收口后解除。Start/Prepare/Interview 已与 Report/Resume 一并完成当前首屏、响应式与中文展示语义调整，未改变后端契约 |
 | M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过 |
-| M4-02 | M4-01 | IMPLEMENTED | 受事实约束回答优化/简历草稿、Operation/retry、迁移/API、五页 UI 与 Product Polish 均已实现并通过 fixture 回归/浏览器烟测；生产模型 live 与负责人独立验收待做 |
+| M4-02 | M4-01 | IMPLEMENTED | 受事实约束回答优化/简历草稿、Operation/retry、迁移/API、五页 Product Polish 已通过 fixture；生产 `deepseek-flash` coaching/resume synthetic live 经 Prompt 根因修复后均通过原 Schema 与事实校验。负责人独立验收仍待做 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
@@ -62,17 +62,17 @@
 | O01 | 确认校内截止和系统上传字段 | 未提供 | 不能承诺报名资格/必交物 |
 | O02 | 确认真实团队与指导教师 | 未提供 | 正式报名门槛 |
 | O03 | 确认国产 OS 软件组适配口径 | 未提供 | 提交前合规与环境验收 |
-| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权 M3 受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供。M4-01/M4-02 本轮外部模型调用均为 0 | M3-01 live 已完成；M4-02 生产内容生成 live 或批量验证前仍须明确费用上限，未知 cost 保持 null |
+| O04 | 配置实际文本模型与开销上限 | **已授权**：负责人明确说明自有 Key 可无限授权；M3 Answer Analyzer 与 M4 Content Generator 均完成 synthetic live。施工中该私密文件曾被错误读取到会话工具输出，负责人明确选择继续当前 Key；Key 未进入 Git、证据或文档，但仍建议尽快轮换 | 费用上限不再阻塞受控验证；未知 provider 价格仍保持 null，不因授权无限就伪造成本或取消程序三次硬上限 |
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
 
 ## 4. 当前唯一首要任务
 
-**M4-02 生产 Content Generator 受控 live 与负责人独立验收。**
+**负责人独立验收 M4-02 五页纵向链路。**
 
-功能、五页 UI 和本地 fixture 证据已经闭合：HTTP/API 事实边界不变，Report/Resume 的生成仍通过真实 openJiuwen Workflow 与严格语义校验，五页当前展示不重算服务端结论。生产内容模型的质量、延迟、usage/cost 仍未验证，负责人独立验收仍 `NOT_RUN`；不能由本轮 16 项前端回归和 synthetic fixture 视觉证据升级为 `VERIFIED/ACCEPTED`。
+功能、五页 UI、fixture 浏览器证据和生产 Content Generator synthetic live 均已闭合。live 只证明 `deepseek-flash` 在一组 synthetic coaching/resume 输入上能通过真实 openJiuwen Workflow、Schema 与事实边界；不证明真实材料效果、批量稳定性、p95、429/timeout 或费用。
 
-本轮回滚点：负责人给定基线 commit `59e509e30291e284c5bfd2f2796b294171f5504a`。代码按可靠性、Report/Resume、Start/Prepare/Interview、证据/文档/测试四组独立提交回退；不使用 reset/stash，不覆盖后续用户修改。
+M4-02 在负责人独立验收前继续为 `IMPLEMENTED`。不自动启动 M5-01 题库扩展，也不把用户的模型调用授权解释为批准业务验收。回滚点为本轮开工 HEAD `7c9ca81799fbd8a9183820fae6962069094cdf66`；按本轮 prompt/smoke/test/docs 文件清单恢复，不使用 reset/stash。
 
 更早回滚点：M1-03 开工基线 `runtime/evidence/m1-03/task-start.txt`。M1-03 全部新增路径：`domain/claims.py`、`adapters/knowledge.py`、`adapters/db/profiles.py`、`application/{profiles,operations_runner}.py`、`api/*`、`__main__.py`、`tests/unit/{test_profile_confirm,test_knowledge_activation}.py`、`tests/test_api_contract.py`、`contracts/openapi.json`、`Makefile`、`apps/web/src/{api.ts,App.tsx}`；改动文件 `smoke/knowledge.py`、`adapters/db/{documents,profiles}.py`、`application/documents.py`、`adapters/pdf.py`、`apps/web/tsconfig.json`、`config/environment.env.example`、`api.md`。回滚=删除新增 + 按 `docs/handoffs/2026-09-19-m1-03.md` 恢复改动文件哈希。不使用 reset/stash。
 
@@ -861,3 +861,16 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 回归：Node 24.21.0 下 Vitest **16/16 passed**、TypeScript `--noEmit` exit 0、Vite build exit 0（112 modules）；后端 **272 passed / 2 skipped / 0 failed / 73 warnings**；Ruff format/check 73 files 全绿；规范 **46/46**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性清单 **221/221 OK**；`git diff --check` 无输出。
 - 提交分组：`9778e32` 可靠性，`9909f40` Report/Resume，`f64ee1d` Start/Prepare/Interview，本节、测试、验证报告、CHANGELOG、handoff 与完整性清单归入最终证据/文档提交。HTTP API、`api.md`、OpenAPI、Python DTO、数据库、迁移、依赖与配置均核对无变化。
 - 模型与状态：浏览器数据为显式 synthetic fixture；外部模型和 embedding 调用 0，provider/model/usage/cost 均为 null。生产 Content Generator live、负责人独立验收仍 `NOT_RUN`，故 M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。
+
+## 41. 2026-09-20｜M4-02 生产 Content Generator synthetic live（IMPLEMENTED）
+
+- 授权与边界：负责人明确自有 Key 无调用额度限制。本轮仍按程序不变量执行有限验证：每轮 coaching/resume 各一次 HTTP，`MODEL_MAX_RETRIES=0`，不自动重发；输入全部 synthetic，Knowledge 不重复调用。
+- 新增 `services/api/smoke/content_model.py`，复用生产 `OpenAICompatibleContentGenerator`、私密 0600 配置与真实 openJiuwen `Start → Generator → SemanticValidation → End`。证据独占写入 ignored runtime，记录 prompt/schema/source hash、真实 usage、候选和失败诊断，并拒绝密钥与绝对路径。
+- 初始轮两项都返回合法 JSON，但旧 Prompt 只要求“匹配 schema 文件”，远端模型实际看不到文件；现有 Schema 正确拒绝。诊断轮确认 coaching 使用 `citations/quote` 别名、遗漏 `schema_version/changes`、错误 missing-facts 形态；resume 遗漏 `schema_version/title/item_id/reason`。没有修复模型候选、放宽 Schema 或落部分结果。
+- 根因修复：P-COACH/P-RESUME system prompt 逐项声明精确顶层/嵌套字段、对象数组、source ref union 和禁止别名。新增 transport 回归直接检查发往模型的 system message；测试会在 Prompt 再次只剩“参考 Schema”时失败。
+- 修复后同一 `deepseek-flash` 两项通过原 Schema、资源 ID、逐字回答引文、Claim allowlist、数字/责任/技术词边界。coaching 27.727351 秒、usage 669/6377/7046；resume 10.839200 秒、usage 535/2325/2860；成功轮共 2 次 HTTP，cost null / NOT_MEASURED。
+- 三轮总计 6 次真实 HTTP。诊断失败轮取得 6912+3930 tokens，成功轮 7046+2860 tokens；两轮已测累计 20748。初始失败轮 usage 未穿过失败边界，保持 NOT_MEASURED，因此不得把 20748 写成全部调用总消耗。
+- 证据：初始失败 `deepseek-flash-20260920T070339Z.json`，文件 SHA-256 `f36a08de8b73d1f29abb988946095e2851c038a34d93e1bc2a353322c81b188b`；诊断失败 `...T070539Z.json`，`facffe4b45136e29056b402a47343af94a9904ba63e04233029c6802ccbc77cb`；成功 `...T070818Z.json`，`44fcf75775a945ce1c7dde78ea64086201fd74a17c482bc392380dad2724fdab`，内部 evidence hash `efd58c1c298cd318696b5f233d1dc4810a60ab6c9257e85d4dd9b0a4ecef3af4`。
+- 安全留痕：施工中私密 env 被错误读取到会话工具输出；未写入 Git/runtime 证据/文档。负责人获知后明确选择继续使用当前 Key 完成本轮。该选择不消除泄露风险，后续仍建议轮换，且任何新 Key 都不得发到聊天。
+- 最终代码回归：专项 **22 passed / 10 warnings**；Ruff 74 files 全绿；后端 **273 passed / 2 skipped / 0 failed / 73 warnings**；前端 **16/16 passed**、TypeScript 与 Vite 112 modules 通过；规范 **46/46 passed**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性 **223/223 OK**；空白检查通过。
+- HTTP API、`api.md`、OpenAPI、Python DTO、数据库、迁移、依赖、前端与配置模板均无变化。生产 Content Generator 单样本 live 门槛解除，但负责人独立验收仍 NOT_RUN；M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。

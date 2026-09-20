@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## Unreleased — 2026-09-20｜M4-02 生产 Content Generator synthetic live
+
+- 新增 `smoke.content_model`：使用 synthetic 回答与两个确认 Claim，分别以生产 `OpenAICompatibleContentGenerator` 执行 coaching/resume；两次逻辑操作各只发一次真实 HTTP 请求，并通过真实 openJiuwen `Start → Generator → SemanticValidation → End`。
+- 首轮 live 的两个模型响应都是合法 JSON，但 Prompt 只引用模型不可见的 Schema 文件：coaching 使用错误别名 `citations/quote` 并遗漏必填字段，resume 遗漏 `schema_version/title/item_id/reason`；原有 Schema 正确拒绝，没有修复模型输出或落部分结果。
+- P-COACH/P-RESUME 现逐项声明精确字段、嵌套形态、对象数组和禁止别名；新增 transport 回归验证真实 system message，而不是只断言常量。修正后同一模型两项均通过原 Schema、ID、逐字引文、Claim、数字/责任/技术词边界。
+- 成功轮 `deepseek-flash` 共 2 次 HTTP：coaching 27.727351 秒、usage 669/6377/7046；resume 10.8392 秒、usage 535/2325/2860。provider 未返回价格，cost 保持 null / NOT_MEASURED；单样本不形成质量、稳定性或 p95 结论。
+- 最终后端 273 passed / 2 skipped / 73 warnings，Ruff 74 files 全绿；前端 16/16、TypeScript、Vite 112 modules 通过。HTTP API、OpenAPI、数据库、迁移、依赖和前端均无变化；独立验收仍 NOT_RUN，M4-02 保持 IMPLEMENTED。
+
+
 ## Unreleased — 2026-09-19｜五页首屏收口与展示语义修正
 
 - 重构 Start、Prepare、Interview、Report、Resume 五页信息密度：桌面首屏保留真实主 CTA，移动端恢复根页面滚动；21 条事实、17 条 JD、6,000 字回答、五题报告和 20 条简历正文由各自工作区局部滚动承载。

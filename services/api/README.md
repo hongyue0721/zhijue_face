@@ -1,6 +1,6 @@
 # services/api｜职觉 Demo Python 业务后端与框架探针
 
-**当前状态：M0 Workflow/WorkflowAgent 与 Knowledge 探针保留；M1/M2 资料和计划链已落地；M3 全部 VERIFIED / 三页前端 FROZEN；M4-01 确定性评分与报告 VERIFIED；M4-02 受约束回答优化、简历草稿及两个功能页面 IMPLEMENTED。**
+**当前状态：M0 Workflow/WorkflowAgent 与 Knowledge 探针保留；M1/M2 资料和计划链已落地；M3 全部 VERIFIED；M4-01 确定性评分与报告 VERIFIED；M4-02 受约束回答优化、简历草稿、五页 Product Polish 与生产 Content Generator synthetic live 已完成，任务仍因独立验收保留 IMPLEMENTED。**
 
 `pyproject.toml` / `uv.lock` 锁定 Python 3.11.16 与 openJiuwen 0.1.18 兼容源码 commit `72c4985111b835530ec616f70dd67117eb2e015c`。该 commit 基于官方 v0.1.18，仅包含官方 PR #1344 的 Knowledge 删除返回值修复与测试；正式 0.1.18 wheel 本身仍有该缺陷。业务后端使用 FastAPI、SQLAlchemy/Alembic、SQLite 和真实 openJiuwen Workflow/Knowledge；没有新增平行 Agent 或第二数据库写入方。
 
@@ -22,6 +22,9 @@
 PYTHONPATH=src .venv/bin/python -m smoke.answer_model \
   --env-file ../../.env.model.local \
   --output ../../runtime/evidence/m3-01-live/manual-01.json
+PYTHONPATH=src .venv/bin/python -m smoke.content_model \
+  --env-file ../../.env.model.local \
+  --output ../../runtime/evidence/m4-02-content-live/manual-01.json
 ```
 
 输出证据必须写到 ignored 的 `runtime/` 且不得覆盖旧证据。独立 smoke 使用官方日志配置 API；业务应用额外把 openJiuwen 日志提升到 WARNING 并移除 SDK 文件 sink，避免回答或简历进入日志。
@@ -34,7 +37,7 @@ PYTHONPATH=src .venv/bin/python -m smoke.answer_model \
 - 非法输入/超时配置、真实节点抛错、超时取消、失败后新执行、重复执行、证据 hash 与拒绝覆盖均有测试。
 - JSON 记录时间、版本、平台、官方源码路径/hash、Agent MRO、实际输出/hash。不同进程的输出 hash 可比；这不代表跨进程会话恢复。
 
-`run_mode=live` 只表示相应框架/模型入口真实运行，输入仍需明确标记。M0 Workflow smoke 无模型；Knowledge 使用 BGE-M3 的历史累计调用见根目录 process。M3-01 已用合成回答、approved Seed 0.2.1、生产 `OpenAICompatibleAnswerAnalyzer` 和真实 openJiuwen handle-answer Workflow 跑通 `deepseek-flash`；服务端语义校验后由确定性 Policy 产生 `NEXT`。该单样本不证明效果泛化、p95、限流恢复或费用。PROBE 候选人文案仍由已验证 criterion 与冻结 Rubric 确定性聚焦，不为措辞新增模型调用。
+`run_mode=live` 只表示相应框架/模型入口真实运行，输入仍需明确标记。M0 Workflow smoke 无模型；Knowledge 使用 BGE-M3 的历史累计调用见根目录 process。M3-01 已用合成回答、approved Seed 0.2.1、生产 `OpenAICompatibleAnswerAnalyzer` 和真实 openJiuwen handle-answer Workflow 跑通 `deepseek-flash`；M4-02 已用 synthetic 回答/Claim、生产 `OpenAICompatibleContentGenerator` 和真实 openJiuwen grounded-content Workflow 分别跑通 coaching/resume。两者都只是单样本，不证明效果泛化、p95、限流恢复或费用。PROBE 候选人文案仍由已验证 criterion 与冻结 Rubric 确定性聚焦，不为措辞新增模型调用。
 
 M4-01 由 `ReportingService` 读取已持久化 Observation 和冻结 Rubric，按根题合并主答/追问并计算 coverage/score；`POST /interviews/{id}/control` 串行处理 skip/end，`GET /interviews/{id}/report` 只读取唯一持久化 Report。未测、跳过、覆盖不足和冲突均保持 null；报告失败后的 retry 复用 Observation，不再次调用 Analyzer。Answer、Operation、Assessment、Report 与 durable events 仍由同一 FastAPI/SQLite 写入方管理。
 
@@ -42,7 +45,7 @@ M4-02 的 `ContentGenerationService` 是生成内容唯一写入方。`report.co
 
 ## 未解决事项
 
-官方基座/补充规则核验仍有阻塞；当前 WorkflowAgent 继承官方 legacy ControllerAgent/BaseAgent，弃用警告未隐藏。Knowledge 全生命周期已在锁定兼容 commit 上 VERIFIED，但正式 openJiuwen 0.1.18 发布包仍未包含删除修复。M4-02 当前未完成的是生产 Content Generator live、真实模型五题浏览器全场、真实 429/timeout、跨代理 SSE 组合、独立验收和两个新页面 Product Polish；功能基线不外推为模型质量或成本结论。完整进度以根目录 `process.md` 和最新 handoff 为准。
+官方基座/补充规则核验仍有阻塞；当前 WorkflowAgent 继承官方 legacy ControllerAgent/BaseAgent，弃用警告未隐藏。Knowledge 全生命周期已在锁定兼容 commit 上 VERIFIED，但正式 openJiuwen 0.1.18 发布包仍未包含删除修复。M4-02 当前未完成的是真实模型五题浏览器全场、真实 429/timeout、跨代理 SSE 组合和负责人独立验收；功能与单样本 live 不外推为模型质量、稳定性或成本结论。完整进度以根目录 `process.md` 和最新 handoff 为准。
 
 ## 私密 live 配置边界
 

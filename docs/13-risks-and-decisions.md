@@ -120,3 +120,10 @@
 - K28：内容生成仍使用单进程 `BackgroundTasks`。失败和重启通过持久化资源、parent-linked Operation 和 interrupted 状态恢复，但不承诺自动重放或 exactly-once 上游调用；模型调用成功而提交前崩溃仍可能在人工 retry 时再次计费。
 - K29：M4-02 浏览器 fixture 已证明 Report/Resume API、Operation、确认和打印媒体连接，未证明生产 Content Generator 的语言质量、延迟、429/timeout 或费用。两个新页面也只完成功能基线，视觉 Product Polish 与独立验收仍 NOT_RUN。
 - O04 持续费用上限仍未给出。M4-02 没有外部模型或 embedding 网络调用；生产内容生成 live 或批量验证前必须先得到明确总预算，未知 usage/cost 保持 null。
+
+## M4-02 生产内容模型 live 后的风险更新（2026-09-20）
+
+- K29 的“生产 Content Generator 完全未运行”已解除：`deepseek-flash` 对 synthetic coaching/resume 各一项通过生产适配器、真实 openJiuwen Workflow 和原有语义校验。仍未解除语言质量泛化、批量稳定性、p95、真实 429/timeout、价格和真实材料风险。
+- K30：`response_format=json_object` 不是 JSON Schema 下发。首轮模型返回合法 JSON，却使用字段别名并遗漏多个必填字段；服务端正确拒绝。Prompt 现显式列出精确结构，transport 回归检查实际 system message。Schema/领域校验仍是最终门槛，不能因单次 Prompt 成功而删除。
+- O04 的费用授权阻塞已解除：负责人明确自有 Key 可无限授权；程序每 operation 三次总尝试硬上限和 smoke 的每任务一次 HTTP 仍保留。provider 未返回费用，cost 继续为 null，不用“无限授权”推算价格。
+- 私密配置曾被错误读取到会话工具输出；负责人知情后选择继续当前 Key。本轮 Key 未进入 Git、runtime 证据或文档，但泄露风险不会因继续使用而消失，仍应轮换；任何新 Key 不得进入聊天。

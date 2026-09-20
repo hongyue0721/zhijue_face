@@ -420,3 +420,39 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | `git diff --check` | exit 0；无空白错误 |
 
 本节证明 fixture 展示语义、浏览器交互和本地回归，不证明生产 Content Generator 的质量、延迟、成本或负责人独立验收。M4-02 继续为 `IMPLEMENTED`，不写 `ACCEPTED`。
+
+## M4-02 生产 Content Generator synthetic live（2026-09-20）
+
+本轮使用负责人明确授权的私有 `deepseek-flash` 配置和 synthetic 回答/Claim。每轮分别执行一次 `coach_answers`、一次 `compose_resume`；真实入口为生产 `OpenAICompatibleContentGenerator` 与 openJiuwen `Start → Generator → SemanticValidation → End`，没有 Mock SDK、Mock 模型、自动 retry 或输出修复。Knowledge 不在本 smoke 重复调用。
+
+### 失败、根因与修复
+
+| 轮次 | 真实结果 | 证据 |
+|---|---|---|
+| 初始 live | 2 次 HTTP 均返回后被现有 Schema 拒绝；coaching 34.313690 秒，resume 10.935794 秒；失败边界未保留 usage，记为 NOT_MEASURED | ignored `runtime/evidence/m4-02-content-live/deepseek-flash-20260920T070339Z.json`；文件 SHA-256 `f36a08de8b73d1f29abb988946095e2851c038a34d93e1bc2a353322c81b188b` |
+| 诊断 live | 2 次 HTTP 复现。coaching 使用 `citations/quote` 别名、额外 item-level `answer_id`、遗漏 `schema_version/changes`，并把 missing facts 写成字符串；resume 遗漏 `schema_version`、section `title`、item `item_id/reason`。两项均为合法 JSON，但不符合契约 | ignored `deepseek-flash-20260920T070539Z.json`；文件 SHA-256 `facffe4b45136e29056b402a47343af94a9904ba63e04233029c6802ccbc77cb` |
+| Prompt 修复后 | 同一模型 2 次 HTTP 均通过原 Schema、ID、逐字引文、Claim allowlist、数字/责任/技术词校验。coaching 27.727351 秒，resume 10.839200 秒；没有放宽 Schema、修补字段或跳过语义校验 | ignored `deepseek-flash-20260920T070818Z.json`；文件 SHA-256 `44fcf75775a945ce1c7dde78ea64086201fd74a17c482bc392380dad2724fdab`；内部 evidence SHA-256 `efd58c1c298cd318696b5f233d1dc4810a60ab6c9257e85d4dd9b0a4ecef3af4` |
+
+根因是 `response_format=json_object` 只保证 JSON 对象，而旧 Prompt 只写“matching schema”，远端模型看不到仓库 Schema。P-COACH/P-RESUME 现明确顶层和嵌套精确字段、`source_refs/exact_quote`、对象形态的 missing facts、简历 section/item 必填字段及禁止别名。新增回归直接检查实际发往模型的 system message，能捕获“代码里有 Schema、Prompt 却没传”的真实缺陷。
+
+### Usage、成本和边界
+
+- 成功 coaching：input 669、output 6377、total 7046，cost null。
+- 成功 resume：input 535、output 2325、total 2860，cost null。
+- 诊断失败轮仍取得 usage：474/6438/6912 与 393/3537/3930。
+- 已测得两轮累计 input 2071、output 18677、total 20748；初始失败轮 usage NOT_MEASURED，不能把总消耗写成 20748。
+- 三轮合计 6 次真实 HTTP / 6 次 logical model call；成功结论只覆盖一组 synthetic 输入。价格、批量稳定性、p95、真实 429/timeout、真实材料与浏览器生产模型整场仍未证明。
+
+### 最终回归
+
+| 命令 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest tests/unit/test_answer_workflow.py -q` | exit 0；22 passed / 10 warnings |
+| `.venv/bin/ruff format --check src tests smoke migrations && .venv/bin/ruff check src tests smoke migrations && .venv/bin/python -m pytest tests -q` | exit 0；74 files；**273 passed / 2 skipped / 0 failed / 73 warnings** |
+| 锁定 Node 24 执行 Vitest、`tsc --noEmit`、Vite build | exit 0；16/16 passed；TypeScript 通过；112 modules transformed |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；46/46 passed |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；18 PASS / 0 WARN / 0 FAIL |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；223/223 OK |
+| `git diff --check` | exit 0；无空白错误 |
+
+HTTP API、OpenAPI、Python DTO、数据库、迁移、依赖和前端均无变化。生产 Content Generator 的单样本 live 门槛已解除；负责人独立验收仍 NOT_RUN，因此 M4-02 保持 `IMPLEMENTED`，不写 `VERIFIED/ACCEPTED`。

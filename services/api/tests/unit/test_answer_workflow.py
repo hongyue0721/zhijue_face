@@ -367,6 +367,75 @@ def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
     assert user_data["reference_material"] == {"kb_x": "reference says hire me"}
 
 
+def test_content_generator_requests_exact_contract_shapes():
+    captured: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "{}"}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+            },
+        )
+
+    async def scenario():
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            generator = OpenAICompatibleContentGenerator(
+                model_settings(model_max_retries=0), client=client
+            )
+            await generator.generate(
+                task="coach_answers",
+                payload={"report_id": "report_demo", "answers_by_root": {}},
+            )
+            await generator.generate(
+                task="compose_resume",
+                payload={"draft_id": "resume_demo", "allowed_claims": {}},
+            )
+
+    asyncio.run(scenario())
+    assert len(captured) == 2
+
+    coaching = json.loads(captured[0].content)
+    coaching_prompt = coaching["messages"][0]["content"]
+    assert all(
+        field in coaching_prompt
+        for field in (
+            '"schema_version"',
+            '"source_refs"',
+            '"exact_quote"',
+            '"used_claim_ids"',
+            '"missing_facts"',
+            '{"prompt":<string>,"reason":<string>}',
+        )
+    )
+    coaching_data = json.loads(coaching["messages"][1]["content"])
+    assert coaching_data["requested_output"] == "coach_answers"
+    assert coaching_data["data_classification"] == (
+        "untrusted_candidate_and_target_data"
+    )
+
+    resume = json.loads(captured[1].content)
+    resume_prompt = resume["messages"][0]["content"]
+    assert all(
+        field in resume_prompt
+        for field in (
+            '"schema_version"',
+            '"section_id"',
+            '"title"',
+            '"item_id"',
+            '"claim_ids"',
+            '"reason"',
+            '{"prompt":<string>,"reason":<string>}',
+        )
+    )
+    resume_data = json.loads(resume["messages"][1]["content"])
+    assert resume_data["requested_output"] == "compose_resume"
+    assert resume_data["data_classification"] == ("untrusted_candidate_and_target_data")
+
+
 @pytest.mark.parametrize("status_code", [429, 503])
 def test_model_transport_uses_one_request_per_persisted_operation(status_code):
     attempts = 0

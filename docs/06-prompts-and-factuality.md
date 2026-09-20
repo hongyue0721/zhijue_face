@@ -73,6 +73,10 @@ P-COACH 输出按 `contracts/coaching-result.schema.json` 固定为根题数组�
 
 P-RESUME 输出按 `contracts/resume-draft-result.schema.json` 固定为 section/item：每个正文 item 至少绑定一个当前快照允许 Claim，并单列 reason、missing facts 和 cautions。岗位信息只影响排序和措辞，不成为候选人经历来源。
 
+`response_format=json_object` 只保证返回 JSON 对象，不会把仓库里的 Schema 自动交给模型。P-COACH/P-RESUME 的 system prompt 必须逐项声明精确顶层字段、嵌套字段、数组元素形态和禁止别名：例如 coaching 使用 `segments[].source_refs[].exact_quote`，resume 的 section/item 必须包含 `title/item_id/reason`，两类 `missing_facts[]` 均为 `{prompt,reason}` 对象。只写“匹配某个 schema 文件”不可接受，因为远端模型看不到该文件。
+
+生产 live 首轮证明该边界真实存在：模型返回了合法 JSON，但把 `source_refs` 写成 `citations`、遗漏 `schema_version/changes`，并把简历 item 的 `item_id/reason` 等必填字段省略。服务端 Schema 正确拒绝；Prompt 明确完整结构后，同一模型的 coaching 和 resume 候选才通过原有 Schema 与事实校验。回归测试必须检查实际发往模型的 system message 包含这些字段，不以常量存在或 fixture 输出冒充。
+
 服务端不能只相信模型声明的 ID：回答引文必须是对应原回答的逐字子串，Claim 必须属于冻结快照；候选文本若新增输入不存在的数字、把“参与/协助/团队”升级为“主导/负责/独立”，或包含未确认占位符，则整个候选拒绝且不落部分结果。缺失数据只进入提示区，不混进可复制答案或可打印简历正文。
 
 ## 9. 面试与教学的区分
