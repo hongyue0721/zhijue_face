@@ -11,7 +11,15 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { improvementsStatusText } from "../presentation";
+import {
+  criterionDisplayName,
+  criterionFindingText,
+  criterionLevelText,
+  improvementsStatusText,
+  reportLimitationText,
+  rootAssessmentStatusText,
+  scoreText,
+} from "../presentation";
 import { resumeDraftPath } from "../routing";
 import {
   clearOperationId,
@@ -27,9 +35,6 @@ type ImprovementsCommand = Extract<RecoverableCommand, { kind: "report-improveme
 type ResumeCommand = Extract<RecoverableCommand, { kind: "report-resume" }>;
 type ReportRetryCommand = Extract<RecoverableCommand, { kind: "report-retry" }>;
 
-function scoreText(score: number | null): string {
-  return score === null ? "未形成总分" : `${score} 分`;
-}
 
 export function ReportPage({
   interviewId,
@@ -46,11 +51,21 @@ export function ReportPage({
   const [pendingImprovements, setPendingImprovements] = useState<ImprovementsCommand | null>(null);
   const [pendingResume, setPendingResume] = useState<ResumeCommand | null>(null);
   const [pendingRetry, setPendingRetry] = useState<ReportRetryCommand | null>(null);
+  const [selectedRootId, setSelectedRootId] = useState<string | null>(null);
+  const [activeReportTab, setActiveReportTab] = useState<"assessment" | "improvement">(
+    "assessment",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const applyReport = useCallback((next: ReportView) => {
     setReport(next);
+    setSelectedRootId((current) => {
+      if (current && next.root_assessments.some((item) => item.root_question_id === current)) {
+        return current;
+      }
+      return next.root_assessments[0]?.root_question_id ?? null;
+    });
     const storedImprovements = loadRecoverableCommand("report-improvements", next.id);
     const storedResume = loadRecoverableCommand("report-resume", next.id);
     const storedRetry = loadRecoverableCommand("report-retry", next.id);
@@ -258,17 +273,32 @@ export function ReportPage({
   const canRetry = report.improvements_status === "failed"
     && Boolean(operationId)
     && Boolean(operation?.error?.retryable);
+  const selectedIndex = Math.max(
+    0,
+    report.root_assessments.findIndex((item) => item.root_question_id === selectedRootId),
+  );
+  const selectedAssessment = report.root_assessments[selectedIndex] ?? null;
+  const selectedImprovement = selectedAssessment
+    ? report.improved_answers.find(
+        (item) => item.root_question_id === selectedAssessment.root_question_id,
+      ) ?? null
+    : null;
+  const limitations = report.limitations.map(reportLimitationText);
 
   return (
     <main className="page-container report-page">
-      <header className="report-heading">
+      <header className="compact-page-heading report-heading">
         <div>
           <p className="eyebrow">面试报告</p>
           <h1>本场表现与事实依据</h1>
-          <p>评分只汇总本场已观察到的回答；未覆盖项不按零分处理。</p>
+          <p>
+            已回答 {report.coverage.answered_root_count}/{report.coverage.planned_root_count}
+            {" · "}可评分 {report.coverage.scored_root_count}/{report.coverage.planned_root_count}
+            {limitations[0] ? ` · ${limitations[0]}` : ""}
+          </p>
         </div>
         <div className="score-summary" aria-label="本场总分">
-          <strong>{scoreText(report.overall_score)}</strong>
+          <strong>{scoreText(report.overall_score, "未形成总分")}</strong>
           <span>{report.completion === "complete" ? "完整场次" : "未完整场次"}</span>
         </div>
       </header>
@@ -276,122 +306,233 @@ export function ReportPage({
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       <OperationStatus operation={operation} label="回答优化" />
 
-      <section className="surface-card report-overview" aria-labelledby="coverage-title">
-        <div className="card-heading-row">
-          <div>
-            <p className="eyebrow">覆盖范围</p>
-            <h2 id="coverage-title">评分覆盖</h2>
+      <section className="report-workspace" aria-label="逐题报告">
+        <aside className="surface-card question-rail">
+          <div className="question-rail-heading">
+            <span>逐题查看</span>
+            <Tag>{report.coverage.scored_root_count} 题可评分</Tag>
           </div>
-          <Tag>{report.coverage.overall_eligible ? "总分条件满足" : "总分条件不足"}</Tag>
-        </div>
-        <dl className="metric-grid">
-          <div><dt>计划根题</dt><dd>{report.coverage.planned_root_count}</dd></div>
-          <div><dt>已回答</dt><dd>{report.coverage.answered_root_count}</dd></div>
-          <div><dt>已评分</dt><dd>{report.coverage.scored_root_count}</dd></div>
-          <div><dt>未测量</dt><dd>{report.coverage.unmeasured_root_count}</dd></div>
-        </dl>
-        {report.limitations.length ? (
-          <ul className="plain-list limitation-list">
-            {report.limitations.map((limitation, index) => (
-              <li key={`${String(limitation)}-${index}`}>{String(limitation)}</li>
+          <div className="question-rail-list" role="list">
+            {report.root_assessments.map((assessment, index) => (
+              <button
+                className={`question-rail-item ${
+                  assessment.root_question_id === selectedAssessment?.root_question_id
+                    ? "active"
+                    : ""
+                }`}
+                key={assessment.root_question_id}
+                type="button"
+                aria-pressed={
+                  assessment.root_question_id === selectedAssessment?.root_question_id
+                }
+                onClick={() => setSelectedRootId(assessment.root_question_id)}
+              >
+                <span>问题 {index + 1}</span>
+                <small>
+                  {assessment.score === null
+                    ? rootAssessmentStatusText[assessment.status]
+                    : scoreText(assessment.score, "本题未评分")}
+                </small>
+              </button>
             ))}
-          </ul>
-        ) : null}
-      </section>
-
-      <section className="report-section" aria-labelledby="assessment-title">
-        <div className="section-heading">
-          <p className="eyebrow">根题汇总</p>
-          <h2 id="assessment-title">逐题观察</h2>
-        </div>
-        <div className="assessment-list">
-          {report.root_assessments.map((assessment, index) => (
-            <article className="surface-card assessment-card" key={assessment.root_question_id}>
-              <div className="card-heading-row">
-                <h3>根题 {index + 1}</h3>
-                <Tag>{assessment.score === null ? assessment.status : `${assessment.score} 分`}</Tag>
-              </div>
-              <p>覆盖率 {Math.round(assessment.coverage * 100)}%</p>
-              {assessment.criterion_results.map((criterion) => (
-                <div className="criterion-result" key={criterion.criterion_id}>
-                  <strong>{criterion.criterion_id}</strong>
-                  <span>{criterion.finding} · 等级 {criterion.level ?? "未评"}</span>
-                  {criterion.explanations.map((text, explanationIndex) => (
-                    <p key={`${criterion.criterion_id}-explanation-${explanationIndex}`}>{text}</p>
-                  ))}
-                  {criterion.answer_quotes.map((quote) => (
-                    <blockquote key={`${quote.answer_id}-${quote.exact_quote}`}>{quote.exact_quote}</blockquote>
-                  ))}
-                </div>
-              ))}
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="surface-card coaching-section" aria-labelledby="coaching-title">
-        <div className="card-heading-row">
-          <div>
-            <p className="eyebrow">表达优化</p>
-            <h2 id="coaching-title">基于原回答的改写</h2>
           </div>
-          <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
-        </div>
-        <p>改写片段必须绑定本场逐字回答或当前资料快照事实；缺失信息单独列出，不补进正文。</p>
-        {report.improvements_status === "not_requested" || pendingImprovements ? (
-          <Button
-            type="primary"
-            loading={busy}
-            disabled={!serviceReady || busy}
-            onClick={() => void generateImprovements()}
-          >
-            {pendingImprovements ? "使用原请求重试" : "生成回答优化"}
-          </Button>
-        ) : null}
-        {canRetry ? (
-          <Button type="primary" loading={busy} onClick={() => void retryImprovements()}>
-            {pendingRetry ? "使用原重试请求" : "重试回答优化"}
-          </Button>
-        ) : null}
-        {report.improvements_status === "failed" && !canRetry ? (
-          <Alert type="danger" title="回答优化未完成">请刷新操作状态后再决定是否重试。</Alert>
-        ) : null}
-        <div className="improvement-list">
-          {report.improved_answers.map((item) => (
-            <article className="comparison-card" key={item.root_question_id}>
-              <div>
-                <h3>原回答</h3>
-                {item.original_answers.map((answer) => <p key={answer.answer_id}>{answer.raw_text}</p>)}
-              </div>
-              <div>
-                <h3>优化后</h3>
-                <p>{item.rewritten_answer}</p>
-                {item.changes.length ? <p className="change-note">{item.changes.join("；")}</p> : null}
-              </div>
-              {item.missing_facts.length ? (
-                <div className="editorial-note">
-                  <strong>仍需本人补充</strong>
-                  <ul>{item.missing_facts.map((fact) => <li key={fact.prompt}>{fact.prompt}：{fact.reason}</li>)}</ul>
+        </aside>
+
+        <section className="surface-card report-detail">
+          <div className="segmented-tabs" role="tablist" aria-label="报告内容">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeReportTab === "assessment"}
+              onClick={() => setActiveReportTab("assessment")}
+            >
+              评分依据
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeReportTab === "improvement"}
+              onClick={() => setActiveReportTab("improvement")}
+            >
+              回答优化
+            </button>
+          </div>
+
+          {activeReportTab === "assessment" && selectedAssessment ? (
+            <div className="report-tab-panel" role="tabpanel">
+              <div className="report-detail-heading">
+                <div>
+                  <p className="eyebrow">问题 {selectedIndex + 1}</p>
+                  <h2>{rootAssessmentStatusText[selectedAssessment.status]}</h2>
                 </div>
-              ) : null}
-              {item.cautions.length ? (
-                <div className="editorial-note">
-                  <strong>注意</strong>
-                  <ul>{item.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul>
+                <div className="assessment-score">
+                  <strong>{scoreText(selectedAssessment.score, "未评分")}</strong>
+                  <span>覆盖 {Math.round(selectedAssessment.coverage * 100)}%</span>
                 </div>
+              </div>
+              <div className="criterion-list">
+                {selectedAssessment.criterion_results.map((criterion, criterionIndex) => (
+                  <article className="criterion-result" key={criterion.criterion_id}>
+                    <div className="criterion-summary">
+                      <strong>{criterionDisplayName(criterion.kind, criterionIndex)}</strong>
+                      <span>
+                        {criterionFindingText[criterion.finding]}
+                        {" · "}{criterionLevelText(criterion.level)}
+                      </span>
+                    </div>
+                    {(criterion.answer_quotes.length
+                      || criterion.explanations.length
+                      || criterion.knowledge_refs.length) ? (
+                      <details className="compact-details">
+                        <summary>查看来源与技术详情</summary>
+                        {criterion.answer_quotes.length ? (
+                          <div>
+                            <h3>回答引用</h3>
+                            {criterion.answer_quotes.map((quote) => (
+                              <blockquote key={`${quote.answer_id}-${quote.exact_quote}`}>
+                                {quote.exact_quote}
+                              </blockquote>
+                            ))}
+                          </div>
+                        ) : null}
+                        {criterion.explanations.length ? (
+                          <div>
+                            <h3>评价说明</h3>
+                            <ul>
+                              {criterion.explanations.map((text, index) => (
+                                <li key={`${criterion.criterion_id}-explanation-${index}`}>
+                                  {text}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {criterion.knowledge_refs.length ? (
+                          <div>
+                            <h3>技术资料引用</h3>
+                            <ul>
+                              {criterion.knowledge_refs.map((reference, index) => (
+                                <li key={reference}>资料 {index + 1}：{reference}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </details>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {activeReportTab === "improvement" ? (
+            <div className="report-tab-panel" role="tabpanel">
+              <div className="report-detail-heading">
+                <div>
+                  <p className="eyebrow">问题 {selectedIndex + 1}</p>
+                  <h2>基于原回答的表达优化</h2>
+                </div>
+                <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
+              </div>
+              <p className="panel-intro">
+                这是整场报告的一次生成动作；切换问题或页签只读取已返回内容。
+              </p>
+              {report.improvements_status === "not_requested" || pendingImprovements ? (
+                <Button
+                  type="primary"
+                  loading={busy}
+                  disabled={!serviceReady || busy}
+                  onClick={() => void generateImprovements()}
+                >
+                  {pendingImprovements ? "使用原请求重试" : "生成本场回答优化"}
+                </Button>
               ) : null}
-            </article>
-          ))}
-        </div>
+              {canRetry ? (
+                <Button
+                  type="primary"
+                  loading={busy}
+                  disabled={!serviceReady || busy}
+                  onClick={() => void retryImprovements()}
+                >
+                  {pendingRetry ? "使用原重试请求" : "重试回答优化"}
+                </Button>
+              ) : null}
+              {report.improvements_status === "failed" && !canRetry ? (
+                <Alert type="danger" title="回答优化未完成">
+                  请刷新操作状态后再决定是否重试。
+                </Alert>
+              ) : null}
+              {selectedImprovement ? (
+                <div className="selected-improvement">
+                  <div className="answer-comparison">
+                    <div>
+                      <h3>原回答</h3>
+                      {selectedImprovement.original_answers.map((answer) => (
+                        <p key={answer.answer_id}>{answer.raw_text}</p>
+                      ))}
+                    </div>
+                    <div>
+                      <h3>优化后</h3>
+                      <p>{selectedImprovement.rewritten_answer}</p>
+                    </div>
+                  </div>
+                  {selectedImprovement.changes.length ? (
+                    <p className="change-note">{selectedImprovement.changes.join("；")}</p>
+                  ) : null}
+                  {(selectedImprovement.missing_facts.length
+                    || selectedImprovement.cautions.length) ? (
+                    <details className="compact-details">
+                      <summary>
+                        待补充 {selectedImprovement.missing_facts.length} 项
+                        {" · "}注意 {selectedImprovement.cautions.length} 项
+                      </summary>
+                      {selectedImprovement.missing_facts.length ? (
+                        <div>
+                          <h3>仍需本人补充</h3>
+                          <ul>
+                            {selectedImprovement.missing_facts.map((fact) => (
+                              <li key={fact.prompt}>{fact.prompt}：{fact.reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {selectedImprovement.cautions.length ? (
+                        <div>
+                          <h3>注意</h3>
+                          <ul>
+                            {selectedImprovement.cautions.map((caution) => (
+                              <li key={caution}>{caution}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </details>
+                  ) : null}
+                </div>
+              ) : report.improvements_status === "ready" ? (
+                <p className="empty-state">本题没有返回可展示的回答优化。</p>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
       </section>
 
       <section className="surface-card report-next-step">
-        <div>
-          <p className="eyebrow">下一步</p>
-          <h2>生成可追溯简历草稿</h2>
-          <p>简历正文只使用当前不可变资料快照中的已确认事实，岗位信息只影响排序和措辞。</p>
+        <div className="report-limitations">
+          <strong>{limitations[0] ?? "本场报告未记录额外限制"}</strong>
+          {limitations.length > 1 ? (
+            <details className="compact-details">
+              <summary>查看全部 {limitations.length} 项限制</summary>
+              <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+            </details>
+          ) : null}
         </div>
-        <Button type="primary" loading={busy} disabled={!serviceReady || busy} onClick={() => void createResumeDraft()}>
+        <Button
+          type="primary"
+          loading={busy}
+          disabled={!serviceReady || busy}
+          onClick={() => void createResumeDraft()}
+        >
           {pendingResume ? "使用原请求创建草稿" : "生成简历草稿"}
         </Button>
       </section>

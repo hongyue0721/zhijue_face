@@ -23,7 +23,9 @@ import {
   followupIntentText,
   jdSourceText,
   requirementTitle,
+  reportLimitationText,
   resumeDraftStatusText,
+  resumeTargetText,
   rootAssessmentStatusText,
   scoreText,
 } from "../src/presentation";
@@ -461,6 +463,12 @@ describe("URL and presentation contracts", () => {
     expect(criterionLevelText(null)).toBe("未形成等级");
     expect(scoreText(null, "本题未评分")).toBe("本题未评分");
     expect(scoreText(0, "本题未评分")).toBe("0 分");
+    expect(reportLimitationText("embedded.peripheral.uart_dma 未进入本轮范围")).toBe(
+      "UART 与 DMA 排障 未进入本轮范围",
+    );
     expect(resumeDraftStatusText.generation_failed).toBe("草稿生成失败");
+    expect(resumeTargetText({ kind: "generic", source_name: "NO_TARGET" })).toBe(
+      "通用岗位版本",
+    );
   });
 });

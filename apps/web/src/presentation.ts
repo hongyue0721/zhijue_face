@@ -73,6 +73,19 @@ export const resumeDraftStatusText: Record<ResumeDraftView["status"], string> = 
   accepted: "草稿已确认",
 };
 
+export const resumeTargetKindText: Record<ResumeDraftView["target_context"]["kind"], string> = {
+  interview: "本场面试岗位",
+  jd_text: "当前岗位描述",
+  generic: "通用岗位版本",
+};
+
+export function resumeTargetText(target: ResumeDraftView["target_context"]): string {
+  const sourceName = target.source_name?.trim();
+  return sourceName && sourceName !== "NO_TARGET"
+    ? sourceName
+    : resumeTargetKindText[target.kind];
+}
+
 const competencyText: Record<string, string> = {
   "embedded.c.basics": "C 与嵌入式基础",
   "embedded.mcu.interrupt": "STM32 外设与中断",
@@ -86,6 +99,15 @@ const competencyText: Record<string, string> = {
   "engineering.verification": "调试取证与验证",
   "project.ownership": "个人贡献边界",
 };
+
+export function reportLimitationText(limitation: unknown): string {
+  if (typeof limitation !== "string") return "本场报告包含一项结构化限制";
+  let text = limitation;
+  for (const [competency, label] of Object.entries(competencyText)) {
+    text = text.replaceAll(competency, label);
+  }
+  return text;
+}
 
 export const actionText: Record<PolicyAction, string> = {
   CLARIFY: "需要澄清",

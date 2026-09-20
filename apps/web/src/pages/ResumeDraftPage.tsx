@@ -10,7 +10,7 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { resumeDraftStatusText } from "../presentation";
+import { resumeDraftStatusText, resumeTargetText } from "../presentation";
 import {
   clearOperationId,
   clearRecoverableCommand,
@@ -33,11 +33,17 @@ export function ResumeDraftPage({
   const [draft, setDraft] = useState<ResumeDraftView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
   const [pendingRetry, setPendingRetry] = useState<ResumeRetryCommand | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const applyDraft = useCallback((next: ResumeDraftView) => {
     setDraft(next);
+    setSelectedItemId((current) => {
+      const items = next.sections.flatMap((section) => section.items);
+      if (current && items.some((item) => item.item_id === current)) return current;
+      return items[0]?.item_id ?? null;
+    });
     const storedRetry = loadRecoverableCommand("resume-retry", next.id);
     setPendingRetry(storedRetry?.kind === "resume-retry" ? storedRetry : null);
     if (next.status === "draft" || next.status === "accepted") {
@@ -153,122 +159,170 @@ export function ResumeDraftPage({
   const canRetry = draft.status === "generation_failed"
     && Boolean(operationId)
     && Boolean(operation?.error?.retryable);
+  const resumeItems = draft.sections.flatMap((section) => section.items);
+  const selectedItem = resumeItems.find((item) => item.item_id === selectedItemId) ?? null;
+  const selectedChange = draft.changes.find(
+    (change) => change.item_id === selectedItem?.item_id,
+  ) ?? null;
+  const selectedSourceIds = selectedChange?.claim_ids ?? selectedItem?.claim_ids ?? [];
+  const selectedSources = selectedSourceIds.flatMap((sourceId) => {
+    const source = draft.source_claims.find((claim) => claim.id === sourceId);
+    return source ? [source] : [];
+  });
+  const targetName = resumeTargetText(draft.target_context);
 
   return (
     <main className="page-container resume-page">
-      <header className="resume-heading no-print">
+      <header className="compact-page-heading resume-heading no-print">
         <div>
           <p className="eyebrow">简历草稿</p>
           <h1>基于已确认事实的表达版本</h1>
-          <p>正文只使用已确认资料；缺失事实和风险不会混入可打印正文。</p>
+          <p>
+            {resumeItems.length} 条正文
+            {" · "}{draft.source_claims.length} 项已确认资料
+            {" · "}待补充 {draft.missing_facts.length} 项
+            {" · "}注意 {draft.cautions.length} 项
+          </p>
         </div>
-        <Tag>{resumeDraftStatusText[draft.status]}</Tag>
+        <div className="heading-actions">
+          <Tag>{resumeDraftStatusText[draft.status]}</Tag>
+          {canRetry ? (
+            <Button
+              type="primary"
+              loading={busy}
+              disabled={!serviceReady || busy}
+              onClick={() => void retryGeneration()}
+            >
+              {pendingRetry ? "使用原重试请求" : "重试简历生成"}
+            </Button>
+          ) : null}
+          {draft.status === "draft" ? (
+            <Button
+              type="primary"
+              loading={busy}
+              disabled={!serviceReady || busy}
+              onClick={() => void acceptDraft()}
+            >
+              确认这版草稿
+            </Button>
+          ) : null}
+          {draft.status === "accepted" ? (
+            <Button type="primary" onClick={() => window.print()}>打印简历</Button>
+          ) : null}
+        </div>
       </header>
 
       <div className="no-print">
         <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
         <OperationStatus operation={operation} label="简历生成" />
-        {canRetry ? (
-          <Button
-            type="primary"
-            loading={busy}
-            disabled={!serviceReady || busy}
-            onClick={() => void retryGeneration()}
-          >
-            {pendingRetry ? "使用原重试请求" : "重试简历生成"}
-          </Button>
-        ) : null}
         {draft.status === "generation_failed" && !canRetry ? (
-          <Alert type="danger" title="简历生成未完成">请刷新操作状态后再决定是否重试。</Alert>
+          <Alert type="danger" title="简历生成未完成">
+            请刷新操作状态后再决定是否重试。
+          </Alert>
         ) : null}
       </div>
 
-      <article
-        className={`surface-card resume-document print-document ${
-          draft.status === "accepted" ? "print-document--accepted" : ""
-        }`}
-        aria-labelledby="resume-document-title"
-      >
-        <header>
-          <p className="eyebrow no-print">候选版本</p>
-          <h2 id="resume-document-title">个人简历</h2>
-          <p className="resume-target no-print">
-            目标来源：{draft.target_context.source_name ?? draft.target_context.kind}
-          </p>
-        </header>
-        {draft.sections.length ? draft.sections.map((section) => (
-          <section className="resume-section" key={section.section_id}>
-            <h3>{section.title}</h3>
-            <ul>
-              {section.items.map((item) => <li key={item.item_id}>{item.text}</li>)}
-            </ul>
-          </section>
-        )) : (
-          <p className="empty-state no-print">生成完成后，服务端会在这里返回可追溯正文。</p>
-        )}
-      </article>
+      <section className="resume-workspace">
+        <article
+          className={`surface-card resume-document print-document ${
+            draft.status === "accepted" ? "print-document--accepted" : ""
+          }`}
+          aria-labelledby="resume-document-title"
+        >
+          <header>
+            <p className="eyebrow no-print">正文预览</p>
+            <h2 id="resume-document-title">个人简历</h2>
+            <p className="resume-target no-print">目标来源：{targetName}</p>
+          </header>
+          {draft.sections.length ? draft.sections.map((section) => (
+            <section className="resume-section" key={section.section_id}>
+              <h3>{section.title}</h3>
+              <ul>
+                {section.items.map((item) => (
+                  <li key={item.item_id}>
+                    <button
+                      type="button"
+                      className={item.item_id === selectedItem?.item_id ? "active" : ""}
+                      aria-pressed={item.item_id === selectedItem?.item_id}
+                      onClick={() => setSelectedItemId(item.item_id)}
+                    >
+                      {item.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )) : (
+            <p className="empty-state no-print">生成完成后，服务端会返回可追溯正文。</p>
+          )}
+        </article>
 
-      {draft.status === "draft" ? (
-        <section className="surface-card draft-actions no-print">
-          <div>
-            <p className="eyebrow">版本确认</p>
-            <h2>确认后才能打印</h2>
-            <p>确认只冻结这一版草稿，不会改写原始资料、Claim 或面试评分。</p>
+        <aside className="surface-card resume-audit-panel no-print" aria-labelledby="resume-audit-title">
+          <div className="report-detail-heading">
+            <div>
+              <p className="eyebrow">可追溯编辑</p>
+              <h2 id="resume-audit-title">来源与改写差异</h2>
+            </div>
+            <Tag>{selectedItem ? "已选择正文" : "暂无正文"}</Tag>
           </div>
-          <Button type="primary" loading={busy} onClick={() => void acceptDraft()}>
-            确认这版草稿
-          </Button>
-        </section>
-      ) : null}
+          {selectedChange ? (
+            <div className="resume-change-review">
+              <div>
+                <h3>来源原文</h3>
+                <p>{selectedChange.before}</p>
+              </div>
+              <span className="rewrite-arrow" aria-hidden="true">→</span>
+              <div>
+                <h3>简历表达</h3>
+                <p>{selectedChange.after}</p>
+              </div>
+              <div className="change-reason">
+                <h3>改写原因</h3>
+                <p>{selectedChange.reason}</p>
+              </div>
+              {selectedSources.length ? (
+                <div className="related-sources">
+                  <h3>关联的已确认资料</h3>
+                  <ul>
+                    {selectedSources.map((source) => (
+                      <li key={source.id}>{source.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="empty-state">
+              {selectedItem ? "这条正文没有返回改写差异。" : "选择一条正文查看来源。"}
+            </p>
+          )}
 
-      {draft.status === "accepted" ? (
-        <section className="surface-card draft-actions no-print">
-          <div>
-            <p className="eyebrow">已确认版本</p>
-            <h2>可以打印或另存为 PDF</h2>
-            <p>打印区域只包含已确认正文，不包含缺失事实、风险提示和审计信息。</p>
-          </div>
-          <Button type="primary" onClick={() => window.print()}>打印简历</Button>
-        </section>
-      ) : null}
-
-      <section className="resume-audit no-print" aria-labelledby="resume-audit-title">
-        <div className="section-heading">
-          <p className="eyebrow">可追溯编辑</p>
-          <h2 id="resume-audit-title">来源与改写差异</h2>
-        </div>
-        <div className="audit-list">
-          {draft.changes.map((change) => (
-            <article className="surface-card comparison-card" key={change.item_id}>
-              <div><h3>来源事实</h3><p>{change.before}</p></div>
-              <div><h3>简历表达</h3><p>{change.after}</p></div>
-              <p className="change-note">{change.reason}</p>
-              <small>Claim：{change.claim_ids.join("、")}</small>
-            </article>
-          ))}
-        </div>
-        {draft.source_claims.length ? (
-          <details className="source-claim-list">
-            <summary>查看已使用的确认事实</summary>
-            <ul>
-              {draft.source_claims.map((claim) => <li key={claim.id}>{claim.text}</li>)}
-            </ul>
-          </details>
-        ) : null}
+          {(draft.missing_facts.length || draft.cautions.length) ? (
+            <details className="compact-details resume-notes">
+              <summary>
+                待补充 {draft.missing_facts.length} 项
+                {" · "}注意 {draft.cautions.length} 项
+              </summary>
+              {draft.missing_facts.length ? (
+                <div>
+                  <h3>待本人补充</h3>
+                  <ul>
+                    {draft.missing_facts.map((item) => (
+                      <li key={item.prompt}>{item.prompt}：{item.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {draft.cautions.length ? (
+                <div>
+                  <h3>注意</h3>
+                  <ul>{draft.cautions.map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>
+              ) : null}
+            </details>
+          ) : null}
+        </aside>
       </section>
-
-      {(draft.missing_facts.length || draft.cautions.length) ? (
-        <section className="surface-card editorial-notes no-print">
-          <p className="eyebrow">不进入正文</p>
-          <h2>待补充与注意项</h2>
-          {draft.missing_facts.length ? (
-            <div><h3>待本人补充</h3><ul>{draft.missing_facts.map((item) => <li key={item.prompt}>{item.prompt}：{item.reason}</li>)}</ul></div>
-          ) : null}
-          {draft.cautions.length ? (
-            <div><h3>注意</h3><ul>{draft.cautions.map((item) => <li key={item}>{item}</li>)}</ul></div>
-          ) : null}
-        </section>
-      ) : null}
     </main>
   );
 }
