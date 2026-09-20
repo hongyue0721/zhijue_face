@@ -49,7 +49,15 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  const currentStep = route.page === "start" ? 1 : route.page === "prepare" ? 2 : 3;
+  const currentStep = route.page === "start"
+    ? 1
+    : route.page === "prepare"
+      ? 2
+      : route.page === "interview"
+        ? 3
+        : route.page === "report"
+          ? 4
+          : 5;
   const serviceReady = service.status === "ready";
 
   return (

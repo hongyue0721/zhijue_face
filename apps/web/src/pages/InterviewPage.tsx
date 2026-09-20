@@ -9,7 +9,7 @@ import { EvidencePanel } from "../components/interview/EvidencePanel";
 import { InterviewProgress } from "../components/interview/InterviewProgress";
 import { QuestionCard } from "../components/interview/QuestionCard";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { interviewRoleText } from "../presentation";
+import { interviewRoleText, interviewStatusText } from "../presentation";
 import { reportPath } from "../routing";
 import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
 
@@ -163,7 +163,19 @@ export function InterviewPage({
   const question = interview.current_question;
   const total = interview.root_plan.slots.length;
   const acceptedAnswer = question?.accepted_answer ?? null;
-  const isFinished = !question && ["finishing", "completed"].includes(interview.status);
+  const isFinishing = !question && interview.status === "finishing";
+  const isCompleted = !question && interview.status === "completed";
+  const failedLifecycle = ["prepare_failed", "finish_failed"].includes(interview.status);
+  const lifecycleText = interview.status === "active"
+    ? acceptedAnswer ? "回答已保存" : "等待作答"
+    : interviewStatusText[interview.status];
+  const lifecycleTone = failedLifecycle
+    ? "danger"
+    : isFinishing
+      ? "warn"
+      : isCompleted || acceptedAnswer
+        ? "success"
+        : "primary";
   const canRetryAnalysis = acceptedAnswer?.evaluation_status === "failed"
     && Boolean(operationId ?? loadOperationId("interview", interview.id));
 
@@ -174,8 +186,8 @@ export function InterviewPage({
           <p className="eyebrow">模拟面试</p>
           <h1>{interviewRoleText(interview)}</h1>
         </div>
-        <Tag className={`status-tag--${acceptedAnswer || isFinished ? "success" : "primary"}`}>
-          {isFinished ? "面试完成" : acceptedAnswer ? "回答已保存" : "等待作答"}
+        <Tag className={`status-tag--${lifecycleTone}`}>
+          {lifecycleText}
         </Tag>
       </div>
       <InterviewProgress total={total} question={question} />
@@ -185,19 +197,29 @@ export function InterviewPage({
           请从“准备面试”页面调用开始接口；本页不会在缺失启动操作时生成第一题。
         </Alert>
       ) : null}
-      {["prepare_failed", "finish_failed"].includes(interview.status) ? (
-        <Alert type="danger" title="面试状态异常">当前状态：{interview.status}。系统不会展示伪造的完成报告。</Alert>
+      {interview.status === "prepare_failed" ? (
+        <Alert type="danger" title="面试准备失败">
+          本场计划没有准备完成；页面不会生成题目或伪装为可开始状态。
+        </Alert>
       ) : null}
-      {isFinished ? (
+      {interview.status === "finish_failed" ? (
+        <Alert type="danger" title="报告整理失败">
+          提问已经结束，但评分报告没有成功落库。请保留当前失败状态并按原操作恢复。
+        </Alert>
+      ) : null}
+      {isFinishing ? (
+        <section className="surface-card completion-card">
+          <p className="eyebrow">报告整理</p>
+          <h2>提问已结束，报告整理中</h2>
+          <p>系统正在冻结本场评分结果；形成真实报告前不会显示完成入口。</p>
+        </section>
+      ) : null}
+      {isCompleted ? (
         <section className="surface-card completion-card">
           <p className="eyebrow">面试完成</p>
-          <h2>本场提问已经结束</h2>
-          <p>
-            {interview.status === "completed"
-              ? "评分报告已经生成，可以继续查看依据和生成优化内容。"
-              : "系统正在冻结评分报告，请等待当前操作完成。"}
-          </p>
-          {interview.status === "completed" && interview.report_id ? (
+          <h2>本场报告已经形成</h2>
+          <p>可以继续查看逐题评分依据，并按需生成回答优化。</p>
+          {interview.report_id ? (
             <Button type="primary" onClick={() => navigate(reportPath(interview.id))}>
               查看面试报告
             </Button>

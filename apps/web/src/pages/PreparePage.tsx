@@ -197,9 +197,12 @@ export function PreparePage({
   return (
     <main className="page-container prepare-page">
       <div className="page-intro">
-        <p className="eyebrow">面试准备</p>
-        <h1>面试准备</h1>
-        <p>根据你的资料与岗位要求，系统已经生成本场验证计划。</p>
+        <h1>{interview ? interviewRoleText(interview) : "输入目标岗位"}</h1>
+        <p>
+          {interview
+            ? "岗位要求与本场验证计划已准备，可以核对后开始面试。"
+            : "填写真实岗位描述，或明确选择演示岗位配置后生成本场计划。"}
+        </p>
       </div>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       {!interview ? (

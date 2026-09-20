@@ -21,6 +21,13 @@ export function isTerminalOperation(operation: OperationView): boolean {
   return TERMINAL_STATUSES[operation.status];
 }
 
+export function preferObservedOperation(
+  current: OperationView | null,
+  next: OperationView,
+): OperationView {
+  return current && isTerminalOperation(current) ? current : next;
+}
+
 export function useOperationMonitor(
   operationId: string | null,
   onTerminal: (operation: OperationView) => void,
@@ -37,22 +44,37 @@ export function useOperationMonitor(
 
     const controller = new AbortController();
     let source: EventSource | null = null;
-    let stopped = false;
-    let terminalDelivered = false;
+    let timer: number | null = null;
+    let disposed = false;
+    let terminalSnapshot: OperationView | null = null;
+
+    const stopTransport = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+      source?.close();
+      controller.abort();
+    };
 
     const refresh = async () => {
+      if (disposed || terminalSnapshot) return;
       try {
         const next = await api.getOperation(operationId, controller.signal);
-        if (stopped) return;
-        setOperation(next);
+        if (disposed || terminalSnapshot) return;
         setError(null);
-        if (isTerminalOperation(next) && !terminalDelivered) {
-          terminalDelivered = true;
-          source?.close();
+        setOperation((current) => preferObservedOperation(current, next));
+        if (isTerminalOperation(next)) {
+          terminalSnapshot = next;
+          stopTransport();
           onTerminalRef.current(next);
         }
       } catch (nextError) {
-        if (!stopped && !(nextError instanceof DOMException && nextError.name === "AbortError")) {
+        if (
+          !disposed
+          && !terminalSnapshot
+          && !(nextError instanceof DOMException && nextError.name === "AbortError")
+        ) {
           setError(nextError);
         }
       }
@@ -61,14 +83,12 @@ export function useOperationMonitor(
     source = new EventSource(api.eventsUrl(operationId));
     for (const eventName of EVENT_NAMES) source.addEventListener(eventName, refresh);
     source.onerror = () => void refresh();
-    const timer = window.setInterval(refresh, 800);
+    timer = window.setInterval(refresh, 800);
     void refresh();
 
     return () => {
-      stopped = true;
-      controller.abort();
-      window.clearInterval(timer);
-      source?.close();
+      disposed = true;
+      stopTransport();
     };
   }, [operationId]);
 

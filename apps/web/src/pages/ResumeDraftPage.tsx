@@ -1,10 +1,27 @@
 import { Alert, Button, Tag } from "@any-design/anyui/react";
 import { useCallback, useEffect, useState } from "react";
-import { api, newCommandKey, type OperationView, type ResumeDraftView } from "../api";
+import {
+  api,
+  newCommandKey,
+  shouldPreserveWriteCommand,
+  type OperationView,
+  type ResumeDraftView,
+} from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
+import { resumeDraftStatusText } from "../presentation";
+import {
+  clearOperationId,
+  clearRecoverableCommand,
+  loadOperationId,
+  loadRecoverableCommand,
+  saveOperationId,
+  saveRecoverableCommand,
+  type RecoverableCommand,
+} from "../storage";
+
+type ResumeRetryCommand = Extract<RecoverableCommand, { kind: "resume-retry" }>;
 
 export function ResumeDraftPage({
   draftId,
@@ -15,13 +32,29 @@ export function ResumeDraftPage({
 }) {
   const [draft, setDraft] = useState<ResumeDraftView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
+  const [pendingRetry, setPendingRetry] = useState<ResumeRetryCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const applyDraft = useCallback((next: ResumeDraftView) => {
     setDraft(next);
-    const recoverable = next.active_operation_id ?? loadOperationId("resume", next.id);
-    if (recoverable) setOperationId(recoverable);
+    const storedRetry = loadRecoverableCommand("resume-retry", next.id);
+    setPendingRetry(storedRetry?.kind === "resume-retry" ? storedRetry : null);
+    if (next.status === "draft" || next.status === "accepted") {
+      clearOperationId("resume", next.id);
+      clearRecoverableCommand("resume-retry", next.id);
+      setPendingRetry(null);
+      setOperationId(null);
+      return;
+    }
+    if (next.status === "generating" && next.active_operation_id) {
+      saveOperationId("resume", next.id, next.active_operation_id);
+      clearRecoverableCommand("resume-retry", next.id);
+      setPendingRetry(null);
+      setOperationId(next.active_operation_id);
+      return;
+    }
+    setOperationId(loadOperationId("resume", next.id));
   }, []);
 
   const reload = useCallback(async () => {
@@ -59,18 +92,36 @@ export function ResumeDraftPage({
 
   const retryGeneration = async () => {
     if (!draft || !operationId || busy) return;
+    const command: ResumeRetryCommand = pendingRetry ?? {
+      kind: "resume-retry",
+      idempotencyKey: newCommandKey("resume-retry"),
+      input: {
+        operation_id: operationId,
+        expected_revision: draft.revision,
+      },
+    };
+    saveRecoverableCommand("resume-retry", draft.id, command);
+    setPendingRetry(command);
     setBusy(true);
     setError(null);
+    let responseObserved = false;
     try {
       const accepted = await api.retryOperation(
-        operationId,
-        draft.revision,
-        newCommandKey("resume-retry"),
+        command.input.operation_id,
+        command.input.expected_revision,
+        command.idempotencyKey,
       );
+      responseObserved = true;
+      clearRecoverableCommand("resume-retry", draft.id);
+      setPendingRetry(null);
       saveOperationId("resume", draft.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
       applyDraft(await api.getResumeDraft(draft.id));
     } catch (nextError) {
+      if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
+        clearRecoverableCommand("resume-retry", draft.id);
+        setPendingRetry(null);
+      }
       setError(nextError);
     } finally {
       setBusy(false);
@@ -109,9 +160,9 @@ export function ResumeDraftPage({
         <div>
           <p className="eyebrow">简历草稿</p>
           <h1>基于已确认事实的表达版本</h1>
-          <p>正文条目逐项绑定资料快照 Claim；缺失事实和风险不会混入可打印正文。</p>
+          <p>正文只使用已确认资料；缺失事实和风险不会混入可打印正文。</p>
         </div>
-        <Tag>{draft.status}</Tag>
+        <Tag>{resumeDraftStatusText[draft.status]}</Tag>
       </header>
 
       <div className="no-print">
@@ -124,7 +175,7 @@ export function ResumeDraftPage({
             disabled={!serviceReady || busy}
             onClick={() => void retryGeneration()}
           >
-            重试简历生成
+            {pendingRetry ? "使用原重试请求" : "重试简历生成"}
           </Button>
         ) : null}
         {draft.status === "generation_failed" && !canRetry ? (

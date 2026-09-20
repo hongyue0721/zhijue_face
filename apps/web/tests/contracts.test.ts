@@ -5,20 +5,35 @@ import {
   JD_TEXT_MAX_LENGTH,
   api,
   requestRetryReason,
+  shouldPreserveWriteCommand,
   type CoverageEntryView,
   type JDRequirementView,
   type JDSourceView,
   type OperationAccepted,
   type OperationView,
 } from "../src/api";
-import { isTerminalOperation } from "../src/hooks/useOperationMonitor";
+import {
+  isTerminalOperation,
+  preferObservedOperation,
+} from "../src/hooks/useOperationMonitor";
 import {
   coverageExplanation,
+  criterionFindingText,
+  criterionLevelText,
   followupIntentText,
   jdSourceText,
   requirementTitle,
+  resumeDraftStatusText,
+  rootAssessmentStatusText,
+  scoreText,
 } from "../src/presentation";
 import { parseRoute, preparePath, reportPath, resumeDraftPath } from "../src/routing";
+import {
+  clearRecoverableCommand,
+  loadRecoverableCommand,
+  saveRecoverableCommand,
+  type RecoverableCommand,
+} from "../src/storage";
 
 const accepted: OperationAccepted = {
   operation_id: "operation_contract_001",
@@ -44,6 +59,21 @@ function errorResponse(
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function installSessionStorage(): void {
+  const values = new Map<string, string>();
+  const storage: Storage = {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
+  };
+  vi.stubGlobal("window", { sessionStorage: storage });
 }
 describe("frontend request limits", () => {
   it("matches the CreateInterviewRequest JD length limits", () => {
@@ -189,6 +219,153 @@ describe("browser API boundary", () => {
     });
   });
 
+  it("replays lost 202 responses with the original body and idempotency key", async () => {
+    installSessionStorage();
+    const improvements: RecoverableCommand = {
+      kind: "report-improvements",
+      idempotencyKey: "coaching-key-lost-0001",
+      input: { expected_revision: 7 },
+    };
+    saveRecoverableCommand("report-improvements", "report_1", improvements);
+    fetchMock.mockRejectedValueOnce(new TypeError("response lost"));
+    let networkError: unknown;
+    try {
+      await api.generateReportImprovements(
+        "interview_1",
+        improvements.input.expected_revision,
+        improvements.idempotencyKey,
+      );
+    } catch (error) {
+      networkError = error;
+    }
+    expect(shouldPreserveWriteCommand(networkError)).toBe(true);
+    const recoveredImprovements = loadRecoverableCommand(
+      "report-improvements",
+      "report_1",
+    );
+    expect(recoveredImprovements).toEqual(improvements);
+    if (recoveredImprovements?.kind !== "report-improvements") {
+      throw new Error("report improvements command was not recovered");
+    }
+    await api.generateReportImprovements(
+      "interview_1",
+      recoveredImprovements.input.expected_revision,
+      recoveredImprovements.idempotencyKey,
+    );
+
+    const resume: RecoverableCommand = {
+      kind: "report-resume",
+      idempotencyKey: "resume-key-lost-0001",
+      input: {
+        profile_id: "profile_1",
+        expected_revision: 8,
+        profile_snapshot_id: "snapshot_1",
+        interview_id: "interview_1",
+      },
+    };
+    saveRecoverableCommand("report-resume", "report_1", resume);
+    fetchMock.mockRejectedValueOnce(new TypeError("response lost"));
+    try {
+      await api.createResumeDraft(
+        resume.input.profile_id,
+        {
+          expected_revision: resume.input.expected_revision,
+          profile_snapshot_id: resume.input.profile_snapshot_id,
+          interview_id: resume.input.interview_id,
+        },
+        resume.idempotencyKey,
+      );
+    } catch (error) {
+      networkError = error;
+    }
+    expect(shouldPreserveWriteCommand(networkError)).toBe(true);
+    const recoveredResume = loadRecoverableCommand("report-resume", "report_1");
+    expect(recoveredResume).toEqual(resume);
+    if (recoveredResume?.kind !== "report-resume") {
+      throw new Error("resume command was not recovered");
+    }
+    await api.createResumeDraft(
+      recoveredResume.input.profile_id,
+      {
+        expected_revision: recoveredResume.input.expected_revision,
+        profile_snapshot_id: recoveredResume.input.profile_snapshot_id,
+        interview_id: recoveredResume.input.interview_id,
+      },
+      recoveredResume.idempotencyKey,
+    );
+
+    const retry: RecoverableCommand = {
+      kind: "report-retry",
+      idempotencyKey: "retry-key-lost-0001",
+      input: { operation_id: "operation_failed_1", expected_revision: 9 },
+    };
+    saveRecoverableCommand("report-retry", "report_1", retry);
+    fetchMock.mockRejectedValueOnce(new TypeError("response lost"));
+    try {
+      await api.retryOperation(
+        retry.input.operation_id,
+        retry.input.expected_revision,
+        retry.idempotencyKey,
+      );
+    } catch (error) {
+      networkError = error;
+    }
+    expect(shouldPreserveWriteCommand(networkError)).toBe(true);
+    const recoveredRetry = loadRecoverableCommand("report-retry", "report_1");
+    expect(recoveredRetry).toEqual(retry);
+    if (recoveredRetry?.kind !== "report-retry") {
+      throw new Error("retry command was not recovered");
+    }
+    await api.retryOperation(
+      recoveredRetry.input.operation_id,
+      recoveredRetry.input.expected_revision,
+      recoveredRetry.idempotencyKey,
+    );
+
+    const resumeRetry: RecoverableCommand = {
+      kind: "resume-retry",
+      idempotencyKey: "resume-retry-key-lost-0001",
+      input: { operation_id: "operation_failed_2", expected_revision: 10 },
+    };
+    saveRecoverableCommand("resume-retry", "resume_1", resumeRetry);
+    fetchMock.mockRejectedValueOnce(new TypeError("response lost"));
+    try {
+      await api.retryOperation(
+        resumeRetry.input.operation_id,
+        resumeRetry.input.expected_revision,
+        resumeRetry.idempotencyKey,
+      );
+    } catch (error) {
+      networkError = error;
+    }
+    expect(shouldPreserveWriteCommand(networkError)).toBe(true);
+    const recoveredResumeRetry = loadRecoverableCommand("resume-retry", "resume_1");
+    expect(recoveredResumeRetry).toEqual(resumeRetry);
+    if (recoveredResumeRetry?.kind !== "resume-retry") {
+      throw new Error("resume retry command was not recovered");
+    }
+    await api.retryOperation(
+      recoveredResumeRetry.input.operation_id,
+      recoveredResumeRetry.input.expected_revision,
+      recoveredResumeRetry.idempotencyKey,
+    );
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    const signatures = calls.map(([url, init]) => ({
+      url,
+      body: String(init.body),
+      key: new Headers(init.headers).get("Idempotency-Key"),
+    }));
+    expect(signatures[0]).toEqual(signatures[1]);
+    expect(signatures[2]).toEqual(signatures[3]);
+    expect(signatures[4]).toEqual(signatures[5]);
+    expect(signatures[6]).toEqual(signatures[7]);
+    clearRecoverableCommand("report-improvements", "report_1");
+    clearRecoverableCommand("report-resume", "report_1");
+    clearRecoverableCommand("report-retry", "report_1");
+    clearRecoverableCommand("resume-retry", "resume_1");
+
+  });
 });
 
 describe("URL and presentation contracts", () => {
@@ -266,5 +443,24 @@ describe("URL and presentation contracts", () => {
     expect(isTerminalOperation(operation("failed"))).toBe(true);
     expect(isTerminalOperation(operation("interrupted"))).toBe(true);
     expect(isTerminalOperation(operation("canceled"))).toBe(true);
+  });
+
+  it("keeps the first terminal operation snapshot when older transport data arrives", () => {
+    const running = { status: "running" } as OperationView;
+    const failed = { status: "failed" } as OperationView;
+    const succeeded = { status: "succeeded" } as OperationView;
+
+    expect(preferObservedOperation(running, failed)).toBe(failed);
+    expect(preferObservedOperation(failed, running)).toBe(failed);
+    expect(preferObservedOperation(succeeded, failed)).toBe(succeeded);
+  });
+
+  it("localizes report and resume states without conflating zero with missing", () => {
+    expect(rootAssessmentStatusText.insufficient).toBe("本次回答信息不足");
+    expect(criterionFindingText.missing).toBe("本次回答缺少信息");
+    expect(criterionLevelText(null)).toBe("未形成等级");
+    expect(scoreText(null, "本题未评分")).toBe("本题未评分");
+    expect(scoreText(0, "本题未评分")).toBe("0 分");
+    expect(resumeDraftStatusText.generation_failed).toBe("草稿生成失败");
   });
 });

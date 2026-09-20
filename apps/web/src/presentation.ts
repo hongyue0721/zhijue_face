@@ -5,6 +5,9 @@ import type {
   JDSourceView,
   OperationStatus,
   PolicyAction,
+  ReportCriterionResult,
+  ResumeDraftView,
+  RootAssessmentStatus,
 } from "./api";
 
 export const operationStatusText: Record<OperationStatus, string> = {
@@ -22,6 +25,66 @@ export const coverageStatusText: Record<CoverageEntryView["status"], string> = {
   unverified: "待验证",
   unknown: "材料未体现",
   contradicted: "材料存在冲突",
+};
+
+export const interviewStatusText: Record<InterviewView["status"], string> = {
+  preparing: "正在生成计划",
+  prepare_failed: "计划生成失败",
+  ready: "可以开始面试",
+  active: "面试进行中",
+  finishing: "提问已结束，报告整理中",
+  finish_failed: "报告整理失败",
+  completed: "面试已完成",
+};
+
+export const rootAssessmentStatusText: Record<RootAssessmentStatus, string> = {
+  scored: "已完成评分",
+  insufficient: "本次回答信息不足",
+  disputed: "本次回答存在冲突",
+  skipped: "本题已跳过",
+  unmeasured: "本题未形成评价",
+};
+
+export const criterionKindText: Record<ReportCriterionResult["kind"], string> = {
+  technical: "技术理解",
+  expression: "表达完整性",
+  evidence_reasoning: "证据与推理",
+};
+
+export const criterionFindingText: Record<ReportCriterionResult["finding"], string> = {
+  supported: "本次回答有支持",
+  missing: "本次回答缺少信息",
+  contradicted: "本次回答与依据冲突",
+  not_assessable: "本轮信息不足，暂不评价",
+  disputed: "本次回答证据存在冲突",
+};
+
+export const improvementsStatusText: Record<"not_requested" | "generating" | "ready" | "failed", string> = {
+  not_requested: "尚未生成回答优化",
+  generating: "回答优化生成中",
+  ready: "回答优化已生成",
+  failed: "回答优化生成失败",
+};
+
+export const resumeDraftStatusText: Record<ResumeDraftView["status"], string> = {
+  generating: "草稿生成中",
+  generation_failed: "草稿生成失败",
+  draft: "草稿待确认",
+  accepted: "草稿已确认",
+};
+
+const competencyText: Record<string, string> = {
+  "embedded.c.basics": "C 与嵌入式基础",
+  "embedded.mcu.interrupt": "STM32 外设与中断",
+  "embedded.peripheral.uart_dma": "UART 与 DMA 排障",
+  "embedded.peripheral.serial_bus": "SPI、I²C 与 CAN",
+  "embedded.rtos.fundamentals": "RTOS 任务与并发基础",
+  "embedded.rtos.queue": "FreeRTOS Queue 任务通信",
+  "embedded.rtos.synchronization": "Semaphore、Mutex 与共享资源",
+  "embedded.rtos.scheduling": "任务周期、优先级与实时性",
+  "engineering.tooling.version_control": "版本控制与回归定位",
+  "engineering.verification": "调试取证与验证",
+  "project.ownership": "个人贡献边界",
 };
 
 export const actionText: Record<PolicyAction, string> = {
@@ -47,6 +110,25 @@ const intentText: Record<string, string> = {
 export function followupIntentText(intent?: string): string {
   if (!intent) return "围绕当前回答继续核对";
   return intentText[intent] ?? "围绕当前回答继续核对";
+}
+
+export function competencyDisplayName(competency: string, index: number): string {
+  return competencyText[competency] ?? `验证方向 ${index + 1}`;
+}
+
+export function criterionDisplayName(
+  kind: ReportCriterionResult["kind"],
+  index: number,
+): string {
+  return `${criterionKindText[kind]} ${index + 1}`;
+}
+
+export function criterionLevelText(level: ReportCriterionResult["level"]): string {
+  return level === null ? "未形成等级" : `等级 ${level}`;
+}
+
+export function scoreText(score: number | null, nullText: string): string {
+  return score === null ? nullText : `${score} 分`;
 }
 
 export function jdSourceText(source: JDSourceView): string {

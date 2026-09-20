@@ -1,6 +1,6 @@
 import { StepProgress } from "./StepProgress";
 
-export function AppHeader({ currentStep }: { currentStep: 1 | 2 | 3 }) {
+export function AppHeader({ currentStep }: { currentStep: 1 | 2 | 3 | 4 | 5 }) {
   return (
     <header className="app-header">
       <div className="header-inner">

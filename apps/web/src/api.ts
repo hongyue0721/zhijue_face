@@ -408,6 +408,10 @@ export function requestRetryReason(error: ApiError): RequestRetryReason | null {
   return error.code === "CAPACITY_LIMITED" ? "capacity" : "service";
 }
 
+export function shouldPreserveWriteCommand(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.retryable;
+}
+
 const BASE = "/api/v1";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

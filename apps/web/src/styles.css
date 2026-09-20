@@ -98,10 +98,6 @@ code {
   min-height: 100vh;
 }
 
-.app-shell span,
-.app-shell strong {
-  color: inherit;
-}
 
 .app-header {
   border-bottom: 1px solid var(--line);

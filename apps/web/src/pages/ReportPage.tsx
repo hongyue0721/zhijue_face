@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   newCommandKey,
+  shouldPreserveWriteCommand,
   type InterviewView,
   type OperationView,
   type ReportView,
@@ -10,8 +11,21 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
+import { improvementsStatusText } from "../presentation";
 import { resumeDraftPath } from "../routing";
-import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
+import {
+  clearOperationId,
+  clearRecoverableCommand,
+  loadOperationId,
+  loadRecoverableCommand,
+  saveOperationId,
+  saveRecoverableCommand,
+  type RecoverableCommand,
+} from "../storage";
+
+type ImprovementsCommand = Extract<RecoverableCommand, { kind: "report-improvements" }>;
+type ResumeCommand = Extract<RecoverableCommand, { kind: "report-resume" }>;
+type ReportRetryCommand = Extract<RecoverableCommand, { kind: "report-retry" }>;
 
 function scoreText(score: number | null): string {
   return score === null ? "未形成总分" : `${score} 分`;
@@ -29,13 +43,43 @@ export function ReportPage({
   const [interview, setInterview] = useState<InterviewView | null>(null);
   const [report, setReport] = useState<ReportView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
+  const [pendingImprovements, setPendingImprovements] = useState<ImprovementsCommand | null>(null);
+  const [pendingResume, setPendingResume] = useState<ResumeCommand | null>(null);
+  const [pendingRetry, setPendingRetry] = useState<ReportRetryCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const applyReport = useCallback((next: ReportView) => {
     setReport(next);
-    const recoverable = next.active_operation_id ?? loadOperationId("report", next.id);
-    if (recoverable) setOperationId(recoverable);
+    const storedImprovements = loadRecoverableCommand("report-improvements", next.id);
+    const storedResume = loadRecoverableCommand("report-resume", next.id);
+    const storedRetry = loadRecoverableCommand("report-retry", next.id);
+    setPendingImprovements(
+      storedImprovements?.kind === "report-improvements" ? storedImprovements : null,
+    );
+    setPendingResume(storedResume?.kind === "report-resume" ? storedResume : null);
+    setPendingRetry(storedRetry?.kind === "report-retry" ? storedRetry : null);
+
+    const storedOperationId = loadOperationId("report", next.id);
+    if (next.improvements_status === "ready") {
+      clearOperationId("report", next.id);
+      clearRecoverableCommand("report-improvements", next.id);
+      clearRecoverableCommand("report-retry", next.id);
+      setPendingImprovements(null);
+      setPendingRetry(null);
+      setOperationId(null);
+      return;
+    }
+    if (next.improvements_status === "generating" && next.active_operation_id) {
+      saveOperationId("report", next.id, next.active_operation_id);
+      clearRecoverableCommand("report-improvements", next.id);
+      clearRecoverableCommand("report-retry", next.id);
+      setPendingImprovements(null);
+      setPendingRetry(null);
+      setOperationId(next.active_operation_id);
+      return;
+    }
+    setOperationId(storedOperationId);
   }, []);
 
   const reload = useCallback(async () => {
@@ -84,18 +128,33 @@ export function ReportPage({
 
   const generateImprovements = async () => {
     if (!report || busy) return;
+    const command: ImprovementsCommand = pendingImprovements ?? {
+      kind: "report-improvements",
+      idempotencyKey: newCommandKey("coaching"),
+      input: { expected_revision: report.revision },
+    };
+    saveRecoverableCommand("report-improvements", report.id, command);
+    setPendingImprovements(command);
     setBusy(true);
     setError(null);
+    let responseObserved = false;
     try {
       const accepted = await api.generateReportImprovements(
         interviewId,
-        report.revision,
-        newCommandKey("coaching"),
+        command.input.expected_revision,
+        command.idempotencyKey,
       );
+      responseObserved = true;
+      clearRecoverableCommand("report-improvements", report.id);
+      setPendingImprovements(null);
       saveOperationId("report", report.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
       applyReport(await api.getReport(interviewId));
     } catch (nextError) {
+      if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
+        clearRecoverableCommand("report-improvements", report.id);
+        setPendingImprovements(null);
+      }
       setError(nextError);
     } finally {
       setBusy(false);
@@ -104,18 +163,36 @@ export function ReportPage({
 
   const retryImprovements = async () => {
     if (!report || !operationId || busy) return;
+    const command: ReportRetryCommand = pendingRetry ?? {
+      kind: "report-retry",
+      idempotencyKey: newCommandKey("coaching-retry"),
+      input: {
+        operation_id: operationId,
+        expected_revision: report.revision,
+      },
+    };
+    saveRecoverableCommand("report-retry", report.id, command);
+    setPendingRetry(command);
     setBusy(true);
     setError(null);
+    let responseObserved = false;
     try {
       const accepted = await api.retryOperation(
-        operationId,
-        report.revision,
-        newCommandKey("coaching-retry"),
+        command.input.operation_id,
+        command.input.expected_revision,
+        command.idempotencyKey,
       );
+      responseObserved = true;
+      clearRecoverableCommand("report-retry", report.id);
+      setPendingRetry(null);
       saveOperationId("report", report.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
       applyReport(await api.getReport(interviewId));
     } catch (nextError) {
+      if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
+        clearRecoverableCommand("report-retry", report.id);
+        setPendingRetry(null);
+      }
       setError(nextError);
     } finally {
       setBusy(false);
@@ -126,20 +203,43 @@ export function ReportPage({
     if (!report || !interview || busy) return;
     setBusy(true);
     setError(null);
+    let command = pendingResume;
+    let responseObserved = false;
     try {
-      const profile = await api.getProfile(interview.profile_id);
+      if (!command) {
+        const profile = await api.getProfile(interview.profile_id);
+        command = {
+          kind: "report-resume",
+          idempotencyKey: newCommandKey("resume"),
+          input: {
+            profile_id: interview.profile_id,
+            expected_revision: profile.revision,
+            profile_snapshot_id: interview.profile_snapshot_id,
+            interview_id: interview.id,
+          },
+        };
+        saveRecoverableCommand("report-resume", report.id, command);
+        setPendingResume(command);
+      }
       const accepted = await api.createResumeDraft(
-        interview.profile_id,
+        command.input.profile_id,
         {
-          expected_revision: profile.revision,
-          profile_snapshot_id: interview.profile_snapshot_id,
-          interview_id: interview.id,
+          expected_revision: command.input.expected_revision,
+          profile_snapshot_id: command.input.profile_snapshot_id,
+          interview_id: command.input.interview_id,
         },
-        newCommandKey("resume"),
+        command.idempotencyKey,
       );
+      responseObserved = true;
+      clearRecoverableCommand("report-resume", report.id);
+      setPendingResume(null);
       saveOperationId("resume", accepted.resource_id, accepted.operation_id);
       navigate(resumeDraftPath(accepted.resource_id));
     } catch (nextError) {
+      if (command && !responseObserved && !shouldPreserveWriteCommand(nextError)) {
+        clearRecoverableCommand("report-resume", report.id);
+        setPendingResume(null);
+      }
       setError(nextError);
     } finally {
       setBusy(false);
@@ -235,22 +335,22 @@ export function ReportPage({
             <p className="eyebrow">表达优化</p>
             <h2 id="coaching-title">基于原回答的改写</h2>
           </div>
-          <Tag>{report.improvements_status}</Tag>
+          <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
         </div>
         <p>改写片段必须绑定本场逐字回答或当前资料快照事实；缺失信息单独列出，不补进正文。</p>
-        {report.improvements_status === "not_requested" ? (
+        {report.improvements_status === "not_requested" || pendingImprovements ? (
           <Button
             type="primary"
             loading={busy}
             disabled={!serviceReady || busy}
             onClick={() => void generateImprovements()}
           >
-            生成回答优化
+            {pendingImprovements ? "使用原请求重试" : "生成回答优化"}
           </Button>
         ) : null}
         {canRetry ? (
           <Button type="primary" loading={busy} onClick={() => void retryImprovements()}>
-            重试回答优化
+            {pendingRetry ? "使用原重试请求" : "重试回答优化"}
           </Button>
         ) : null}
         {report.improvements_status === "failed" && !canRetry ? (
@@ -292,7 +392,7 @@ export function ReportPage({
           <p>简历正文只使用当前不可变资料快照中的已确认事实，岗位信息只影响排序和措辞。</p>
         </div>
         <Button type="primary" loading={busy} disabled={!serviceReady || busy} onClick={() => void createResumeDraft()}>
-          生成简历草稿
+          {pendingResume ? "使用原请求创建草稿" : "生成简历草稿"}
         </Button>
       </section>
     </main>

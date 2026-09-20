@@ -1,6 +1,6 @@
-const STEPS = ["资料", "准备", "面试"];
+const STEPS = ["资料", "准备", "面试", "复盘"];
 
-export function StepProgress({ current }: { current: 1 | 2 | 3 }) {
+export function StepProgress({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
   return (
     <ol className="step-progress" aria-label="面试准备进度">
       {STEPS.map((label, index) => {
