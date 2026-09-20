@@ -23,7 +23,6 @@ from zhijue.application.answer_workflow import (
     build_handle_answer_workflow,
     run_handle_answer_workflow,
 )
-from zhijue.domain.interview_policy import ObservationValidationError
 
 RUBRIC_SNAPSHOT = {
     "source": "approved_seed",
@@ -182,7 +181,9 @@ def test_invalid_analysis_fails_before_any_decision(monkeypatch, content):
     monkeypatch.setattr(answer_workflow, "decide_next", forbidden_policy)
     analyzer = ScriptedAnalyzer(content)
 
-    with pytest.raises((AnswerWorkflowError, ObservationValidationError)):
+    with pytest.raises(
+        AnswerWorkflowError, match="analyzer output failed contract validation"
+    ):
         asyncio.run(run_handle_answer_workflow(**workflow_args(analyzer)))
 
     assert len(analyzer.calls) == 1
@@ -201,10 +202,30 @@ def test_model_action_field_is_rejected_and_cannot_drive_policy(monkeypatch):
     model_output = {**VALID_OBSERVATION, "action": "END"}
     analyzer = ScriptedAnalyzer(json.dumps(model_output))
 
-    with pytest.raises(ObservationValidationError):
+    with pytest.raises(
+        AnswerWorkflowError, match="analyzer output failed contract validation"
+    ):
         asyncio.run(run_handle_answer_workflow(**workflow_args(analyzer)))
 
     assert policy_calls == 0
+
+
+def test_invalid_model_details_are_redacted_from_sdk_errors(capsys, caplog):
+    private_marker = "PRIVATE_MODEL_DETAIL_7391"
+    model_output = copy.deepcopy(VALID_OBSERVATION)
+    model_output["criteria"][0]["finding"] = private_marker
+    analyzer = ScriptedAnalyzer(json.dumps(model_output))
+
+    with pytest.raises(
+        AnswerWorkflowError, match="analyzer output failed contract validation"
+    ) as captured_error:
+        asyncio.run(run_handle_answer_workflow(**workflow_args(analyzer)))
+
+    captured_logs = capsys.readouterr()
+    observable_text = (
+        str(captured_error.value) + captured_logs.out + captured_logs.err + caplog.text
+    )
+    assert private_marker not in observable_text
 
 
 def test_timeout_cancels_the_running_analyzer_task():
@@ -328,6 +349,16 @@ def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["temperature"] == 0
     assert "action" in payload["messages"][0]["content"].lower()
+    system_prompt = payload["messages"][0]["content"]
+    assert all(
+        enum_value in system_prompt
+        for enum_value in (
+            '"supported"',
+            '"missing"',
+            '"contradicted"',
+            '"not_assessable"',
+        )
+    )
     user_data = json.loads(payload["messages"][1]["content"])
     assert user_data["observation_id"] == "observation_1"
     assert user_data["data_classification"] == ("untrusted_answer_and_reference_data")

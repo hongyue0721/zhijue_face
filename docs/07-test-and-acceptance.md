@@ -294,3 +294,18 @@ P0 发版必须有：T01、T02、T04、T06—T28、T30、T31、T34 的执行证�
 | 后端全量 | Python 3.11：247 passed / 2 skipped / 0 failed / 54 warnings | 本轮命令输出 |
 
 当前明确未证明：外部业务文本模型 live、真实模型 429/超时/效果/延迟/费用、跨新标签页恢复失败 operation ID、评分与报告。T23 的本轮前端证据覆盖“事件流不可用时靠 Operation polling 收敛”，不等于所有代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合都完成浏览器验收。
+
+## M3-01 业务文本模型 live 验证（2026-09-19）
+
+本节晚于上方 M3-03 fixture 记录，解除的只有“外部业务文本模型 live NOT_RUN”门禁；历史 fixture 结论不回写。
+
+| 场景 | 实际结果 | 证据与边界 |
+|---|---|---|
+| 私密配置与装配 | 独立 0600、Git ignored 模型文件；生产 `create_default_app()` readiness=true，Knowledge/model 均 configured | 本地装配命令；Key 不进入输出或证据 |
+| 首轮真实调用 | `deepseek-flash` 1 次 HTTP 请求、8.729782 秒；模型把解释文本放入 `finding`，Observation Schema 拒绝，Workflow 失败 | `runtime/evidence/m3-01-live/deepseek-flash-20260919T1855.json`（ignored）；失败 usage NOT_MEASURED |
+| 根因修复 | Prompt 明确全部枚举、criterion 复制、level、quote/reference 规则；SemanticValidation 对 SDK 日志只抛固定错误，不携带不可信模型字段 | `adapters/model.py`、`application/answer_workflow.py`、日志脱敏回归 |
+| 第二轮真实调用 | 1 次 HTTP 请求、10.650749 秒；真实 openJiuwen Workflow 完成，Observation 通过语义校验，程序 Policy 输出 `NEXT / ADEQUATE_EVIDENCE` | `runtime/evidence/m3-01-live/deepseek-flash-20260919T1858.json`（ignored） |
+| usage / cost | 成功样本 input 1156、output 2544、total 3700；费用 null / NOT_MEASURED | provider response usage；不按未知单价估算 |
+| 回归 | Ruff 63 files 全绿；pytest 248 passed / 2 skipped / 55 warnings；规范 44/44 | 本轮实际命令 |
+
+结论：M3-01 业务模型结构化输出、真实 Workflow、服务端语义校验和确定性 Policy 的单样本 live 路径为 `VERIFIED`。仍未证明真实模型 429/超时、批量稳定性、p95、价格、浏览器真实模型整场或评分效果；这些边界不得由本次一次成功外推。

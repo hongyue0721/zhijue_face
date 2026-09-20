@@ -98,3 +98,9 @@
 3. 官方发布包含同等修复后，必须切回官方 release/wheel，删除临时 fork 来源，并重跑 M0-02/M0-03 与锁来源审计。
 4. 上述解除只覆盖 Knowledge 基础设施，不代表 Evidence/JD/Seed/业务 API 已实现。
 
+
+## M3-01 live 后的模型风险更新（2026-09-19）
+
+- K05 仍为高风险，但“业务模型完全未运行”已解除：`deepseek-flash` 在生产适配器和真实 openJiuwen Workflow 上完成一次 synthetic 回答分析。第一轮真实输出因 `finding` 类型错误被 Schema 拒绝，证明严格服务端校验必要；补全 Prompt 结构约束后第二轮通过。
+- K13 新增并闭合一条日志边界：openJiuwen 会记录组件异常，详细 JSON Schema 错误可能携带模型生成的回答派生文本。SemanticValidation 现只向 SDK 抛固定错误；纯领域校验仍保留详细诊断，回归断言私密 marker 不进入异常或捕获日志。
+- 未解除项：单样本不代表模型质量、p95、真实 429/超时恢复或费用；成功 usage 为 1156/2544/3700，首轮失败 usage 和两次费用均 NOT_MEASURED/null。后续批量或 M4 付费 live 前仍需负责人明确持续费用上限。

@@ -3,8 +3,8 @@
 **规范版本：1.0.0**  
 **记录日期：2026-09-19**  
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
-**当前阶段：M3 / IN_PROGRESS（M3-03 三页 P0 前端 VERIFIED / FROZEN；M3-01 后端 IMPLEMENTED、外部文本模型 live NOT_RUN；M3-02 本地后端 VERIFIED）**
-**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 后端首题/回答/有限 Policy/可靠性 + 资料导入、岗位准备、五题模拟面试三页前端。业务模型 live、评分和报告仍未完成。**
+**当前阶段：M3 / VERIFIED（M3-01 业务文本模型 live、M3-02 后端可靠性、M3-03 三页 P0 前端均 VERIFIED；前三页视觉 FROZEN；M4 未开始）**
+**当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 后端首题/回答/有限 Policy/可靠性 + 三页前端 + `deepseek-flash` 真实回答分析。评分和报告仍未完成。**
 
 ## 1. 当前真实状态
 
@@ -19,10 +19,10 @@
 | openJiuwen Workflow/WorkflowAgent 局部 smoke | IMPLEMENTED，34 项回归通过；独立验收待做 | runtime/evidence/m0-02/；仅合成文本图，不是业务主链 |
 | 官方基座/补充 starter 要求 | BLOCKED | 已读 NCSS/u-j8/API/通用示例；答疑查询 HTTP 418，不能排除补充要求 |
 | openJiuwen Knowledge + Milvus Lite | VERIFIED（项目锁定兼容组合） | `runtime/evidence/m0-03-del/knowledge-locked-live-20260919T011100Z.json`、ADR-012；正式 0.1.18 wheel 失败记录保留 |
-| 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live（累计 25 次逻辑调用）；历史网关探针 `deepseek-v4-flash` 成功，但当前 `.env.local` 没有业务 `MODEL_PROVIDER/MODEL_NAME/API_BASE/API_KEY/MODEL_TIMEOUT/MODEL_MAX_RETRIES`。回答模型适配已实现，业务 live 仍 NOT_RUN；token/cost 为 null |
+| 实际模型、额度、延迟 | PARTIAL | BGE-M3 full lifecycle live；M3-01 `deepseek-flash` 业务 Workflow 第二次调用通过，10.650749 秒，usage 1156/2544/3700。首轮失败 usage 与全部费用均 NOT_MEASURED/null；单样本不形成 p95 或效果结论 |
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
-| P0 业务集成/LLM/浏览器测试 | PARTIAL | 资料→确认→JD→五题计划→作答→PROBE/CLARIFY/NEXT/END 已在真实 FastAPI/openJiuwen Workflow + fixture Analyzer 的浏览器纵切面通过；前端网络幂等重试、Operation retry、SSE 降级 polling 和六组视口响应式已验证。业务文本模型 live、评分和报告仍 NOT_RUN |
+| P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer 的三页浏览器纵切面已通过；另以生产模型适配器、approved Seed 和真实 Workflow 跑通一次 `deepseek-flash` 合成回答。评分、报告、真实模型浏览器整场与跨代理 SSE 组合仍 NOT_RUN |
 | 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
 
 ## 2. 任务板
@@ -42,10 +42,10 @@
 | M2-01 | M1-03 | VERIFIED | ADR-013 契约对齐 + 六条 Seed 来源与平台边界审核；负责人确认 Level 2 passed 并 approved，统一 review record 可追溯；approved-only live 门禁回归通过 |
 | M2-02 | M2-01 | VERIFIED | 真实 Demo Resume v1 PDF→21 facts→快照与 Knowledge→显式 `SYNTHETIC_DEMO_JD`→8 Requirements→Coverage Map→5 Slots live 通过；伪造/缺失真实来源字段会 `JD_PROVENANCE_INVALID`，客户端不能自报真实来源 |
 | M2-03 | M2-02 | VERIFIED | 真实浏览器展示资料快照、synthetic 来源警示、Coverage Map、5 Slots 与首题审核门禁；点击生成计划 operation succeeded，URL 可恢复，刷新后仍为 5 Slots |
-| M3-01 | M2-03 + Seed Level 2 | IMPLEMENTED | 真实 openJiuwen handle-answer Workflow、Observation 语义校验与确定性 Policy 已在 fixture 验证；缺显式业务模型私密配置，live NOT_RUN，不能标 VERIFIED |
-| M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；不代表文本模型 live |
+| M3-01 | M2-03 + Seed Level 2 | VERIFIED | `deepseek-flash` 合成回答经生产 Answer Analyzer、真实 openJiuwen Workflow、Observation 语义校验和确定性 Policy 通过；首次失败按契约拒绝并修正 Prompt/日志边界，证据见 §37 |
+| M3-02 | M3-01 | VERIFIED | 本地后端的 Answer/Operation 原子受理、幂等/SSE、失败保留、三次累计 retry、重启 interrupted 恢复及隐私错误边界均通过回归；真实模型单样本与本地可靠性证据分开记录 |
 | M3-03 | M3-02 | VERIFIED | 视觉状态 `FROZEN`；三页 P0 前端已完成最终收尾，JD 输入限制与后端 8,000 / 200 字符契约一致，Prepare 顺序固定为岗位摘要→Coverage/Plan→开始动作→技术详情，不再继续修改前三页视觉 |
-| M4-01 | M3-03 | PLANNED | 评分与报告；虽然结构依赖由 M3-03 闭合，当前阶段门禁仍要求先完成 M3-01 业务文本模型 live 验证 |
+| M4-01 | M3-03 + M3-01 | PLANNED | 当前唯一下一任务：评分与报告；不得把单次 live Observation 直接冒充评分或产品效果 |
 | M4-02 | M4-01 | PLANNED | 事实约束改写和简历入口 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
@@ -62,19 +62,17 @@
 | O01 | 确认校内截止和系统上传字段 | 未提供 | 不能承诺报名资格/必交物 |
 | O02 | 确认真实团队与指导教师 | 未提供 | 正式报名门槛 |
 | O03 | 确认国产 OS 软件组适配口径 | 未提供 | 提交前合规与环境验收 |
-| O04 | 配置实际文本模型与开销上限 | 历史网关探针 `deepseek-v4-flash` 可用；当前私密文件没有六个业务模型变量，价格/上限仍未提供 | M3-01 代码与 fixture 验证已完成，但业务模型 live 继续 NOT_RUN；不得把历史探针或 fixture 冒充业务调用 |
+| O04 | 配置实际文本模型与开销上限 | **部分完成**：负责人提供 `deepseek-flash` 私密配置并授权本轮受控测试；两次实际 HTTP 调用，成功样本 usage 1156/2544/3700，价格/持续调用上限仍未提供 | M3-01 live 已完成；后续批量评测或 M4 付费 live 前仍须明确费用上限，未知 cost 保持 null |
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
 
 ## 4. 当前唯一首要任务
 
-**完成 M3-01 业务文本模型 live 验证；当前受负责人待办 O04 阻塞。**
+**M4-01 评分与报告。**
 
-M3-03 已完成本地 fixture 纵切面并记为 `VERIFIED`：真实 FastAPI/SQLite、Operation/SSE 和 openJiuwen Workflow 均在链路内，仅外部 Answer Analyzer 使用显式 `ScriptedAnalyzer`。UI 没有模型/provider/runtime endpoint，因此只展示 `fixture` 运行模式，不伪造模型名。
+M3-01 业务文本模型 live 门禁已解除：生产 `OpenAICompatibleAnswerAnalyzer`、approved Seed 0.2.1 与真实 openJiuwen handle-answer Workflow 在 synthetic 回答上通过，服务端 Observation 校验后由确定性 Policy 输出 `NEXT`。这是一条单样本结构与边界证据，不是效果、p95 或成本评测。
 
-继续该任务需要负责人在本地私密文件中配置 `MODEL_PROVIDER`、`MODEL_NAME`、`API_BASE`、`API_KEY`、`MODEL_TIMEOUT`、`MODEL_MAX_RETRIES` 和明确费用上限。密钥不得进入聊天、Git、日志或浏览器环境。
-
-O04 未解除前不启动 M4，不把 fixture 的动作、延迟或调用次数写成模型效果。当前前端没有 report endpoint，也没有假分数、假优化答案或 Coming Soon 控件。
+M3-03 三页前端保持 `VERIFIED / FROZEN`。M4-01 必须先同步评分/报告 API 契约，再实现后端评分与报告；不得在冻结三页里先画假分数或用本次 Observation 直接冒充报告。后续付费 live 批量调用前，O04 的持续费用上限仍需负责人明确。
 
 M3-03 回滚点：公开 `main` 基线 commit `f2f3af2`。只按 `docs/handoffs/2026-09-19-m3-03.md` 文件清单恢复或删除，不使用 reset/stash，不覆盖后续用户修改。
 
@@ -811,3 +809,15 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 实际 Chromium + Vite intercepted fixture response 检查 1366×768、1440×900、390×844：三档均无横向溢出，DOM 和视觉顺序均为岗位摘要→Coverage/Plan→开始动作→技术详情；CTA 允许在 Coverage/Plan 后通过纵向滚动到达。另在实际 JD 输入页确认 `maxlength=8000/200`、`最大 8000 字符` 和实时计数。证据位于 ignored 的 `runtime/evidence/m3-03-product-polish/`，不冒充 FastAPI/openJiuwen/model live。
 - `/start`、`/interviews/:id`、Stepper、颜色、阴影、圆角、移动布局和业务状态机均未修改；FastAPI、OpenAPI、`api.md`、数据库、Workflow、Policy、Operation/SSE 与 retry 为 0 变化。当前仍是真实 FastAPI/SQLite/openJiuwen Workflow/Operation/SSE + fixture Answer Analyzer；业务模型 live、token、cost、效果与延迟仍 `NOT_RUN` / null。
 - M3-03 从本节起正式 `FROZEN`，不再继续修改前三页视觉，也不启动 Report UI、评分、雷达图、improved answer 或 Resume Draft。唯一下一任务：负责人提供 O04 私密业务模型配置和费用上限后执行 M3-01 业务文本模型 live 验证；完成前不启动 M4。
+
+## 37. 2026-09-19T18:52:00-07:00—2026-09-19T19:00:00-07:00｜M3-01 业务文本模型 live（VERIFIED）
+
+- 开工 HEAD：公开 `main` 的 `1077ba3d8429ed96091c39fd612a1f9245a3137e`，工作区干净。负责人提供 `deepseek-flash`、`https://api.deepseek.com` 与私密 API Key，并明确要求开始受控测试；Key 只写入本地 0600、Git ignored 的 `.env.model.local`，不进入代码、文档、证据或命令参数。
+- 新增 `services/api/smoke/answer_model.py`。它复用生产 `OpenAICompatibleAnswerAnalyzer`、approved UART/DMA Seed 0.2.1、Observation Schema 和真实 openJiuwen Workflow；输入为 synthetic 问答，Knowledge 检索本轮不重复调用。证据使用独占创建、0600、密钥/绝对路径拒绝检查，且不保存模型原文。
+- 第一轮 1 次真实 HTTP 调用在 8.729782 秒返回，但模型把中文解释写进枚举字段 `criteria[0].finding`。服务端按 Schema 明确拒绝，状态 failed，没有修复字段、放宽断言或假装成功；ignored 证据为 `runtime/evidence/m3-01-live/deepseek-flash-20260919T1855.json`。该失败响应的 usage 未穿过 Workflow 失败边界，记为 NOT_MEASURED。
+- 根因是 `OBSERVATION_SYSTEM_PROMPT` 只列字段名，没有说明 relevance、knowledge_status、kind、finding、level 的精确枚举和 quote/reference 语义。现补齐结构化输出约束；同时发现 openJiuwen 会把组件异常写入 ERROR 日志，因此 SemanticValidation 对外只抛固定 `analyzer output failed contract validation`，避免不可信模型字段或回答派生文本进入 SDK 日志。领域纯函数仍保留详细校验错误。
+- 第二轮 1 次真实 HTTP 调用通过：10.650749 秒；模型 `deepseek-flash`；Observation 为 `relevant / adequate`，唯一 criterion 为 `supported / level=3` 且含一条原文引文与三条冻结 reviewed reference；程序 Policy 输出 `NEXT / ADEQUATE_EVIDENCE`。usage 为 input 1156、output 2544、total 3700；provider 未返回费用，cost 为 null / NOT_MEASURED。证据为 `runtime/evidence/m3-01-live/deepseek-flash-20260919T1858.json`，SHA-256 `239a9a03a51b40a4f9ce8ee4d7f48a20d69240f90ddd30499bca039e6011b78b`。
+- 生产装配检查在独立 ignored SQLite 路径构造 `create_default_app()`，readiness 为 `true`，Knowledge/model 均 `configured`，SeedBank 指纹 `1c6716b90449d375`。这证明私密双配置可装配，不额外产生 embedding 或模型请求。
+- 最终 Ruff format/check 覆盖 src/tests/smoke/migrations，**63 files / all checks passed**；全量 pytest **248 passed / 2 skipped / 0 failed / 55 warnings**；规范校验 **44/44**；doctor **18 PASS / 0 WARN / 0 FAIL**；`CHECKSUMS.sha256` **206/206 OK**；`git diff --check` 无输出。API、OpenAPI、数据库 Schema、迁移、前端、依赖、动作枚举和 Policy 决策规则均无变化。
+- 状态：M3-01 从 `IMPLEMENTED / live NOT_RUN` 升为 `VERIFIED`，不写 ACCEPTED。两次真实业务模型 HTTP 调用中一失败、一成功；只登记成功样本的 provider usage，不把一次成功扩张为模型效果、p95、429/超时恢复或成本结论。
+- 唯一下一任务：M4-01 评分与报告。先同步 `api.md`，再实现后端契约、持久化、评分/UNKNOWN 边界和报告；前三页视觉继续冻结，不先造 Report UI。

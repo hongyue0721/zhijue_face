@@ -140,16 +140,23 @@ class _AnalyzerComponent(WorkflowComponent):
 
 class _SemanticValidationComponent(WorkflowComponent):
     async def invoke(self, inputs, session, context):
-        raw = _parse_json_object(inputs["content"])
-        observation = validate_observation(
-            raw,
-            observation_id=inputs["observation_id"],
-            answer_id=inputs["answer_id"],
-            question_id=inputs["question_id"],
-            root_question_id=inputs["root_question_id"],
-            answer_text=inputs["answer_text"],
-            rubric_snapshot=inputs["rubric_snapshot"],
-        )
+        try:
+            raw = _parse_json_object(inputs["content"])
+            observation = validate_observation(
+                raw,
+                observation_id=inputs["observation_id"],
+                answer_id=inputs["answer_id"],
+                question_id=inputs["question_id"],
+                root_question_id=inputs["root_question_id"],
+                answer_text=inputs["answer_text"],
+                rubric_snapshot=inputs["rubric_snapshot"],
+            )
+        except (AnswerWorkflowError, ObservationValidationError):
+            # openJiuwen records component exceptions. Keep untrusted model text
+            # out of those logs while preserving a typed workflow failure.
+            raise AnswerWorkflowError(
+                "analyzer output failed contract validation"
+            ) from None
         if not isinstance(observation, dict):
             raise AnswerWorkflowError("observation validator returned a non-object")
         return {"observation": observation, "usage": inputs["usage"]}

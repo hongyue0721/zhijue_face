@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## Unreleased — 2026-09-19｜M3-01 业务文本模型 live VERIFIED
+
+- 新增 `smoke.answer_model`：只从显式 0600 私密文件读取模型配置，使用 synthetic 回答、approved UART/DMA Seed 0.2.1、生产 `OpenAICompatibleAnswerAnalyzer` 和真实 openJiuwen `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`，证据独占写入 ignored `runtime/`，不保存密钥或模型原文。
+- 第一轮 `deepseek-flash` 请求真实返回，但 Prompt 没有明确 `finding` 的枚举语义，模型把解释文本写入该字段，服务端按 Observation Schema 拒绝；没有放宽 Schema、修复输出或默认成功。Prompt 现明确所有枚举、criterion 复制规则、level/quote/reference 约束。
+- live 失败同时证明 SDK 会记录组件异常；为防无效模型字段携带回答派生文本进入 ERROR 日志，Workflow 边界改为固定 `analyzer output failed contract validation`，详细领域校验仍保留在纯函数单测。新增真实 Workflow 日志脱敏回归。
+- 第二轮 1 次 HTTP 调用通过：10.650749 秒，Observation `relevant / adequate / supported / level=3`，程序 Policy 输出 `NEXT / ADEQUATE_EVIDENCE`；usage 为 input 1156、output 2544、total 3700，费用未知保持 null。首轮失败调用的 usage 未穿过失败边界，明确记为 NOT_MEASURED。
+- 全量后端 248 passed / 2 skipped / 55 warnings，Ruff 全绿，规范 44/44，生产 live 装配同时识别 Knowledge/model 为 configured。API、OpenAPI、数据库、迁移、前端、依赖和四动作 Policy 均无变化；M3-01 升为 VERIFIED，下一任务为 M4-01 评分与报告。
+
 ## Unreleased — 2026-09-19｜M3-03 最终收尾与冻结
 
 - 对齐后端 `CreateInterviewRequest` 真值：`jd_text` 最多 8,000 字符、`jd_source_name` 最多 200 字符。前端由同一组导出常量驱动两个 `maxlength`、提交前校验及 JD 正文实时字符计数，不截断超限内容后静默提交。
