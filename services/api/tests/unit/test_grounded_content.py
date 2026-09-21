@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from zhijue.application.answer_workflow import AnalysisResult
+from zhijue.application.answer_workflow import AnalysisResult, ModelRequestTimeoutError
 from zhijue.application.content_workflow import run_grounded_content_workflow
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
@@ -159,6 +159,22 @@ def test_claim_extraction_runs_through_real_openjiuwen_workflow():
 
     assert result["candidate"]["claims"][0]["exact_quote"] == "使用 STM32 DMA。"
     assert result["usage"]["total_tokens"] == 15
+
+
+def test_content_workflow_preserves_model_transport_timeout():
+    class TimedOutGenerator:
+        async def generate(self, *, task, payload):
+            del task, payload
+            raise ModelRequestTimeoutError("model request timed out")
+
+    with pytest.raises(ModelRequestTimeoutError):
+        asyncio.run(
+            run_grounded_content_workflow(
+                generator=TimedOutGenerator(),
+                task="extract_claims",
+                payload={"document_kind": "resume", "source_blocks": []},
+            )
+        )
 
 
 def test_coaching_accepts_only_exact_answer_quotes_and_snapshot_claims():

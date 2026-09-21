@@ -43,6 +43,12 @@ class ConfirmRequest(BaseModel):
     decisions: list[Decision] = Field(min_length=1)
 
 
+class ActivateProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
 class CreateProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -70,6 +76,12 @@ class ProfileDocumentView(BaseModel):
     warnings: list[object]
 
 
+class ProfileSnapshotActivationView(BaseModel):
+    snapshot_id: str
+    status: Literal["pending", "indexing", "ready", "failed"]
+    operation_id: str | None
+
+
 class ProfileViewDto(BaseModel):
     """api.md §3 ProfileView：服务端完整快照，不含服务器绝对路径。"""
 
@@ -82,6 +94,8 @@ class ProfileViewDto(BaseModel):
     proposed_claims: list[ProfileClaim]
     confirmed_claims: list[ProfileClaim]
     latest_snapshot_id: str | None
+    active_operation_id: str | None
+    snapshot_activation: ProfileSnapshotActivationView | None
 
 
 class OperationAccepted(BaseModel):

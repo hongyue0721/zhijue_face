@@ -380,11 +380,14 @@ def test_failed_analysis_preserves_answer_and_retry_reuses_it(tmp_path):
         assert failed["status"] == "failed"
         assert failed["error"]["code"] == "UPSTREAM_FAILED"
         view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
-        assert view["current_question"]["accepted_answer"] == {
-            "id": view["current_question"]["accepted_answer"]["id"],
+        accepted_answer = view["current_question"]["accepted_answer"]
+        assert accepted_answer == {
+            "id": accepted_answer["id"],
             "client_turn_id": "turn-retry-0001",
             "raw_text": "这份原始回答必须在失败后保留。",
             "evaluation_status": "failed",
+            # 失败链尾即首次受理操作（尚无 retry）：跨刷新恢复键（api.md §6）。
+            "retry_operation_id": original["operation_id"],
         }
 
         retried = client.post(

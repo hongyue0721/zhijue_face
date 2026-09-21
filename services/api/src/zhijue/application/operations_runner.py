@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from zhijue.adapters.db.models import Operation, utc_now_rfc3339
 from zhijue.adapters.db.operations import OperationRepository
 from zhijue.api.errors import PUBLIC_MESSAGES
+from zhijue.domain.errors import DocumentRejected, DomainError
 from zhijue.domain.operations import OperationStatus
 
 # 契约错误码的唯一来源是 api.md §2 的映射表（api/errors.py 已承载）。
@@ -127,7 +128,13 @@ class OperationRunner:
 
     def _mark_failed(self, job: OperationJob, exc: Exception) -> None:
         code = _error_code(exc)
-        message = PUBLIC_MESSAGES.get(code, "操作失败。")
+        # 领域异常的 message 是代码内受控、可行动文案（模型内容在应用端口已被
+        # 替换为固定错误）；有则优先于错误码的通用文案，让页面能显示真实原因。
+        message = (
+            exc.message
+            if isinstance(exc, DomainError) and exc.message
+            else PUBLIC_MESSAGES.get(code, "操作失败。")
+        )
         declared_retryable = getattr(exc, "retryable", None)
         retryable = (
             bool(declared_retryable)
@@ -141,6 +148,13 @@ class OperationRunner:
                 "INTERNAL_ERROR",
             }
         )
+        if job.kind == "document.import":
+            # Upload bytes live only in the accepted request's memory. Retrying
+            # this operation would have no original file to replay.
+            retryable = False
+            if isinstance(exc, DocumentRejected):
+                code = exc.code
+            message = f"{message} 请重新选择并上传文件。"
         self._repo.append_event(
             job.operation_id,
             "operation.failed",

@@ -26,6 +26,9 @@ class ExtractionLimits:
     max_pages: int = 5
     max_chars: int = 30_000
     max_documents: int = 5
+    # P-EXTRACT 单次模型调用的源文字预算：长文档按连续段分块多次抽取，
+    # 控制每次生成时长，避免整份文档一次性生成突破传输总超时。
+    max_chars_per_extract_call: int = 1_600
 
 
 def decide_status(pages: list[PageText]) -> tuple[str, list[str]]:

@@ -304,6 +304,27 @@ class OpenJiuwenKnowledgeGateway:
             )
         return hits[:top_k]
 
+    async def drop_profile(self, *, profile_id: str, source_ids: list[str]) -> int:
+        """删除该档案全部已激活来源（SDK delete_documents，M0-03 已验证生命周期）。
+
+        失败必须抛错让 operation 落 failed 走显式重试，不得当作已清理；
+        从未建过 KB 且无来源时是 no-op。重复删除同一 source_id 幂等。
+        """
+        base = self._bases.pop(profile_id, None)
+        if not source_ids:
+            if base is not None:
+                await base.close()
+            return 0
+        kb = base if base is not None else self._kb(profile_id)
+        try:
+            success = await kb.delete_documents(list(source_ids))
+            if not success:
+                raise RuntimeError("openJiuwen delete_documents failed")
+            kb.index_manager.client.flush(f"kb_zhijue_{profile_id}_chunks")
+        finally:
+            await kb.close()
+        return len(source_ids)
+
     async def _retrieve(
         self, kb: SimpleKnowledgeBase, query: str, *, top_k: int
     ) -> list[Any]:

@@ -7,10 +7,12 @@ model boundary.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import math
 import stat
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -22,9 +24,26 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from zhijue.application.answer_workflow import AnalysisResult
+from zhijue.application.answer_workflow import (
+    AnalysisResult,
+    ModelRequestError,
+    ModelRequestTimeoutError,
+)
 
 _MAX_TOTAL_ATTEMPTS = 3
+
+
+def _coerce_seconds(value: Any, message: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(message)  # noqa: TRY004 - Pydantic wraps ValueError.
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(numeric) or numeric <= 0:
+        raise ValueError(message)
+    return numeric
+
 
 OBSERVATION_SYSTEM_PROMPT = """You are an answer-observation component.
 Return exactly one JSON object and no surrounding prose. Use only these top-level fields: schema_version, id, answer_id, question_id, root_question_id, relevance, knowledge_status, criteria, clarification_needed, and validation_flags.
@@ -45,10 +64,6 @@ class ModelConfigurationError(ValueError):
     """The explicitly selected model configuration is unsafe or incomplete."""
 
 
-class ModelRequestError(RuntimeError):
-    """The remote model request did not produce a usable response envelope."""
-
-
 class ModelSettings(BaseSettings):
     """Settings loaded only from constructor values or an explicit dotenv file."""
 
@@ -60,6 +75,10 @@ class ModelSettings(BaseSettings):
     api_key: SecretStr
     model_timeout: float = Field(gt=0)
     model_max_retries: int = Field(ge=0, le=_MAX_TOTAL_ATTEMPTS - 1)
+    model_reasoning_effort: Literal["none", "low", "high", "max"] = "low"
+    # 流式块间静默预算：连续这么久没有任何 SSE 数据即判定死流。
+    # 生效值取 min(stall, model_timeout)，MODEL_TIMEOUT 始终是单请求总上限。
+    model_stream_stall_seconds: float = Field(default=20.0, gt=0)
 
     @classmethod
     def settings_customise_sources(
@@ -116,17 +135,14 @@ class ModelSettings(BaseSettings):
     @field_validator("model_timeout", mode="before")
     @classmethod
     def validate_timeout(cls, value: Any) -> Any:
-        if isinstance(value, bool):
-            raise ValueError(  # noqa: TRY004 - Pydantic wraps ValueError as ValidationError.
-                "MODEL_TIMEOUT must be a finite positive number"
-            )
-        try:
-            numeric = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("MODEL_TIMEOUT must be a finite positive number") from exc
-        if not math.isfinite(numeric) or numeric <= 0:
-            raise ValueError("MODEL_TIMEOUT must be a finite positive number")
-        return numeric
+        return _coerce_seconds(value, "MODEL_TIMEOUT must be a finite positive number")
+
+    @field_validator("model_stream_stall_seconds", mode="before")
+    @classmethod
+    def validate_stall_timeout(cls, value: Any) -> Any:
+        return _coerce_seconds(
+            value, "MODEL_STREAM_STALL_SECONDS must be a finite positive number"
+        )
 
     @field_validator("model_max_retries", mode="before")
     @classmethod
@@ -148,6 +164,8 @@ class ModelSettings(BaseSettings):
             "api_origin": self.api_base,
             "api_route": "chat/completions",
             "timeout_seconds": self.model_timeout,
+            "stream_stall_seconds": self.model_stream_stall_seconds,
+            "reasoning_effort": self.model_reasoning_effort,
             "max_retries": self.model_max_retries,
             "max_total_attempts": self.total_attempts,
             "api_key_configured": bool(self.api_key.get_secret_value()),
@@ -173,6 +191,8 @@ def load_model_settings(env_file: Path) -> ModelSettings:
         api_key=values.get("API_KEY"),
         model_timeout=values.get("MODEL_TIMEOUT"),
         model_max_retries=values.get("MODEL_MAX_RETRIES"),
+        model_reasoning_effort=values.get("MODEL_REASONING_EFFORT", "low"),
+        model_stream_stall_seconds=values.get("MODEL_STREAM_STALL_SECONDS", 20),
     )
 
 
@@ -239,8 +259,6 @@ class OpenAICompatibleAnswerAnalyzer:
         rubric_snapshot: dict[str, Any],
         reference_material: Any,
     ) -> dict[str, Any]:
-        import json
-
         data = {
             "observation_id": observation_id,
             "data_classification": "untrusted_answer_and_reference_data",
@@ -265,6 +283,7 @@ class OpenAICompatibleAnswerAnalyzer:
         return {
             "model": self._settings.model_name,
             "temperature": 0,
+            "reasoning_effort": self._settings.model_reasoning_effort,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": OBSERVATION_SYSTEM_PROMPT},
@@ -275,40 +294,99 @@ class OpenAICompatibleAnswerAnalyzer:
     async def _post_once(
         self, client: httpx.AsyncClient, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        """Issue one billable request.
+        """Issue one billable request as a streamed completion.
 
-        Retries are explicit parent-linked operations so transport, validation,
-        and user-triggered retries share ModelSettings.total_attempts.
+        Streaming keeps the connection observably active while the provider
+        thinks and writes JSON: MODEL_TIMEOUT stays the total per-request
+        budget, while the stall budget catches a dead stream early. Retries
+        remain explicit parent-linked operations, never hidden re-sends.
         """
 
         url = f"{self._settings.api_base}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._settings.api_key.get_secret_value()}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "text/event-stream",
         }
+        request_payload = {
+            **payload,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        timeout = httpx.Timeout(
+            connect=min(10.0, self._settings.model_timeout),
+            read=min(
+                self._settings.model_stream_stall_seconds,
+                self._settings.model_timeout,
+            ),
+            write=self._settings.model_timeout,
+            pool=self._settings.model_timeout,
+        )
         try:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=self._settings.model_timeout,
-            )
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            async with asyncio.timeout(self._settings.model_timeout):
+                async with client.stream(
+                    "POST",
+                    url,
+                    json=request_payload,
+                    headers=headers,
+                    timeout=timeout,
+                ) as response:
+                    if not 200 <= response.status_code < 300:
+                        await response.aread()
+                        raise ModelRequestError(
+                            f"model request failed with HTTP {response.status_code}"
+                        )
+                    return await self._collect_stream(response)
+        except TimeoutError as exc:
+            raise ModelRequestTimeoutError("model request timed out") from exc
+        except httpx.TimeoutException as exc:
+            raise ModelRequestTimeoutError("model request timed out") from exc
+        except httpx.NetworkError as exc:
             raise ModelRequestError("model request failed") from exc
-        if not 200 <= response.status_code < 300:
-            raise ModelRequestError(
-                f"model request failed with HTTP {response.status_code}"
-            )
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise ModelRequestError(
-                "model endpoint returned a non-JSON response"
-            ) from exc
-        if not isinstance(data, dict):
-            raise ModelRequestError("model endpoint returned a non-object response")
-        return data
+
+    @staticmethod
+    async def _collect_stream(response: httpx.Response) -> dict[str, Any]:
+        """Assemble SSE content deltas into the existing one-choice shape.
+
+        ``reasoning_content`` deltas are deliberately dropped: chain-of-thought
+        text is never business content and must not leak into candidates.
+        """
+
+        content_parts: list[str] = []
+        usage: dict[str, Any] = {}
+        done = False
+        async for line in response.aiter_lines():
+            if not line.startswith("data:"):
+                continue
+            body = line[5:].strip()
+            if body == "[DONE]":
+                done = True
+                break
+            try:
+                chunk = json.loads(body)
+            except ValueError as exc:
+                raise ModelRequestError(
+                    "model stream returned a malformed SSE chunk"
+                ) from exc
+            if not isinstance(chunk, dict):
+                raise ModelRequestError("model stream chunk must be an object")
+            chunk_usage = chunk.get("usage")
+            if isinstance(chunk_usage, dict):
+                usage = chunk_usage
+            choices = chunk.get("choices")
+            if not isinstance(choices, list) or not choices:
+                continue
+            first = choices[0]
+            delta = first.get("delta") if isinstance(first, dict) else None
+            content = delta.get("content") if isinstance(delta, dict) else None
+            if isinstance(content, str) and content:
+                content_parts.append(content)
+        if not done:
+            raise ModelRequestError("model stream ended without [DONE]")
+        content = "".join(content_parts)
+        if not content.strip():
+            raise ModelRequestError("model response choice has no JSON content")
+        return {"choices": [{"message": {"content": content}}], "usage": usage}
 
     @staticmethod
     def _parse_response(data: dict[str, Any]) -> AnalysisResult:
@@ -396,8 +474,6 @@ class OpenAICompatibleContentGenerator:
         return self._settings.total_attempts
 
     async def generate(self, *, task: str, payload: dict[str, Any]) -> AnalysisResult:
-        import json
-
         prompt = {
             "extract_claims": CLAIM_EXTRACTION_SYSTEM_PROMPT,
             "coach_answers": COACHING_SYSTEM_PROMPT,
@@ -423,6 +499,7 @@ class OpenAICompatibleContentGenerator:
         request_payload = {
             "model": self._settings.model_name,
             "temperature": 0,
+            "reasoning_effort": self._settings.model_reasoning_effort,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": prompt},

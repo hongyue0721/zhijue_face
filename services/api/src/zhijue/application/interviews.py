@@ -30,10 +30,12 @@ from zhijue.adapters.db.operations import (
     OperationCommand,
     OperationRepository,
 )
-from zhijue.adapters.model import ModelRequestError
+from zhijue.adapters.db.profiles import ProfileRepository
 from zhijue.application.answer_workflow import (
     AnswerAnalyzer,
     AnswerWorkflowError,
+    ModelRequestError,
+    ModelRequestTimeoutError,
     run_handle_answer_workflow,
 )
 from zhijue.application.reporting import ReportingService
@@ -155,6 +157,50 @@ class InterviewService:
         self._model_attempt_limit = model_attempt_limit
         self._acceptance_lock = Lock()
 
+    def _require_plannable_snapshot(
+        self, session: Session, profile_id: str, expected_revision: int
+    ) -> ProfileSnapshot:
+        profile = session.get(Profile, profile_id)
+        if profile is None:
+            raise ResourceNotFoundError("资料不存在。")
+        if profile.status != "active":
+            raise InvalidStateError("资料不在可用状态。")
+        if profile.revision != expected_revision:
+            raise RevisionConflictError(
+                "资料版本已更新。", current_revision=profile.revision
+            )
+        snapshot = session.scalar(
+            select(ProfileSnapshot)
+            .where(ProfileSnapshot.profile_id == profile_id)
+            .order_by(ProfileSnapshot.revision.desc())
+            .limit(1)
+        )
+        if snapshot is None:
+            raise InterviewPreparationFailed("PROFILE_UNCONFIRMED: 需先确认资料")
+        return ProfileRepository.require_ready_snapshot(session, snapshot.id)
+
+    def accept_plan(
+        self,
+        *,
+        profile_id: str,
+        expected_revision: int,
+        command: OperationCommand,
+        capacity_available: bool,
+    ) -> AcceptedInterviewOperation:
+        with (
+            self._acceptance_lock,
+            Session(self._engine, expire_on_commit=False) as session,
+            session.begin(),
+        ):
+            existing = self._existing_operation(session, command)
+            if existing is not None:
+                return AcceptedInterviewOperation(existing, created=False)
+            self._require_plannable_snapshot(session, profile_id, expected_revision)
+            if not capacity_available:
+                raise CapacityLimitedError()
+            operation = self._operations.accept_in_session(session, command)
+            return AcceptedInterviewOperation(operation, created=True)
+
     def create_plan(
         self,
         *,
@@ -168,27 +214,9 @@ class InterviewService:
         run_mode: str,
     ) -> dict[str, Any]:
         with Session(self._engine, expire_on_commit=False) as session:
-            profile = session.get(Profile, profile_id)
-            if profile is None:
-                raise InterviewPreparationFailed(
-                    f"RESOURCE_NOT_FOUND: profile {profile_id}"
-                )
-            if profile.status != "active":
-                raise InterviewPreparationFailed(
-                    f"PROFILE_NOT_ACTIVE: {profile.status}"
-                )
-            if expected_revision not in (profile.revision,):
-                raise InterviewPreparationFailed(
-                    f"REVISION_CONFLICT: 服务端 revision={profile.revision}, 请求={expected_revision}"
-                )
-            snapshot = session.scalar(
-                select(ProfileSnapshot)
-                .where(ProfileSnapshot.profile_id == profile_id)
-                .order_by(ProfileSnapshot.revision.desc())
-                .limit(1)
+            snapshot = self._require_plannable_snapshot(
+                session, profile_id, expected_revision
             )
-            if snapshot is None:
-                raise InterviewPreparationFailed("PROFILE_UNCONFIRMED: 需先确认资料")
 
         try:
             jd = self._planner.import_jd(
@@ -263,6 +291,7 @@ class InterviewService:
         root_plan["profile_snapshot_id"] = snapshot.id
 
         with Session(self._engine) as session, session.begin():
+            self._require_plannable_snapshot(session, profile_id, expected_revision)
             interview = Interview(
                 id=interview_id,
                 profile_snapshot_id=snapshot.id,
@@ -353,6 +382,9 @@ class InterviewService:
                 )
             if interview.status != "ready":
                 raise InvalidStateError("只有 ready 面试可以开始。")
+            ProfileRepository.require_ready_snapshot(
+                session, interview.profile_snapshot_id
+            )
             if interview.active_operation_id is not None:
                 raise InvalidStateError(
                     "面试已有进行中的操作。",
@@ -376,6 +408,9 @@ class InterviewService:
                 or interview.active_operation_id != operation_id
             ):
                 raise InvalidStateError("面试开始操作已过期或状态不一致。")
+            ProfileRepository.require_ready_snapshot(
+                session, interview.profile_snapshot_id
+            )
 
             plan = dict(interview.root_plan or {})
             slots = tuple(
@@ -566,6 +601,30 @@ class InterviewService:
         return None
 
     @staticmethod
+    def _failed_retry_tail(session: Session, answer: Answer) -> str | None:
+        """沿 parent 链找到该回答失败链的链尾 operation。
+
+        retry clone 通过 parent_operation_id 指向上一节点；链尾的 attempts
+        才是累计预算真值，只有从链尾重试才不会被 `retry budget exhausted`
+        误拒或分叉绕过预算。created_at 为 RFC3339，字符串序即时间序。
+        """
+        current = session.get(Operation, answer.accepted_operation_id)
+        if current is None:
+            return None
+        visited: set[str] = {current.id}
+        while True:
+            child = session.scalar(
+                select(Operation)
+                .where(Operation.parent_operation_id == current.id)
+                .order_by(Operation.created_at.desc(), Operation.id.desc())
+                .limit(1)
+            )
+            if child is None or child.id in visited:
+                return current.id
+            visited.add(child.id)
+            current = child
+
+    @staticmethod
     def _existing_answer_result(
         session: Session,
         *,
@@ -703,6 +762,10 @@ class InterviewService:
         except TimeoutError as exc:
             raise self._upstream_error(
                 operation_id, "回答分析超时。", timeout=True
+            ) from exc
+        except ModelRequestTimeoutError as exc:
+            raise self._upstream_error(
+                operation_id, "回答分析模型请求超时。", timeout=True
             ) from exc
         except (
             AnswerWorkflowError,
@@ -1327,7 +1390,7 @@ class InterviewService:
             if snapshot is None:
                 raise InvalidStateError("面试资料快照不存在。")
             plan = dict(interview.root_plan or {})
-            jd = dict(plan.get("jd_snapshot") or {})
+            jd = dict(interview.jd_snapshot or {})
             current_question = None
             if (
                 interview.current_question_id is not None
@@ -1352,6 +1415,14 @@ class InterviewService:
                                 "client_turn_id": answer.client_turn_id,
                                 "raw_text": answer.raw_text,
                                 "evaluation_status": answer.evaluation_status,
+                                # failed 时暴露失败链尾 operation 作为恢复键
+                                # （api.md §6）：链尾 attempts 是累计预算真值，
+                                # 从中间节点重试会分叉绕过预算。
+                                "retry_operation_id": (
+                                    self._failed_retry_tail(session, answer)
+                                    if answer.evaluation_status == "failed"
+                                    else None
+                                ),
                             }
                             if answer is not None
                             else None
@@ -1396,6 +1467,7 @@ class InterviewService:
                 "profile_id": snapshot.profile_id,
                 "profile_snapshot_id": interview.profile_snapshot_id,
                 "jd_requirements": plan.get("requirements", []),
+                "jd_text": jd.get("raw_text"),
                 "jd_source": {
                     key: jd.get(key)
                     for key in (

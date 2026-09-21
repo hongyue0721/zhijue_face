@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import platform
+from importlib.metadata import version
 from typing import Any
 
 from fastapi import (
@@ -28,6 +30,7 @@ from zhijue.adapters.db.operations import (
 from zhijue.api.errors import ApiError, RequestContext, envelope
 from zhijue.api.schemas import (
     AcceptResumeDraftRequest,
+    ActivateProfileRequest,
     ConfirmRequest,
     ControlInterviewRequest,
     CreateInterviewRequest,
@@ -120,6 +123,8 @@ def _profile_view(
         proposed_claims=_claims(service, profile_id, "proposed"),
         confirmed_claims=_claims(service, profile_id, "confirmed"),
         latest_snapshot_id=profile.latest_snapshot_id,
+        active_operation_id=profile.active_operation_id,
+        snapshot_activation=profile.snapshot_activation,
     )
 
 
@@ -171,8 +176,12 @@ def confirm(
     services = request.app.state.services
     decisions = [decision.model_dump() for decision in payload.decisions]
     scope = canon_scope(WORKSPACE_ID, "POST", f"/api/v1/profiles/{profile_id}/confirm")
-    operation = services.operations.accept(
-        OperationCommand(
+    accepted = services.profiles.accept_confirmation(
+        profile_id,
+        expected_revision=payload.expected_revision,
+        decisions=decisions,
+        capacity_available=services.runner.capacity_available,
+        command=OperationCommand(
             kind="profile.confirm",
             resource_type="profile",
             resource_id=profile_id,
@@ -183,33 +192,109 @@ def confirm(
                 "expected_revision": payload.expected_revision,
                 "decisions": decisions,
             },
-        )
+        ),
     )
-    body = _profile_view(request, services.profiles, services.documents, profile_id)
-    accepted = OperationAccepted(
-        operation_id=operation.id,
-        resource_type=operation.resource_type,
-        resource_id=operation.resource_id,
-        status=operation.status,
-        events_url=f"/api/v1/operations/{operation.id}/events",
+    _schedule_profile_activation(services, background, accepted)
+    return envelope(
+        _accepted(accepted.operation).model_dump(), _ctx(request).request_id
     )
-    # 重放同一幂等请求时 status 是原操作的**真实**状态，不伪装成新 queued（api.md §3）。
-    if operation.status != "queued":
-        return envelope(accepted.model_dump(), _ctx(request).request_id)
 
-    if not services.runner.capacity_available:
-        raise ApiError(
-            status_code=429,
-            code="CAPACITY_LIMITED",
-            message="操作队列已满，请稍后重试。",
-            retryable=True,
-        )
 
-    def _run() -> Any:
-        return services.profiles.confirm_async(
-            profile_id=profile_id,
-            expected_revision=payload.expected_revision,
-            decisions=decisions,
+@router.post("/profiles/{profile_id}/activate", status_code=202)
+def activate_profile(
+    profile_id: str,
+    payload: ActivateProfileRequest,
+    request: Request,
+    background: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    key = _require_idempotency_key(idempotency_key)
+    services = request.app.state.services
+    accepted = services.profiles.accept_activation(
+        profile_id,
+        expected_revision=payload.expected_revision,
+        capacity_available=services.runner.capacity_available,
+        command=OperationCommand(
+            kind="profile.activate",
+            resource_type="profile",
+            resource_id=profile_id,
+            scope=canon_scope(
+                WORKSPACE_ID, "POST", f"/api/v1/profiles/{profile_id}/activate"
+            ),
+            idempotency_key=key,
+            input={"profile_id": profile_id, **payload.model_dump()},
+        ),
+    )
+    _schedule_profile_activation(services, background, accepted)
+    return envelope(
+        _accepted(accepted.operation).model_dump(), _ctx(request).request_id
+    )
+
+
+@router.delete("/profiles/{profile_id}", status_code=202)
+def delete_profile(
+    profile_id: str,
+    request: Request,
+    background: BackgroundTasks,
+    expected_revision: int = Query(..., alias="expected_revision", ge=0),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """api.md §4：先 tombstone，再异步清理档案/关联资料/索引/会话。
+
+    删除不可恢复；profile.delete 回执 Operation 是唯一留存痕迹。
+    """
+    key = _require_idempotency_key(idempotency_key)
+    services = request.app.state.services
+    accepted = services.profiles.accept_deletion(
+        profile_id,
+        expected_revision=expected_revision,
+        capacity_available=services.runner.capacity_available,
+        command=OperationCommand(
+            kind="profile.delete",
+            resource_type="profile",
+            resource_id=profile_id,
+            scope=canon_scope(WORKSPACE_ID, "DELETE", f"/api/v1/profiles/{profile_id}"),
+            idempotency_key=key,
+            input={"profile_id": profile_id, "expected_revision": expected_revision},
+        ),
+    )
+    _schedule_profile_deletion(services, background, accepted)
+    return envelope(
+        _accepted(accepted.operation).model_dump(), _ctx(request).request_id
+    )
+
+
+def _schedule_profile_activation(
+    services: Any, background: BackgroundTasks, accepted: Any
+) -> None:
+    if not accepted.created:
+        return
+    operation = accepted.operation
+
+    async def _run() -> dict[str, Any]:
+        return await services.profiles.process_activation(operation.id)
+
+    background.add_task(
+        services.runner.submit,
+        OperationJob(
+            operation_id=operation.id,
+            kind=operation.kind,
+            resource_id=operation.resource_id,
+            run=_run,
+        ),
+    )
+
+
+def _schedule_profile_deletion(
+    services: Any, background: BackgroundTasks, accepted: Any
+) -> None:
+    if not accepted.created:
+        return
+    operation = accepted.operation
+
+    async def _run() -> dict[str, Any]:
+        return await services.profiles.process_deletion(
+            profile_id=operation.resource_id
         )
 
     background.add_task(
@@ -217,13 +302,10 @@ def confirm(
         OperationJob(
             operation_id=operation.id,
             kind=operation.kind,
-            resource_id=profile_id,
+            resource_id=operation.resource_id,
             run=_run,
         ),
     )
-    body_payload = accepted.model_dump()
-    body_payload["profile_revision_after"] = body.revision
-    return envelope(body_payload, _ctx(request).request_id)
 
 
 @router.get("/operations/{operation_id}")
@@ -285,6 +367,42 @@ def health_ready(
     )
 
 
+@router.get("/runtime/info")
+def runtime_info(request: Request) -> dict[str, Any]:
+    """api.md §7：运行事实 = 模式、锁定版本、特性开关、依赖健康摘要。
+
+    不含密钥、内部路径或档案数据。feature_flags 是事实而非可配置项：
+    OCR/记忆/外网等能力在本 Demo 没有实现代码，取值与 demo.yaml 规范默认一致。
+    """
+    services = request.app.state.services
+    readiness = services.readiness_details()
+    return envelope(
+        {
+            "run_mode": readiness.get("run_mode"),
+            "data_mode": readiness.get("data_mode"),
+            "versions": {
+                "python": platform.python_version(),
+                "openjiuwen": version("openjiuwen"),
+                "pymilvus": version("pymilvus"),
+                "seed_bank_version": readiness.get("seed_bank_version"),
+            },
+            "feature_flags": {
+                "ocr_enabled": False,
+                "memory_enabled": False,
+                "external_web_enabled": False,
+                "observer_mode_default": False,
+                "remote_public_access_enabled": False,
+            },
+            "health_summary": {
+                "database": readiness.get("database"),
+                "knowledge": readiness.get("knowledge"),
+                "model": readiness.get("model"),
+            },
+        },
+        _ctx(request).request_id,
+    )
+
+
 def operation_repository_for(request: Request) -> OperationRepository:
     return request.app.state.services.operations
 
@@ -314,7 +432,7 @@ async def upload_document(
     scope = canon_scope(
         WORKSPACE_ID, "POST", f"/api/v1/profiles/{profile_id}/documents"
     )
-    operation = services.operations.accept(
+    operation, created = services.operations.accept_queued(
         OperationCommand(
             kind="document.import",
             resource_type="profile",
@@ -322,17 +440,11 @@ async def upload_document(
             scope=scope,
             idempotency_key=key,
             input=body,
-        )
+        ),
+        capacity_available=services.runner.capacity_available,
     )
-    if operation.status != "queued":
+    if not created:
         return envelope(_accepted(operation).model_dump(), _ctx(request).request_id)
-    if not services.runner.capacity_available:
-        raise ApiError(
-            status_code=429,
-            code="CAPACITY_LIMITED",
-            message="操作队列已满，请稍后重试。",
-            retryable=True,
-        )
 
     async def _run() -> dict[str, Any]:
         return await _import_and_activate(
@@ -490,13 +602,6 @@ def create_interview(
     """
     key = _require_idempotency_key(idempotency_key)
     services = request.app.state.services
-    profile = services.profiles.get_profile(payload.profile_id)
-    if profile.latest_snapshot_id is None:
-        raise ApiError(
-            status_code=409,
-            code="PROFILE_UNCONFIRMED",
-            message="需先确认资料才能开始面试。",
-        )
     if payload.role_preset != "embedded_junior":
         raise ApiError(
             status_code=422,
@@ -516,8 +621,11 @@ def create_interview(
     # 客户端可据此 GET /interviews/{id}（操作进行中为 404，完成后为 ready）。
     interview_id = new_id("interview")
     scope = canon_scope(WORKSPACE_ID, "POST", "/api/v1/interviews")
-    operation = services.operations.accept(
-        OperationCommand(
+    accepted = services.interviews.accept_plan(
+        profile_id=payload.profile_id,
+        expected_revision=payload.profile_revision,
+        capacity_available=services.runner.capacity_available,
+        command=OperationCommand(
             kind="interview.plan",
             resource_type="interview",
             resource_id=interview_id,
@@ -530,17 +638,11 @@ def create_interview(
                 "jd_source_name": source_name,
                 "jd_source_type": jd_source_type.value,
             },
-        )
+        ),
     )
-    if operation.status != "queued":
+    operation = accepted.operation
+    if not accepted.created:
         return envelope(_accepted(operation).model_dump(), _ctx(request).request_id)
-    if not services.runner.capacity_available:
-        raise ApiError(
-            status_code=429,
-            code="CAPACITY_LIMITED",
-            message="操作队列已满，请稍后重试。",
-            retryable=True,
-        )
 
     async def _run() -> dict[str, Any]:
         return await asyncio.to_thread(
@@ -916,6 +1018,25 @@ def retry_operation(
         "report.coach",
         "resume.compose",
     }
+    if original is not None and original.kind in {
+        "profile.confirm",
+        "profile.activate",
+        "profile.delete",
+    }:
+        accepted = services.profiles.accept_retry(
+            operation_id,
+            expected_revision=payload.expected_revision,
+            idempotency_key=key,
+            request_input=request_input,
+            capacity_available=services.runner.capacity_available,
+        )
+        if accepted.operation.kind == "profile.delete":
+            _schedule_profile_deletion(services, background, accepted)
+        else:
+            _schedule_profile_activation(services, background, accepted)
+        return envelope(
+            _accepted(accepted.operation).model_dump(), _ctx(request).request_id
+        )
     if content_operation:
         accepted = services.content.accept_retry(
             operation_id,

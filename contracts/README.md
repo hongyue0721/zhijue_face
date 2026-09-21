@@ -13,3 +13,5 @@ Decision 是程序产物；不能让模型按这个 Schema 自由决定整个面
 `examples/validation-map.json` 指明每个示例使用哪个 Schema。示例通过结构检查，不等于题目被技术审核或业务流程测试通过。
 
 运行静态检查：先在隔离环境安装 jsonschema、PyYAML，再执行 `python tools/validate_spec.py`。本工具仅操作文档目录，不联网、不安装业务依赖、不调用模型、不触碰用户仓库。
+
+`openapi.json` 为当前 FastAPI 导出快照，HTTP 语义以根 `api.md` 为准。桌面整改新增 activation endpoint/请求 DTO；Profile 激活信息、Interview 冻结 JD 原文及 Report 根题上下文同步到浏览器边界。GET 响应仍沿用当前字典式资源视图，不把 OpenAPI 请求 Schema 误称为完整响应语义证明；语义由对应回归验证。

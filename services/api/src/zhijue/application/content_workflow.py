@@ -20,7 +20,11 @@ from openjiuwen.core.workflow import (
     WorkflowOutput,
 )
 
-from zhijue.application.answer_workflow import AnalysisResult
+from zhijue.application.answer_workflow import (
+    AnalysisResult,
+    ModelRequestError,
+    ModelRequestTimeoutError,
+)
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
     validate_claim_extraction_candidate,
@@ -203,7 +207,15 @@ def _workflow_contract_error(exc: Exception) -> Exception:
         if current is None or id(current) in seen:
             continue
         seen.add(id(current))
-        if isinstance(current, (ContentWorkflowError, GroundedContentValidationError)):
+        if isinstance(
+            current,
+            (
+                ModelRequestTimeoutError,
+                ModelRequestError,
+                ContentWorkflowError,
+                GroundedContentValidationError,
+            ),
+        ):
             return current
         pending.extend((current.__cause__, current.__context__))
     return ContentWorkflowError("openJiuwen content workflow execution failed")

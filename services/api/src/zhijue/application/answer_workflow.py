@@ -63,6 +63,14 @@ class AnswerWorkflowError(RuntimeError):
     """The workflow or an analyzer result violated the application contract."""
 
 
+class ModelRequestError(RuntimeError):
+    """The remote model request did not produce a usable response envelope."""
+
+
+class ModelRequestTimeoutError(ModelRequestError):
+    """The remote model request exceeded its configured transport deadline."""
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisResult:
     """Untrusted model content plus provider-reported, nullable usage facts."""

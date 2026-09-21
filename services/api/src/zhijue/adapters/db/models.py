@@ -111,6 +111,21 @@ class ProfileSnapshot(Base):
     __table_args__ = (UniqueConstraint("profile_id", "revision"),)
 
 
+class ProfileSnapshotActivation(TimestampMixin, Base):
+    """Mutable Knowledge receipt/lifecycle, separate from immutable snapshot facts."""
+
+    __tablename__ = "profile_snapshot_activation"
+
+    snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("profile_snapshot.id"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("operation.id"), unique=True
+    )
+    receipt: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+
 class Interview(TimestampMixin, Base):
     __tablename__ = "interview"
 

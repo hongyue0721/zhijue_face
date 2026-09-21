@@ -43,13 +43,17 @@ M4-01 由 `ReportingService` 读取已持久化 Observation 和冻结 Rubric，�
 
 M4-02 的 `ContentGenerationService` 是生成内容唯一写入方。`report.coach` 与 `resume.compose` 先持久化 Operation，再通过真实 openJiuwen `Start → Generator → SemanticValidation → End`，最后校验 Schema、允许 ID、逐字回答引文、当前快照 Claim、数字/责任边界和占位符后原子提交。失败不修改原回答、评分、Claim 或资料快照；retry 复用同一资源和冻结输入。每个模型 Operation 只发一次 HTTP 请求，`MODEL_MAX_RETRIES + 1` 是 transport/Schema/语义失败共同消耗的 parent-linked 累计预算，硬上限三次。Report/Resume 页面已接 API，简历只有 accepted 后开放打印。
 
+桌面整改新增 `ProfileSnapshotActivation` 与迁移 `e62a9f8c10bd`。confirm 原子受理裁决/快照/Operation；后台激活失败保留事实，retry 复用同一代次且共享三次预算。计划/start 要求绑定快照非空且 ready；通用简历只要求非空确认快照。`/profiles/{id}/activate` 用于明确恢复缺乏可靠回执的历史快照。Report GET 补原题/主答/追问，Interview GET 补冻结 JD 原文，均不调用模型。
+
+升级已有数据库前先备份并明确设置 `ZHIJUE_DATABASE_URL`，再从本目录运行 `.venv/bin/alembic upgrade head`；不要依赖 `create_all()` 回填历史数据。只有同代完整 succeeded 回执会回填 ready，其他 pending 需显式激活。原始上传字节不持久化，document.import 失败或中断须重新上传，不走通用 retry。
+
 ## 未解决事项
 
 官方基座/补充规则核验仍有阻塞；当前 WorkflowAgent 继承官方 legacy ControllerAgent/BaseAgent，弃用警告未隐藏。Knowledge 全生命周期已在锁定兼容 commit 上 VERIFIED，但正式 openJiuwen 0.1.18 发布包仍未包含删除修复。M4-02 当前未完成的是真实模型五题浏览器全场、真实 429/timeout、跨代理 SSE 组合和负责人独立验收；功能与单样本 live 不外推为模型质量、稳定性或成本结论。完整进度以根目录 `process.md` 和最新 handoff 为准。
 
 ## 私密 live 配置边界
 
-从仓库根目录复制 `config/environment.env.example` 为权限不宽于 0600 的私密文件。真实 key 不进入命令参数、文档、日志、证据 JSON 或浏览器配置。Knowledge 使用 `EMBEDDING_*`；业务回答/内容模型适配读取 `MODEL_PROVIDER / MODEL_NAME / API_BASE / API_KEY / MODEL_TIMEOUT / MODEL_MAX_RETRIES`，只在显式设置 `ZHIJUE_MODEL_ENV_FILE` 时启用，不读取 ambient environment，也不默认与 embedding 共用 key。`MODEL_MAX_RETRIES` 取 0—2，只决定失败后还能创建多少次显式 parent-linked Operation，不在单个 Operation 内隐藏重发 HTTP 请求。
+从仓库根目录复制 `config/environment.env.example` 为权限不宽于 0600 的私密文件。真实 key 不进入命令参数、文档、日志、证据 JSON 或浏览器配置。Knowledge 使用 `EMBEDDING_*`；业务回答/内容模型适配读取 `MODEL_PROVIDER / MODEL_NAME / API_BASE / API_KEY / MODEL_TIMEOUT / MODEL_STREAM_STALL_SECONDS / MODEL_MAX_RETRIES / MODEL_REASONING_EFFORT`，只在显式设置 `ZHIJUE_MODEL_ENV_FILE` 时启用，不读取 ambient environment，也不默认与 embedding 共用 key。所有 `/chat/completions` 请求走 SSE 流式：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS`（默认 20）是块间静默预算，生效 read 超时取两者较小；`reasoning_content` 增量被明确丢弃，不进入任何业务内容。P-EXTRACT 对长文档按 `max_chars_per_extract_call`（默认 1600 字符）切成无损连续段分批调用，`extraction_metadata.model_calls` 记录次数，usage 仅在每次调用都报告时聚合。`MODEL_REASONING_EFFORT` 只接受 `none / low / high / max`，本 Demo 按负责人要求默认并显式使用 `low`；`reasoning_effort=low` 会开启低强度思考，而不是关闭思考。`MODEL_MAX_RETRIES` 取 0—2，只决定失败后还能创建多少次显式 parent-linked Operation，不在单个 Operation 内隐藏重发 HTTP 请求。
 
 当前删除 blocker 已通过固定兼容 commit 解除；该来源与官方 openJiuwen PR #1344 对应。仍不得修改 site-packages，也不要为重复证明反复消耗 embedding 额度。官方发布包含修复后，应切回正式发布并重跑 M0-02/M0-03。
 

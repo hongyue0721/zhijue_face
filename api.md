@@ -2,7 +2,7 @@
 
 **契约版本 1.0.0。** 根目录此文件为人类可读接口语义真源。后端由 FastAPI 导出 OpenAPI 到 `contracts/openapi.json`，前端类型由生成类型派生；不得另外手写一份独立含义的 OpenAPI。
 
-**实现状态（2026-09-19）**：M4-01 评分/报告后端已实现并测试；M4-02 回答优化、简历草稿与对应页面正在按本契约施工。已实现资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`，以及 Operation/SSE/health。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report。M4-02 新增路径只有完成实现与回归后才从“施工中”改为已实现。runtime/info、`DELETE /profiles/{id}` 仍为 **PLANNED**。
+**实现状态（2026-09-20）**：M4-01 评分/报告后端已实现并测试；M4-02 回答优化、简历草稿与对应页面已实现。已实现资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`、`POST /profiles/{id}/activate`、`DELETE /profiles/{id}`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、`POST /interviews/{id}/report/improvements`，简历链 `POST /profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}`、`POST /resume-drafts/{id}/accept`，以及 Operation/SSE/retry/health 与 `GET /runtime/info`。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report。`DELETE /profiles/{id}` 先 tombstone（status=deleting，拒绝其余写入）再由 `profile.delete` Operation 后台清理：先删 Knowledge 索引（SDK delete_documents），再单事务级联删除档案/材料/事实/快照/会话/草稿与关联 Operation 与事件，只保留删除回执；索引删除失败时数据库不动，档案保持 deleting，可从 ProfileView 的 active_operation_id 恢复显式重试。
 
 ## 1. 全局约定
 
@@ -50,11 +50,11 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 ## 3. 公共对象摘要
 
-`ProfileView`：id、revision、display_name、synthetic、status、documents、proposed_claims、confirmed_claims、latest_snapshot_id。
+`ProfileView`：id、revision、display_name、synthetic、status、documents、proposed_claims、confirmed_claims、latest_snapshot_id、active_operation_id、snapshot_activation。`active_operation_id` 是当前资料写操作（上传/确认/激活）的恢复键，无操作时为 null。`snapshot_activation` 无快照时为 null；否则为 `{snapshot_id,status,operation_id}`，status 仅 `pending/indexing/ready/failed`，operation_id 为该代次最近激活操作（可为 null）。资料事实确认和 Knowledge 就绪是两个状态；不得从 Document 的全局 index_status 推断一个快照代次已经激活。
 
 `DocumentView`：id、profile_id、kind、filename_display、sha256、page_count、extract_status、index_status、warnings；不含实际文件路径。
 
-`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
+`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`jd_text` 只读返回该会话冻结的岗位输入原文，供准备页刷新后核对与修改；仅历史记录确未保存原文时为 null，不从 requirements 拼造原文，不写浏览器持久存储。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
 
 `OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、attempts、result、error、last_event_seq、created_at、updated_at。
 
@@ -62,7 +62,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 所有 question 的 rubric/reference_answer 在无提示面试模式下不返回给候选人视图。观察者接口需要显式 observer_mode；P0 可使用同一接口按服务端模式裁剪字段，不以隐藏 CSS 保护答案。
 
-`QuestionView`：id、root_id、kind、seed_id（经历/证据回退题可为 null）、wording、basis、order_index、accepted_answer（可为 null；只含 id、client_turn_id、raw_text、evaluation_status）。候选人视图不返回 `rubric_snapshot`、reference_points、red_flags 或参考答案；返回原回答仅用于本人刷新恢复，不能把分析失败伪装成未提交。
+`QuestionView`：id、root_id、kind、seed_id（经历/证据回退题可为 null）、wording、basis、order_index、accepted_answer（可为 null；只含 id、client_turn_id、raw_text、evaluation_status、retry_operation_id）。`retry_operation_id` 仅当 `evaluation_status=failed` 时非 null，指向该回答失败链的链尾 operation（retry 经 parent 链关联，链尾 attempts 为累计预算真值），前端凭它跨刷新走 `/retry`；其他状态为 null，不得用链中其他节点重试以免分叉绕过预算。候选人视图不返回 `rubric_snapshot`、reference_points、red_flags 或参考答案；返回原回答仅用于本人刷新恢复，不能把分析失败伪装成未提交。
 
 `root_results` 当前只返回可观察的程序 Decision 摘要：root_question_id、observation_id、action、reason_code、reason_summary、target；不返回模型原始输出或私有推理。
 
@@ -77,13 +77,16 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 | GET `/documents/{id}` | 无 | 200 DocumentView | 查看提取/索引状态 |
 | GET `/documents/{id}/blocks` | cursor?、limit 默认20最大100 | 200 {items,next_cursor} | 页块文本及位置，用于确认和引用回查 |
 | POST `/profiles/{id}/confirm` | expected_revision、decisions:[{claim_id,action,corrected_text?}] | 202 OperationAccepted | action=accept/reject/correct；写确认快照并更新 Knowledge |
+| POST `/profiles/{id}/activate` | expected_revision；header：Idempotency-Key | 202 OperationAccepted | 显式激活当前已确认快照；不新建事实/快照、不增加 Profile revision；已有该代次操作返回原操作，失败使用原 operation retry |
 | DELETE `/profiles/{id}` | query：expected_revision；header：Idempotency-Key | 202 OperationAccepted | 先 tombstone，再清理档案及关联资料/索引/会话/记忆 |
 
 手填 items 一次最多 50 条，section 为 basic/education/project/skill/award/other，text 长度 1—2,000。合计字符上限沿用配置。展示姓名/联系方式不会自动进入模型评价上下文。
 
-上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。
+上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。长文档按源文字预算切成连续段、分多次真实 Workflow 调用抽取，切分无损（段可拼接还原），逐字来源不变量不因分块改变；50 条上限对合并结果生效，超出同样全部拒绝。`extraction_metadata` 增加 `model_calls`（本次导入的模型调用次数），`usage` 为各次调用聚合，任一调用缺该字段则保持 null，不填造 0。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。全部 chat/completions 请求使用 SSE 流式：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS` 是块间静默预算（生效取较小值），生成器元数据同时公开两者与 `reasoning_effort`。P-EXTRACT 的模型传输超时（含总预算与 stall）记录为 `UPSTREAM_TIMEOUT`，其他模型请求失败记录为 `UPSTREAM_FAILED`；模型已返回但 JSON/逐字来源校验失败仍为 `UPSTREAM_FAILED`，三类错误不得用同一“来源校验失败”文案混淆。
 
-confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必须提供 corrected_text，创建新的 user_input 依据；用户不能把随意改写的内容继续绑定为原文 exact_quote。confirm 完成后 Profile revision 加一；Knowledge 失败则 index_status=failed，不允许开始需该版本的新面试。
+confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必须提供 corrected_text，创建新的 user_input 依据；用户不能把随意改写的内容继续绑定为原文 exact_quote。一个明确提交的批次原子写入裁决、确认快照、Profile revision 和确认 Operation，再异步激活该代次 Knowledge。单个批次最多 50 项；不替用户默认选中。Knowledge 失败保留确认事实与同一快照，snapshot_activation.status=failed；重试仅激活该快照，不再次应用 decisions、不再增加 revision。创建计划和开始面试均要求各自绑定的快照代次 ready，失败返回 409 INVALID_STATE。所有未完成/失败激活必须能从 ProfileView 恢复，不依赖单个标签页缓存。
+
+旧快照只有可追溯的成功激活回执才可标 ready；没有凭证保持 pending，并由 `/activate` 明确激活。空的 confirmed_claim_ids 不可用于开始面试或生成简历，不能用“索引了空集合”冒充资料就绪。新事实修订不修改已绑定旧快照的面试。
 
 ## 5. 简历 API
 
@@ -93,7 +96,7 @@ confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必�
 | GET `/resume-drafts/{id}` | 无 | 200 ResumeDraftView | 生成中、失败、待确认和已接受都返回持久化快照 |
 | POST `/resume-drafts/{id}/accept` | expected_revision（草稿） | 200 ResumeDraftView | 只接受已经生成的草稿；增加 revision，不新增事实、不改变 ProfileSnapshot |
 
-`ResumeDraftView` 精确字段：`id / revision / profile_id / profile_snapshot_id / interview_id / status / sections / source_claims / source_claim_ids / changes / missing_facts / cautions / target_context / active_operation_id / run_metadata`。status 只取 `generating / generation_failed / draft / accepted`。`sections[]` 为 `{section_id,title,items:[{item_id,text,claim_ids}]}`；每个实质 item 至少绑定一个当前快照内 confirmed Claim。`source_claims[]` 只返回 `{id,text}`，用于人工 diff；`changes[]` 为 `{item_id,before,after,claim_ids,reason}`，before 由服务端按绑定 Claim 生成，不信任模型回填原文。
+`ResumeDraftView` 精确字段：`id / revision / profile_id / profile_snapshot_id / interview_id / status / sections / source_claims / source_claim_ids / changes / missing_facts / cautions / target_context / active_operation_id / run_metadata`。status 只取 `generating / generation_failed / draft / accepted`；`generation_failed` 时 `active_operation_id` 保留失败链尾操作作为跨刷新恢复键（可 GET 并走 `/retry`），只有 succeeded 后清 null。`sections[]` 为 `{section_id,title,items:[{item_id,text,claim_ids}]}`；每个实质 item 至少绑定一个当前快照内 confirmed Claim。`source_claims[]` 只返回 `{id,text}`，用于人工 diff；`changes[]` 为 `{item_id,before,after,claim_ids,reason}`，before 由服务端按绑定 Claim 生成，不信任模型回填原文。
 
 jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事实。提供 interview_id 时使用该会话冻结的 JD，且该会话的 profile_snapshot_id 必须与请求一致；两者都不提供时生成通用单模板。生成失败保留 draft 行和 operation，status=`generation_failed`，通过 `/operations/{id}/retry` 恢复，不重新创建第二份草稿。
 
@@ -136,9 +139,9 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 
 - `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improvements_status / active_operation_id / improved_answers / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
 - `coverage` 为 `{planned_root_count, asked_root_count, answered_root_count, scored_root_count, insufficient_root_count, disputed_root_count, skipped_root_count, unmeasured_root_count, skipped_question_count, overall_eligible}`。这些是范围计数，不把未测根题换算成 0 分。
-- 每个 `root_assessments[]` 为 `{id, root_question_id, status, score, coverage, criterion_results, answer_ids}`；`status` 只取 `scored / insufficient / disputed / skipped / unmeasured`。`score` 可为 null；coverage 是该根题可评分 criterion 权重占冻结总权重的比例。
+- 每个 `root_assessments[]` 为 `{id, root_question_id, question_text, answers, status, score, coverage, criterion_results, answer_ids}`；`question_text` 为持久化根问题全文；`answers[]` 按题目顺序保留 `{answer_id,question_id,question_kind,question_text,raw_text}`，包括主回答与追问/澄清回答。未回答的根题数组为空。原题和回答来自已有 Question/Answer，不依赖回答优化是否成功，不现场生成。`status` 只取 `scored / insufficient / disputed / skipped / unmeasured`；`score` 可为 null，coverage 是该根题可评分 criterion 权重占冻结总权重的比例。
 - 每个 `criterion_results[]` 为 `{criterion_id, kind, weight, level, finding, answer_quotes, knowledge_refs, explanations}`。同一根题的主回答与追问按 criterion 合并，权重只计算一次；`supported` 与 `contradicted` 同时出现时保留 `finding=disputed` 且 `level=null`，不得自行挑一个版本。
-- `improvements_status` 只取 `not_requested / generating / ready / failed`。生成中或失败时保留唯一 active/last operation；同一 Report 已 ready 后，即使换 Idempotency-Key 也返回原成功 operation，不再次调用模型。
+- `improvements_status` 只取 `not_requested / generating / ready / failed`。生成中或失败时保留唯一 active/last operation；失败时 `active_operation_id` 即该失败操作（可重试恢复键，跨浏览器刷新后仍可 GET 该 Operation 并走 `/retry`），只有 succeeded 后清 null。同一 Report 已 ready 后，即使换 Idempotency-Key 也返回原成功 operation，不再次调用模型。
 - 每个 `improved_answers[]` 为 `{root_question_id,original_answers,rewritten_answer,segments,used_claim_ids,changes,missing_facts,cautions}`。`original_answers[]` 保留 `{answer_id,question_id,question_kind,raw_text}`；`segments[]` 的每段必须绑定当前根题回答 exact_quote 或当前 ProfileSnapshot 的 confirmed claim_id，服务端校验 ID、精确引文、数值与责任边界后才提交。
 - `run_metadata` 的评分部分只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`。回答优化成功后追加 `content_generation={run_mode,workflow,workflow_version,prompt_version,generator,usage}`；未知模型、SDK 或 usage 字段为 null，不填造默认值。
 
@@ -158,6 +161,8 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 | GET `/health/ready` | 无 | 200 ready 或 503 not_ready |
 
 retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
+
+资料确认/激活 operation retry 使用当前 Profile revision，并校验目标仍是最新快照；每个逻辑激活最多三次尝试，换 Idempotency-Key 不重新开启预算。恢复只作用于原代次 Knowledge，不重复确认事实。上传原始字节不持久化，`document.import` 失败不可通过通用 `/retry` 重放，error.retryable=false，页面明确提供重新选择并上传文件的恢复方式；网络受理结果不明确时，同一已选文件与原请求 body/Idempotency-Key 必须复用，不擅自新建一次模型调用。
 
 健康接口不返回个人数据或密钥；readiness 检查已初始化依赖状态，不每请求调用付费模型。runtime/info 只有 model ID 和配置指纹，不暴露 base URL 中 token/query、真实 key 或内部存储路径。
 

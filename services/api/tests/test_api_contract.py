@@ -21,6 +21,7 @@ class InMemoryKnowledge:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.calls = 0
+        self.dropped: list[tuple[str, list[str]]] = []
 
     async def index_snapshot(self, *, profile_id, generation, sources):
         if self.fail:
@@ -35,6 +36,12 @@ class InMemoryKnowledge:
 
     async def search(self, *, profile_id, generation, allowed_source_ids, query, top_k):
         return []
+
+    async def drop_profile(self, *, profile_id, source_ids):
+        if self.fail:
+            raise RuntimeError("UPSTREAM_FAILED: synthetic knowledge outage")
+        self.dropped.append((profile_id, sorted(source_ids)))
+        return len(source_ids)
 
 
 @pytest.fixture()
@@ -73,6 +80,8 @@ def test_profile_view_shape_follows_contract(client):
         "proposed_claims",
         "confirmed_claims",
         "latest_snapshot_id",
+        "active_operation_id",
+        "snapshot_activation",
     }
     assert body["revision"] == 0 and body["synthetic"] is True
     assert body["latest_snapshot_id"] is None
@@ -690,6 +699,7 @@ def test_interview_user_jd_cannot_self_declare_verified_source(client):
     assert view["jd_source"]["source_type"] == "user_provided"
     assert view["jd_source"]["source_name"] == "用户粘贴的目标岗位"
     assert view["jd_source"]["is_synthetic"] is False
+    assert view["jd_text"] == jd_text
 
 
 def test_interview_requires_confirmed_profile(client):
@@ -762,6 +772,8 @@ def test_interview_unknown_jd_without_requirements_fails_operation(client):
     op = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()["data"]
     assert op["status"] == "failed"
     assert op["error"]["code"] == "INVALID_REQUEST"
+    # 页面必须拿到可行动原因，而不是错误码的通用文案。
+    assert "必要项" in op["error"]["message"]
 
 
 def test_interview_get_unknown_is_404(client):

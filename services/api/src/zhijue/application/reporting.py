@@ -166,7 +166,46 @@ def _run_metadata(interview: Interview) -> dict[str, Any]:
     }
 
 
-def report_view(report: Report) -> dict[str, Any]:
+def _report_context(session: Session, interview_id: str) -> dict[str, dict[str, Any]]:
+    rows = list(
+        session.execute(
+            select(Question, Answer)
+            .outerjoin(Answer, Answer.question_id == Question.id)
+            .where(Question.interview_id == interview_id)
+            .order_by(Question.order_index, Question.created_at, Question.id)
+        )
+    )
+    contexts = {
+        question.id: {"question_text": question.wording, "answers": []}
+        for question, _answer in rows
+        if question.kind == "main"
+    }
+    for question, answer in rows:
+        if answer is None:
+            continue
+        root_id = question.id if question.kind == "main" else question.root_id
+        if root_id not in contexts:
+            raise InvalidStateError("回答引用的根问题不存在，无法恢复复盘上下文。")
+        contexts[root_id]["answers"].append(
+            {
+                "answer_id": answer.id,
+                "question_id": question.id,
+                "question_kind": question.kind,
+                "question_text": question.wording,
+                "raw_text": answer.raw_text,
+            }
+        )
+    return contexts
+
+
+def report_view(report: Report, session: Session) -> dict[str, Any]:
+    contexts = _report_context(session, report.interview_id)
+    assessments = []
+    for assessment in report.root_assessments or []:
+        context = contexts.get(assessment["root_question_id"])
+        if context is None:
+            raise InvalidStateError("报告引用的根问题不存在。")
+        assessments.append({**assessment, **context})
     return {
         "id": report.id,
         "revision": report.revision,
@@ -174,7 +213,7 @@ def report_view(report: Report) -> dict[str, Any]:
         "completion": report.completion,
         "overall_score": report.overall_score,
         "coverage": dict(report.coverage or {}),
-        "root_assessments": list(report.root_assessments or []),
+        "root_assessments": assessments,
         "improvements_status": report.improvements_status,
         "active_operation_id": report.active_operation_id,
         "improved_answers": list(report.improved_answers or []),
@@ -297,4 +336,4 @@ class ReportingService:
             report = session.get(Report, interview.report_id)
             if report is None:
                 raise InvalidStateError("面试引用的报告不存在。")
-            return report_view(report)
+            return report_view(report, session)

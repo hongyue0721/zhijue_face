@@ -17,12 +17,14 @@ limits:
   max_facts_per_request: 50
   max_chars_per_fact: 2000
   max_fact_chars_per_request: 30000
+  max_extract_chars_per_model_call: 1600
   max_queued_operations: 8
 model:
   max_concurrent_requests: 2
   max_attempts_per_logical_operation: 3
   max_format_repairs_per_logical_operation: 1
   operation_timeout_seconds: 60
+  stream_stall_seconds: 20
   max_session_total_tokens: 60000
   verify_tls: true
   provider_candidate: deepseek

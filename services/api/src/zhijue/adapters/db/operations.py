@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -19,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Operation, OperationEvent, utc_now_rfc3339
+from zhijue.domain.errors import CapacityLimitedError
 from zhijue.domain.ids import new_id
 from zhijue.domain.operations import (
     TERMINAL_STATUSES,
@@ -68,6 +70,7 @@ class OperationRepository:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         self._event_validator = _load_event_validator()
+        self._acceptance_lock = Lock()
 
     # ---- 受理与查询 -------------------------------------------------------
 
@@ -96,6 +99,27 @@ class OperationRepository:
             if winner.input_hash != input_hash:
                 raise IdempotencyConflict(command.idempotency_key) from exc
             return winner
+
+    def accept_queued(
+        self, command: OperationCommand, *, capacity_available: bool
+    ) -> tuple[Operation, bool]:
+        """Replay first; reject capacity before committing any new queued row."""
+        with (
+            self._acceptance_lock,
+            Session(self._engine, expire_on_commit=False) as session,
+            session.begin(),
+        ):
+            existing = session.scalar(
+                select(Operation).where(
+                    Operation.scope == command.scope,
+                    Operation.idempotency_key == command.idempotency_key,
+                )
+            )
+            if existing is not None:
+                return self.accept_in_session(session, command), False
+            if not capacity_available:
+                raise CapacityLimitedError()
+            return self.accept_in_session(session, command), True
 
     @staticmethod
     def _accept_in_session(
@@ -319,8 +343,12 @@ class OperationRepository:
             for operation in operations:
                 payload = {
                     "code": "PROCESS_RESTARTED",
-                    "message": "服务进程重启，操作已中断；已保存的业务输入可显式重试。",
-                    "retryable": True,
+                    "message": (
+                        "服务进程重启，上传已中断；请重新选择并上传文件。"
+                        if operation.kind == "document.import"
+                        else "服务进程重启，操作已中断；已保存的业务输入可显式重试。"
+                    ),
+                    "retryable": operation.kind != "document.import",
                 }
                 self.append_event_in_session(
                     session, operation.id, "operation.interrupted", payload

@@ -22,6 +22,7 @@ from zhijue.adapters.db.models import (
     OperationEvent,
     Profile,
     ProfileSnapshot,
+    ProfileSnapshotActivation,
     Question,
     Report,
 )
@@ -273,3 +274,90 @@ def test_foreign_key_rejects_dangling_reference(base_engine):
         )
         with pytest.raises(IntegrityError):
             session.flush()
+
+
+def test_activation_backfill_requires_exact_success_receipt_and_is_reversible(tmp_path):
+    db = tmp_path / "activation-backfill.db"
+    cfg = _alembic_config(db)
+    command.upgrade(cfg, "b4d7c2e91f30")
+    engine = make_engine(f"sqlite:///{db}")
+    with Session(engine) as session, session.begin():
+        session.add(Profile(id="profile_legacy", display_name="合成旧资料", revision=5))
+        session.flush()
+        snapshots = [
+            ProfileSnapshot(
+                id=f"snapshot_{index}",
+                profile_id="profile_legacy",
+                revision=index,
+                confirmed_claim_ids=[] if index == 4 else ["claim_synthetic"],
+            )
+            for index in range(5)
+        ]
+        session.add_all(snapshots)
+        session.flush()
+        # A previous generation's global Document ready is deliberately present;
+        # it must not certify the snapshots whose operation result is unproven.
+        session.add(
+            Document(
+                id="document_legacy",
+                profile_id="profile_legacy",
+                kind="user_input",
+                filename_display="合成旧资料",
+                sha256="0" * 64,
+                mime="text/plain",
+                size=1,
+                extract_status="parsed",
+                index_status="ready",
+            )
+        )
+        for index in range(5):
+            session.add(
+                Operation(
+                    id=f"operation_{index}",
+                    kind="profile.confirm",
+                    resource_type="profile",
+                    resource_id="profile_legacy",
+                    scope=f"local|POST|/confirm/{index}",
+                    idempotency_key=f"key_{index}",
+                    input_hash="0" * 64,
+                    status="failed" if index == 2 else "succeeded",
+                    result={
+                        "profile_snapshot_id": f"snapshot_{index}",
+                        "knowledge_generation": "wrong_generation"
+                        if index == 1
+                        else f"snapshot_{index}",
+                        "source_ids": []
+                        if index in {3, 4}
+                        else [f"snapshot_{index}:claim_synthetic"],
+                    },
+                )
+            )
+    command.upgrade(cfg, "head")
+    with Session(engine) as session:
+        rows = (
+            session.query(ProfileSnapshotActivation)
+            .order_by(ProfileSnapshotActivation.snapshot_id)
+            .all()
+        )
+        assert [row.status for row in rows] == [
+            "ready",
+            "pending",
+            "pending",
+            "pending",
+            "pending",
+        ]
+        assert rows[0].operation_id == "operation_0"
+        assert rows[0].receipt == {
+            "generation": "snapshot_0",
+            "source_ids": ["snapshot_0:claim_synthetic"],
+        }
+        assert all(row.operation_id is None for row in rows[1:])
+    command.downgrade(cfg, "b4d7c2e91f30")
+    with Session(engine) as session:
+        assert [
+            snapshot.id
+            for snapshot in session.query(ProfileSnapshot).order_by(ProfileSnapshot.id)
+        ] == [f"snapshot_{index}" for index in range(5)]
+    command.upgrade(cfg, "head")
+    with Session(engine) as session:
+        assert session.get(ProfileSnapshotActivation, "snapshot_0").status == "ready"

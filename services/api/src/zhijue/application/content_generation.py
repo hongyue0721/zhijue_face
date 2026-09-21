@@ -28,7 +28,10 @@ from zhijue.adapters.db.models import (
     utc_now_rfc3339,
 )
 from zhijue.adapters.db.operations import OperationCommand, OperationRepository
-from zhijue.adapters.model import ModelRequestError
+from zhijue.application.answer_workflow import (
+    ModelRequestError,
+    ModelRequestTimeoutError,
+)
 from zhijue.application.content_workflow import (
     ContentGenerator,
     ContentWorkflowError,
@@ -272,6 +275,10 @@ class ContentGenerationService:
             raise self._upstream_error(
                 operation_id, "回答改写超时。", timeout=True
             ) from exc
+        except ModelRequestTimeoutError as exc:
+            raise self._upstream_error(
+                operation_id, "回答改写模型请求超时。", timeout=True
+            ) from exc
         except (
             ContentWorkflowError,
             GroundedContentValidationError,
@@ -388,6 +395,7 @@ class ContentGenerationService:
                 if draft is None:
                     raise InvalidStateError("幂等操作缺少简历草稿。")
                 return AcceptedContentOperation(existing_operation, created=False)
+            self._claims_for_snapshot(session, snapshot)
             operation = self._operations.accept_in_session(session, command)
             session.add(
                 ResumeDraft(
@@ -534,6 +542,10 @@ class ContentGenerationService:
         except TimeoutError as exc:
             raise self._upstream_error(
                 operation_id, "简历生成超时。", timeout=True
+            ) from exc
+        except ModelRequestTimeoutError as exc:
+            raise self._upstream_error(
+                operation_id, "简历生成模型请求超时。", timeout=True
             ) from exc
         except (
             ContentWorkflowError,
@@ -725,7 +737,12 @@ class ContentGenerationService:
                 if isinstance(resource, Report)
                 else resource.status
             )
-            if current_status != failed_status or resource.active_operation_id:
+            # failed 态允许 active_operation_id 仍指向该失败操作（恢复键语义，
+            # api.md §6）；指向其他 operation 才说明状态不一致、不可重试。
+            if current_status != failed_status or resource.active_operation_id not in (
+                None,
+                original.id,
+            ):
                 raise InvalidStateError("当前生成状态不可重试。")
             try:
                 operation = self._operations.retry_in_session(
@@ -760,16 +777,24 @@ class ContentGenerationService:
                 return
             if operation.kind == "report.coach":
                 report = session.get(Report, operation.resource_id)
-                if report is not None and report.active_operation_id == operation_id:
+                # failed 态保留 active_operation_id 作为跨刷新恢复键（api.md §6）；
+                # 只有 succeeded 落库时才清 null。
+                if (
+                    report is not None
+                    and report.active_operation_id == operation_id
+                    and report.improvements_status == "generating"
+                ):
                     report.improvements_status = "failed"
-                    report.active_operation_id = None
                     report.revision += 1
                     report.updated_at = utc_now_rfc3339()
             elif operation.kind == "resume.compose":
                 draft = session.get(ResumeDraft, operation.resource_id)
-                if draft is not None and draft.active_operation_id == operation_id:
+                if (
+                    draft is not None
+                    and draft.active_operation_id == operation_id
+                    and draft.status == "generating"
+                ):
                     draft.status = "generation_failed"
-                    draft.active_operation_id = None
                     draft.revision += 1
                     draft.updated_at = utc_now_rfc3339()
 

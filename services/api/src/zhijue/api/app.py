@@ -282,6 +282,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         interrupted = services.operations.mark_interrupted_on_restart()
+        services.profiles.recover_interrupted_operations()
         services.interviews.recover_interrupted_operations(interrupted)
         services.content.recover_interrupted_operations(interrupted)
         yield

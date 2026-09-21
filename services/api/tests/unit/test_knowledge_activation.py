@@ -149,6 +149,27 @@ def test_retrieval_allowlist_excludes_other_snapshots(tmp_path):
     assert len(hits) == 1 and hits[0]["source_id"].startswith(second_snapshot)
 
 
+def test_receipt_from_another_generation_cannot_mark_snapshot_ready(tmp_path):
+    from zhijue.application.profiles import ActivationReceipt
+
+    class WrongGenerationKnowledge(InMemoryKnowledge):
+        async def index_snapshot(self, *, profile_id, generation, sources):
+            return ActivationReceipt(
+                generation="snapshot_obsolete",
+                source_ids=[source.source_id for source in sources],
+                document_ids=[],
+                embedding_logical_calls=1,
+            )
+
+    _engine, _repo, service = build(tmp_path, knowledge=WrongGenerationKnowledge())
+    profile_id, snapshot_id = seed_confirmed(service)
+    with pytest.raises(RuntimeError, match="UPSTREAM_FAILED"):
+        asyncio.run(service.activate_knowledge(snapshot_id))
+    view = service.get_profile(profile_id)
+    assert view.snapshot_activation["status"] == "failed"
+    assert view.latest_snapshot_id == snapshot_id
+
+
 @pytest.mark.integration_live
 def test_real_knowledge_activation_when_private_env_is_explicit(tmp_path):
     env_value = os.getenv("ZHIJUE_KNOWLEDGE_LIVE_ENV_FILE")

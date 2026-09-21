@@ -21,6 +21,8 @@ from zhijue.application import answer_workflow
 from zhijue.application.answer_workflow import (
     AnalysisResult,
     AnswerWorkflowError,
+    ModelRequestError,
+    ModelRequestTimeoutError,
     build_handle_answer_workflow,
     run_handle_answer_workflow,
 )
@@ -249,10 +251,31 @@ def model_settings(**overrides) -> ModelSettings:
         "api_base": "https://model.example",
         "api_key": "fixture-secret",
         "model_timeout": 5,
+        "model_reasoning_effort": "low",
         "model_max_retries": 2,
     }
     values.update(overrides)
     return ModelSettings(**values)
+
+
+def sse_body(content: str, *, usage: dict | None = None) -> bytes:
+    """One realistic OpenAI-compatible SSE completion with split content."""
+
+    def chunk(payload: dict) -> str:
+        return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+    half = max(1, len(content) // 2)
+    final: dict = {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+    if usage is not None:
+        final["usage"] = usage
+    return (
+        chunk({"choices": [{"delta": {"role": "assistant"}}]})
+        + ": keep-alive\n\n"
+        + chunk({"choices": [{"delta": {"content": content[:half]}}]})
+        + chunk({"choices": [{"delta": {"content": content[half:]}}]})
+        + chunk(final)
+        + "data: [DONE]\n\n"
+    ).encode("utf-8")
 
 
 def test_model_settings_come_only_from_explicit_private_file(tmp_path, monkeypatch):
@@ -262,8 +285,10 @@ def test_model_settings_come_only_from_explicit_private_file(tmp_path, monkeypat
         "MODEL_NAME=file-model\n"
         "API_BASE=https://model.example\n"
         "API_KEY=file-secret\n"
+        "MODEL_REASONING_EFFORT=low\n"
         "MODEL_TIMEOUT=7.5\n"
-        "MODEL_MAX_RETRIES=2\n",
+        "MODEL_MAX_RETRIES=2\n"
+        "MODEL_STREAM_STALL_SECONDS=2.5\n",
         encoding="utf-8",
     )
     env_file.chmod(0o600)
@@ -274,6 +299,8 @@ def test_model_settings_come_only_from_explicit_private_file(tmp_path, monkeypat
 
     assert settings.model_name == "file-model"
     assert settings.api_key.get_secret_value() == "file-secret"
+    assert settings.model_reasoning_effort == "low"
+    assert settings.model_stream_stall_seconds == 2.5
     assert settings.total_attempts == 3
     assert "file-secret" not in repr(settings)
     assert "file-secret" not in json.dumps(settings.public_summary())
@@ -297,7 +324,10 @@ def test_model_env_rejects_permissions_broader_than_0600(tmp_path, mode):
         {"api_base": "https://model.example/v1"},
         {"model_timeout": 0},
         {"model_timeout": float("inf")},
+        {"model_reasoning_effort": "medium"},
         {"model_max_retries": 3},
+        {"model_stream_stall_seconds": 0},
+        {"model_stream_stall_seconds": float("nan")},
     ],
 )
 def test_model_settings_reject_unsafe_or_unbounded_values(overrides):
@@ -312,10 +342,11 @@ def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
         captured.append(request)
         return httpx.Response(
             200,
-            json={
-                "choices": [{"message": {"content": json.dumps(VALID_OBSERVATION)}}],
-                "usage": {"prompt_tokens": 11, "completion_tokens": 19},
-            },
+            content=sse_body(
+                json.dumps(VALID_OBSERVATION),
+                usage={"prompt_tokens": 11, "completion_tokens": 19},
+            ),
+            headers={"content-type": "text/event-stream"},
         )
 
     async def scenario():
@@ -349,6 +380,11 @@ def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
     payload = json.loads(request.content)
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["temperature"] == 0
+    assert payload["reasoning_effort"] == "low"
+    assert payload["stream"] is True
+    assert payload["stream_options"] == {"include_usage": True}
+    assert request.headers["accept"] == "text/event-stream"
+    assert request.extensions["timeout"]["read"] == 5
     assert "action" in payload["messages"][0]["content"].lower()
     system_prompt = payload["messages"][0]["content"]
     assert all(
@@ -374,10 +410,8 @@ def test_content_generator_requests_exact_contract_shapes():
         captured.append(request)
         return httpx.Response(
             200,
-            json={
-                "choices": [{"message": {"content": "{}"}}],
-                "usage": {"prompt_tokens": 7, "completion_tokens": 3},
-            },
+            content=sse_body("{}", usage={"prompt_tokens": 7, "completion_tokens": 3}),
+            headers={"content-type": "text/event-stream"},
         )
 
     async def scenario():
@@ -403,6 +437,9 @@ def test_content_generator_requests_exact_contract_shapes():
             )
 
     asyncio.run(scenario())
+    assert all(
+        json.loads(request.content)["reasoning_effort"] == "low" for request in captured
+    )
     assert len(captured) == 3
 
     extraction = json.loads(captured[0].content)
@@ -462,6 +499,155 @@ def test_content_generator_requests_exact_contract_shapes():
     assert resume_data["data_classification"] == ("untrusted_candidate_and_target_data")
 
 
+def test_stream_assembles_content_and_never_leaks_reasoning_text():
+    def chunk(payload: dict) -> str:
+        return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+    body = (
+        chunk(
+            {"choices": [{"delta": {"reasoning_content": "hidden chain of thought"}}]}
+        )
+        + ": keep-alive\n\n"
+        + chunk({"choices": [{"delta": {"content": '{"a"'}}]})
+        + chunk({"choices": [{"delta": {"content": ":1}"}}]})
+        + chunk(
+            {
+                "choices": [{"delta": {}, "finish_reason": "stop"}],
+                "usage": {
+                    "prompt_tokens": 5,
+                    "completion_tokens": 6,
+                    "total_tokens": 11,
+                },
+            }
+        )
+        + "data: [DONE]\n\n"
+    ).encode("utf-8")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(
+                model_settings(model_max_retries=0), client=client
+            )
+            return await analyzer.analyze(
+                observation_id="observation_1",
+                answer_id="answer_1",
+                question_id="question_1",
+                root_question_id="question_1",
+                question_text="Question text",
+                answer_text="literal",
+                rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                reference_material=None,
+            )
+
+    result = asyncio.run(scenario())
+
+    assert result.content == '{"a":1}'
+    assert (result.input_tokens, result.output_tokens, result.total_tokens) == (
+        5,
+        6,
+        11,
+    )
+    assert "hidden" not in result.content
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            b'data: {"choices":[{"delta":{"content":"{}"}}]}\n\n',
+            id="missing-done-marker",
+        ),
+        pytest.param(b"data: {broken\n\ndata: [DONE]\n\n", id="malformed-chunk"),
+        pytest.param(
+            b'data: {"choices":[{"delta":{"reasoning_content":"x"}}]}\n\ndata: [DONE]\n\n',
+            id="reasoning-only-empty-content",
+        ),
+    ],
+)
+def test_broken_streams_fail_as_typed_request_errors(body):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(
+                model_settings(model_max_retries=0), client=client
+            )
+            with pytest.raises(ModelRequestError):
+                await analyzer.analyze(
+                    observation_id="observation_1",
+                    answer_id="answer_1",
+                    question_id="question_1",
+                    root_question_id="question_1",
+                    question_text="Question text",
+                    answer_text="literal",
+                    rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                    reference_material=None,
+                )
+
+    asyncio.run(scenario())
+
+
+def test_mid_stream_stall_and_total_budget_both_map_to_timeout():
+    captured: list[httpx.Request] = []
+
+    async def stalling(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+
+        async def parts():
+            yield b'data: {"choices":[{"delta":{"content":"{\\"a\\""}}]}\n\n'
+            raise httpx.ReadTimeout("fixture stall", request=request)
+
+        return httpx.Response(
+            200, content=parts(), headers={"content-type": "text/event-stream"}
+        )
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return httpx.Response(200, content=sse_body("{}"))
+
+    async def analyze_with(settings: ModelSettings, handler):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(settings, client=client)
+            with pytest.raises(ModelRequestTimeoutError):
+                await analyzer.analyze(
+                    observation_id="observation_1",
+                    answer_id="answer_1",
+                    question_id="question_1",
+                    root_question_id="question_1",
+                    question_text="Question text",
+                    answer_text="literal",
+                    rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                    reference_material=None,
+                )
+
+    asyncio.run(
+        analyze_with(
+            model_settings(model_max_retries=0, model_stream_stall_seconds=1.5),
+            stalling,
+        )
+    )
+    asyncio.run(
+        analyze_with(
+            model_settings(model_max_retries=0, model_timeout=0.3),
+            slow,
+        )
+    )
+    assert captured[0].extensions["timeout"] == {
+        "connect": 5.0,
+        "read": 1.5,
+        "write": 5.0,
+        "pool": 5.0,
+    }
+
+
 @pytest.mark.parametrize("status_code", [429, 503])
 def test_model_transport_uses_one_request_per_persisted_operation(status_code):
     attempts = 0
@@ -495,6 +681,45 @@ def test_model_transport_uses_one_request_per_persisted_operation(status_code):
                 await generator.generate(
                     task="compose_resume",
                     payload={"draft_id": "resume_demo", "allowed_claims": {}},
+                )
+
+    asyncio.run(scenario())
+    assert attempts == 2
+
+
+def test_model_transport_timeout_remains_typed_for_all_model_clients():
+    attempts = 0
+
+    async def timed_out(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("fixture timeout", request=request)
+
+    async def scenario():
+        transport = httpx.MockTransport(timed_out)
+        async with httpx.AsyncClient(transport=transport) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(model_settings(), client=client)
+            with pytest.raises(ModelRequestTimeoutError):
+                await analyzer.analyze(
+                    observation_id="observation_1",
+                    answer_id="answer_1",
+                    question_id="question_1",
+                    root_question_id="question_1",
+                    question_text="Question text",
+                    answer_text="literal",
+                    rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                    reference_material=None,
+                )
+            generator = OpenAICompatibleContentGenerator(
+                model_settings(), client=client
+            )
+            with pytest.raises(ModelRequestTimeoutError):
+                await generator.generate(
+                    task="extract_claims",
+                    payload={
+                        "document_kind": "resume",
+                        "source_blocks": [{"id": "block_demo", "text": "STM32"}],
+                    },
                 )
 
     asyncio.run(scenario())
