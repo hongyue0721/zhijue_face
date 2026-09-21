@@ -63,7 +63,7 @@ M0 必须确认数据库使用 default、向量索引兼容 Lite 的 FLAT、维�
 | 模块 | 输入 / 输出 | 不得负责 |
 |---|---|---|
 | DocumentService | 文件/文本 → Document、SourceBlock、逐字 proposed Claim | 自动确认现实经历、给用户评能力、执行文件内指令 |
-| ProfileService | 候选事实 → 用户确认快照 | 自动认定现实经历真实 |
+| ProfileService | 原子受理事实裁决/快照/Operation；按快照代次激活 Knowledge 并恢复失败 | 自动认定现实经历真实、用 Document 全局索引状态替代快照就绪 |
 | KnowledgeAdapter | 合法资料/检索请求 → 带来源结果 | 直接改变简历事实与评分 |
 | PlanService | 资料/JD/已审核种子 → 五题计划 | 使用未审核生成题兜底评分 |
 | Analyzer | 原始回答/Rubric/参考依据 → Observation | 直接写 DB 或选择下一题 |
@@ -82,7 +82,7 @@ zhijue-demo/
 ├── AGENTS.md / api.md / process.md / CHANGELOG.md
 ├── docs/                       # 本规范及 ADR、验收记录
 ├── apps/web/
-│   ├── src/pages/              # /start、资料准备、正式面试三页
+│   ├── src/pages/              # Start / Prepare / Interview / Report / ResumeDraft
 │   ├── src/components/         # common/layout/profile/prepare/interview
 │   ├── src/hooks/              # Operation SSE + polling 生命周期
 │   ├── src/api.ts              # 唯一浏览器 API 边界与 snake_case DTO
@@ -132,7 +132,7 @@ zhijue-demo/
 
 完成节点结果通过验证后，使用短事务提交回答观察、下一问题、revision 和事件。**不得在持有 SQLite 写事务期间等待 LLM。** 会话以 active_operation_id 和 expected_revision 控制并发，完成前不允许第二个评分操作。
 
-进程重启时，queued 与 running 都转为 interrupted：两者依赖的 `BackgroundTasks` callable 都没有持久化，不能把 queued 假装成可安全自动重放。已保存 Answer 继续保留；answer/control 的可重试 operation 通过 parent-linked retry 恢复，其他命令由客户端重新发起新命令。不能承诺框架原生断点跨重启恢复，除非已经实测。
+进程重启时，queued 与 running 都转为 interrupted：两者依赖的 `BackgroundTasks` callable 都没有持久化，不能把 queued 假装成可安全自动重放。已保存 Answer 与已确认 ProfileSnapshot 保留；回答、控制、资料激活及内容生成按各自冻结输入通过 parent-linked retry 恢复。上传原始字节未持久化，document.import 失败/中断明确不可通用 retry，须重新上传。不能承诺框架原生断点跨重启恢复，除非已经实测。
 
 **M3/M4 后端实况（2026-09-19）**：`handle_answer` 使用项目锁定的 openJiuwen Workflow 真实执行 `Start → Analyzer → SemanticValidation → DeterministicPolicy → End`；`report.coach` 与 `resume.compose` 真实执行 `Start → Generator → SemanticValidation → End`。它们都不是本地同名替代。OpenAI-compatible 适配器只读取显式指定、权限不宽于 0600 的私密 env 文件并共享有限重试预算；`deepseek-flash` 已完成一次 Answer Analyzer synthetic 业务分析，但 M4-02 内容生成生产 live 尚未运行。
 
@@ -141,6 +141,8 @@ Answer、Operation 与 Interview 受理状态原子落 SQLite；成功 Observati
 `ContentGenerationService` 是回答优化和简历草稿的唯一写入方：短事务受理 Operation，事务外执行 Workflow，确定性验证模型候选后再短事务提交。回答改写绑定本场逐字引文或当前快照 Claim；简历正文逐项绑定当前不可变快照 Claim，岗位材料只影响排序和表达。失败不修改原回答、评分、Claim 或资料快照；retry 复用同一资源/输入，成功写 `coaching.ready` 或 `resume_draft.ready`。
 
 运行中崩溃转 interrupted，retry 新建父子 Operation；回答链复用 Answer 原文，报告落库失败只重跑确定性汇总，内容生成链复用已持久化资源与冻结输入。SDK INFO 级输入/输出日志和 SDK 文件 sink 在业务应用中关闭，避免私人回答进入日志。实现仍是单进程 `BackgroundTasks` + 有界串行 runner，不宣称分布式队列、跨进程自动重放或 exactly-once 上游计费。
+
+**桌面闭环整改（2026-09-20）**：事实裁决、Profile revision、不可变快照、activation 与 confirm Operation 在同一事务受理，后台只激活该代快照；失败不撤回已确认事实，也不在 retry 再次确认。独立 `profile_snapshot_activation` 保存当前操作与完整回执，三个累计尝试用尽后不能换 key 重置。计划和 start 均校验其绑定快照非空且 ready；通用简历只要求非空确认快照，不依赖面试。Report 读取同时关联持久化 Question/Answer 返回原题、主答与追问，不依赖回答优化模型。
 
 ## 8. 国产操作系统的边界
 

@@ -82,6 +82,7 @@
 | S21 | [openJiuwen agent-core PR #1344](https://github.com/openJiuwen-ai/agent-core/pull/1344) | 官方 PR 明确描述 `MilvusIndexer.delete_index` 在 pymilvus 返回 list 时触发 TypeError，并补 list/tuple 处理与测试 | 截至 2026-09-19 仍为 Open，不能当作正式 0.1.18 已包含 |
 | S22 | [DeepSeek 官方模型与价格文档](https://api-docs.deepseek.com/quick_start/pricing/) | 官方页面列出 `deepseek-flash` 模型标识 | 仅确认请求名存在；本轮没有调用 DeepSeek，provider/model/token/cost 仍 NOT_RUN / null |
 | S23 | [项目兼容 commit](https://github.com/hongyue0721/agent-core/commit/72c4985111b835530ec616f70dd67117eb2e015c)与[提交到 PR #1344 的 live 验证](https://github.com/openJiuwen-ai/agent-core/pull/1344#issuecomment-5738067134) | 兼容 commit 基于官方 v0.1.18，仅含 PR #1344 两个提交；公开评论记录 Python/pymilvus/milvus-lite 版本、修复前后回归、21 项上游测试与四进程真实生命周期 | 这是项目维护的临时来源与项目取证，不是 openJiuwen 官方发布物或官方签名背书；官方 release 含修复后必须替换 |
+| S24 | [DeepSeek 官方 Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion) | `reasoning_effort` 接受 `none / low / high / max`；`low` 开启低强度思考，官方默认值为 `high` | 仅用于确认请求参数语义；项目按负责人指令显式发送 `low`，不据此宣称延迟或效果改善 |
 
 M0-03 的运行结论来自锁定环境和 synthetic 文本，不来自模型卡自述：SDK 请求 `BAAI/bge-m3` 后实测向量维度 1024；两个 KB 在兼容 commit 上完成解析、入库、检索、provenance、进程重启、删除及删除后重启零命中。正式 0.1.18 wheel 的失败证据仍保留，不因项目兼容源通过而改写历史。模型卡只用于核对候选参数，不能升级为 Candidate Evidence 或比赛成效。
 

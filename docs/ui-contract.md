@@ -1,13 +1,13 @@
 # UI Contract｜P0 面试陪练、报告与简历草稿
 
-更新时间：2026-09-19。适用实现：`apps/web`。本文登记五页首屏收口后的实际 HTTP 消费、展示语义、恢复规则与只读交互边界。
+更新时间：2026-09-20。适用实现：`apps/web`。本文登记桌面闭环整改后的实际 HTTP 消费、展示语义与恢复边界；本轮不包含移动端验收。
 
 ## 1. 路由与业务门槛
 
 | 路由 | 页面职责 | 进入下一步的服务端门槛 |
 |---|---|---|
-| `/start?profile={profile_id}` | 创建 Profile、上传 PDF、查看文档状态、补充/确认事实 | `ProfileView.latest_snapshot_id != null` |
-| `/profiles/{profile_id}/prepare?interview={interview_id}` | 输入用户 JD 或明确选择演示 JD、展示 Coverage Map 与五题 Plan、开始面试 | `InterviewView.status == ready` 后调用 start；start operation 成功后进入面试页 |
+| `/start?profile={profile_id}` | 上传或无简历填写、批量核对/更正、独立通用简历 | 面试要求非空确认快照且该代 activation.ready；简历要求非空确认快照 |
+| `/profiles/{profile_id}/prepare?interview={interview_id}` | 核对/修改冻结 JD、展示覆盖与五题计划、开始面试 | 绑定快照 ready；修改产生新 interview，旧会话不修改 |
 | `/interviews/{interview_id}` | 展示当前题、提交回答、监控分析、呈现追问决策、失败重试 | 所有题面与状态均取自 `GET /interviews/{id}` |
 | `/interviews/{interview_id}/report` | 读取持久化评分、显式生成/重试回答优化、进入简历草稿 | Interview 必须 completed 且存在唯一 Report；页面不在浏览器重算评分 |
 | `/resume-drafts/{draft_id}` | 展示 Claim 绑定正文/差异/缺失项、显式确认、确认后打印 | Draft 生成成功后可读；只有 `status=accepted` 才显示打印动作 |
@@ -19,17 +19,18 @@
 | 页面元素 | 唯一数据来源 | 使用字段 | 禁止的客户端推断 |
 |---|---|---|---|
 | 服务可用状态 | `GET /api/v1/health/ready` | `status`、`run_mode` | 不展示模型名、密钥、token；503 不自动切换 fixture |
-| Profile | `POST /api/v1/profiles`、`GET /api/v1/profiles/{id}` | `id`、`revision`、`documents`、claims、`latest_snapshot_id` | 不从本地文件名生成候选事实 |
+| Profile | `POST /api/v1/profiles`、`GET /api/v1/profiles/{id}` | `id/revision/documents/claims/latest_snapshot_id/active_operation_id/snapshot_activation` | 不从文件名生成事实，不凭快照存在推断索引成功 |
 | PDF 上传 | `POST /api/v1/profiles/{id}/documents` | multipart `file`、`kind=resume`、`expected_revision`；`Idempotency-Key`；成功 Operation result 含 `resource_revision/proposed_claim_count/extraction_metadata` | 浏览器不得手工设置 multipart `Content-Type` boundary；202 不冒充候选事实已生成 |
 | 文档处理状态 | `GET /api/v1/operations/{id}` + `GET /api/v1/documents/{id}` + `GET /api/v1/profiles/{id}` | Operation `status/error/result`；Document `extract_status/index_status/warnings/page_count`；Profile `proposed_claims` | SSE 关闭不等于成功；只有 operation succeeded 后重读 Document/Profile；`pending` 不显示成完成 |
 | 解析文本抽屉 | `GET /api/v1/documents/{id}/blocks` | `items[].page_number/block_index/text` | 不从浏览器重新解析 PDF |
-| 候选事实 | `ProfileView.proposed_claims` | `text/source_quotes/status`；上传候选 text 必须等于 SourceBlock 的 exact_quote；保持服务端顺序，每页 5 条在浏览器只读分页 | 解析为空时不生成示例事实；翻页不得发起写请求；未确认不得进入快照 |
-| 手工事实 | `POST /api/v1/profiles/{id}/facts` | `expected_revision`、`items[].section/text` | 提交后仍保持 proposed，等待用户确认 |
-| 事实确认 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action`、operation | 只有 operation succeeded 后重新读取 Profile；不本地伪造 Snapshot |
-| 资料就绪 | `ProfileView.latest_snapshot_id` | 非空 ID | `Document.index_status` 不能替代 Profile Snapshot 门槛 |
+| 候选/已确认事实 | `ProfileView.proposed_claims/confirmed_claims` | `text/source_quotes/status/supersedes_id`；服务端顺序，单列表滚动 | 切换、选择、更正编辑与取消零写入；不默认采用，不再分页 |
+| 手工事实 | `POST /api/v1/profiles/{id}/facts` | `expected_revision`、`items[].section/text` | 无简历也可创建 Profile；提交后仍 proposed |
+| 事实确认/更正 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action/corrected_text`、Operation；每批最多 50 | 裁决受理与索引成功分开；失败也重读真实 Profile，不能把更正标成 PDF 原文 |
+| 资料激活 | `ProfileView.snapshot_activation`、`POST /profiles/{id}/activate`、Operation retry | `snapshot_id/status/operation_id` | pending 显式激活，failed 重试原操作；只接受该代 ready，不用 Document 全局状态 |
 | 用户 JD | `POST /api/v1/interviews` | `jd_text` 最多 8,000 字符、`jd_source_name` 1—200 字符 | 客户端不传 `source_type`；不把用户 JD 标成演示数据；不得截断超限正文后静默提交 |
 | 演示 JD | `POST /api/v1/interviews` | 省略 `jd_text`、`jd_source_name` | 来源必须由响应 `jd_source.source_type=synthetic_demo_jd` 证明 |
 | JD 来源 | `InterviewView.jd_source` | 只按 `source_type` 映射：`synthetic_demo_jd`→演示岗位配置、`user_provided`→用户提供岗位描述、`official_posting`→官方公开岗位、`real_jd_derived`→公开岗位衍生材料 | 不用按钮文案或 `source_name` 推断、升级来源可信度 |
+| 冻结 JD 原文 | `InterviewView.jd_text` | string；历史确未保存才 null | 刷新/修改回填来自服务端，不从要求列表拼造，不持久化到浏览器 storage |
 | 岗位要求 | `InterviewView.jd_requirements` | `tier/statement/source_span`；主摘要只按 `tier` 派生四类数量，完整 N 条默认折叠并可展开 | 不改写 requirement；主界面不显示内部 ID；聚合数量不构成新业务事实 |
 | Coverage Map | `InterviewView.coverage_map` | `status/relation/requirement_ids/evidence_ids` | `unknown` 必须解释为“材料未体现 ≠ 不会” |
 | 五题计划 | `InterviewView.root_plan.slots` | 五个真实 slot；保持服务端顺序；`competency` 只查受控中文词典，未知值显示“验证方向 N” | 不提前生成或展示具体题目；不直接展示内部 `competency`；未知值不按字符串猜含义 |
@@ -42,8 +43,8 @@
 | 追问/澄清 | `current_question.kind`、`root_results` | `probe` 显示“为什么继续追问 / 追问方向”，`clarification` 显示“为什么需要澄清 / 澄清方向”；内容只读取 `action/reason_summary/target.followup_intent`；`counterfactual`→条件变化下的调整、`pushback`→回应反例或限制条件、`reflection`→复盘与经验总结 | `pushback` 不等于 `counterfactual`；未知 intent 使用用户可读 fallback，不暴露内部枚举或模型私有推理 |
 | 分析重试 | `POST /api/v1/operations/{operation_id}/retry` | 失败 operation ID、最新 `expected_revision` | 不重新 POST answer，不新建 Answer |
 | 面试完成 | `InterviewView.status/current_question/profile_id` | completed 且无 current question时进入 `/interviews/{id}/report`；Profile 关系取服务端 `profile_id` | 不从 URL 或 storage 猜 Profile；不自行计算评分 |
-| 面试控制 | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、`Idempotency-Key` | 当前 Interview 页面未新增 skip/end 按钮；控制结果以 Operation 和新快照为准 |
-| 评分报告 | `GET /api/v1/interviews/{id}/report` | 持久化 Assessment、nullable score、coverage、completion、limitations、improvements_status；逐题只按 `root_question_id` 关联 | null 显示“未形成总分/未评”，不显示 0；浏览器不重算服务端分数；问题切换不写 API |
+| 面试控制 | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、原 key | 二次确认；取消零写入；end 可在已受理分析中提交；与回答独立恢复 |
+| 评分报告 | `GET /api/v1/interviews/{id}/report` | `root_assessments[].question_text/answers[]`、score、coverage、completion、limitations | 原题/主答/追问来自持久化数据，不等优化生成；null 不显示 0，浏览器不算分 |
 | 回答优化 | `POST /api/v1/interviews/{id}/report/improvements` | Report revision、Operation、`improved_answers[].root_question_id/original_answers/rewritten_answer/missing_facts/cautions` | 只有整场显式点击才生成；页签/问题切换只读；不把改写答案回写成面试证据或改变分数 |
 | 简历草稿 | `POST /api/v1/profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}` | 当前 snapshot、可选 interview 目标、sections/changes/source_claims/missing_facts/cautions；正文与差异只按 `item_id`，来源只按 `claim_id` 显式关联 | JD/报告只影响目标表达；正文事实只来自当前快照 Claim；正文选择不写 API；主界面不展示裸 Claim ID |
 | 草稿确认与打印 | `POST /api/v1/resume-drafts/{id}/accept` | expected_revision；accepted 后开放打印 | 确认不改 Claim/评分；未确认正文不得进入打印区域；打印解除屏幕高度/overflow 限制 |
@@ -51,15 +52,15 @@
 
 ## 3. 首屏信息架构与只读交互
 
-- 顶部进度固定为“资料 / 准备 / 面试 / 复盘”。Report 为第 4 步 active；Resume 表示四步均完成，不再把“面试”保持 active。
-- Start 有 Profile 后采用“材料摘要 / 待确认事实”双栏；快照门槛和“进入面试准备”在顶部。候选事实分页、展开原文和手工补充开关均为浏览器本地交互。
-- Prepare ready 采用“岗位要求与资料覆盖 / 五题验证计划”双栏；完整 Requirement/Coverage 与技术明细默认折叠，开始动作在顶部且仍受 `status=ready` 门槛约束。
-- Interview 采用当前题与回答约 65% / 右侧依据约 35% 双栏；回答框随可用视口收缩并在输入框内滚动，题面不裁剪，右栏独立滚动。
-- Report 采用左侧五题导航、右侧“评分依据 / 回答优化”页签。首屏只渲染当前根题；criterion 的用户标题按 kind 映射，不显示 `criterion_id` 或裸状态值。
+- 顶部面试步骤固定四步；独立 Resume 显示“简历整理”，不暗示已完成面试。
+- Start 提供两入口；有 Profile 后材料摘要紧凑，事实列表单一滚动与批量提交栏分离。待确认/已确认切换均只读。
+- Prepare 左侧以冻结 JD 为主、覆盖摘要为辅，右侧五题计划；返回与修改入口明确，修改生成新 interview。
+- Interview 保留完整题面、回答输入、独立依据栏及显式 skip/end；工作区使用实际剩余视口。
+- Report 左侧题号/题面摘要，右侧原题与原回答、评分/优化页签；解释直接可见，技术引用折叠。
 - Resume 采用左侧正文预览、右侧当前条目来源审计。选择关系只按 `item_id`，来源只按 `claim_id` 映射到 `source_claims[].text`；待补与注意数量在确认前可见。
-- 上述分页、选择和页签切换均不得产生 POST；只改变浏览器展示状态。
+- 上述选择、取消、页签与来源展开不产生 POST；通用简历可从资料页独立生成，不传 interview_id。
 
-Prepare ready 的当前展示层只调整叙事和空间：顶部真实摘要与开始动作，主体为要求/覆盖与五题计划双栏，完整 Requirement/Coverage/技术信息默认折叠。Coverage、Plan、Requirement 保持服务端数组顺序，不重排 priority 或补造计划；`competency` 只通过受控词典显示已登记中文名。
+应用固定浅色中性令牌，不随系统 dark 变成浅字白底。只验证三个桌面尺寸；本轮不宣称移动端/缩放结果。Coverage、Plan、Requirement 保持服务端顺序，不补造计划。
 
 ## 4. Operation、SSE 与刷新恢复
 
@@ -72,6 +73,8 @@ Prepare ready 的当前展示层只调整叙事和空间：顶部真实摘要与
 7. Report 改善稿、创建 ResumeDraft 及两页 operation retry 在发送前把不含正文的请求体标识与 `Idempotency-Key` 写入对应 sessionStorage scope。网络未取得明确响应时保留；用户显式重试必须逐字段复用原 body/key，不能生成新业务命令。观察到 202 或确定的不可重试 HTTP 错误后清理。
 8. Report 与 Resume 使用各自的 sessionStorage scope 恢复 operation ID；正文仍不进入 storage。generation failed 只能 retry 原 operation，不能以新 POST 绕过累计尝试预算。
 9. ResumeDraft 的 resource ID 在 202 响应中已固定；页面可先导航并显示 generating 状态，Operation succeeded 后重新读取同一 Draft，不创建第二份草稿。
+10. 资料页从 Profile.active_operation_id 与 snapshot_activation 恢复激活；retry 不重复裁决。document.import 未保存上传字节，确知失败/中断须重新选择文件，未知响应在当前内存保留 File/body/key。
+11. 独立简历、start、control/control-retry 安全命令使用各自 scope 跨刷新恢复；上传、更正、JD 和回答正文不写 storage。控制回调不能释放回答请求锁，反之亦然。
 
 ## 5. 错误状态
 
@@ -86,4 +89,4 @@ Prepare ready 的当前展示层只调整叙事和空间：顶部真实摘要与
 
 ## 6. 当前页面明确不实现
 
-五页 Product Polish 已完成，但没有新增岗位搜索、历史列表、完整简历编辑器、运行时模型信息页、视频/语音、社交登录或支付入口。`run_mode=fixture/replay` 继续在全局提示中明示，不能冒充 live 模型效果。HTTP API、OpenAPI、数据库和迁移未因本轮展示收口改变。
+本轮不增加岗位搜索、历史列表、完整简历编辑器、运行时模型信息页、视频/语音、社交登录或支付。fixture/replay 全局明示。桌面整改新增 activation API、Profile 激活视图、冻结 JD 原文、报告原题/原答及激活表迁移；详见 api.md 与 process.md §43。

@@ -1,5 +1,74 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-20｜M4-02-DESKTOP 桌面闭环与激活恢复
+
+- 新增按 ProfileSnapshot 代次持久化的 activation；confirm 原子受理裁决、revision、快照与 Operation，后台只激活该代。失败 retry 不再重复确认或创建新快照，累计最多三次；计划/start 同时拒绝空快照与非 ready 代次。
+- 新增 `/profiles/{id}/activate`、Profile 激活视图和可逆迁移 `e62a9f8c10bd`；历史只凭可靠同代成功回执回填 ready。上传失败/中断因没有原始字节而明确重新上传，不再假称可通用 retry。
+- 桌面补齐无简历入口、独立通用简历、待确认/已确认回看、更正及批量提交；取消五条分页，改为紧凑材料摘要、事实滚动区和提交栏。固定浅色中性令牌，修复系统 dark 下浅字白底。
+- 准备页从服务端冻结 JD 恢复原文，提供返回/修改/取消；修改创建新 interview。明确现有 JD 分区语法限制，不冒称支持任意自由文本。面试补齐 skip/end、二次确认、独立操作恢复与 lost-202 原请求重放。
+- Report 不依赖优化生成即可显示持久化原题、主答和追问；解释直接可见，导航显示题面摘要。独立 Resume 不再显示“面试四步均已完成”。
+- Python 3.11.16 / Node 24.21.0：后端 **295 passed / 2 deselected / 76 warnings**；Ruff 78 files；前端 **9/9**、TypeScript、Vite 112 modules 通过。删除固定文案、孤立常量及纯转发/接线测试，保留可观察边界测试；没有为降低失败数删业务断言。
+- 真实 FastAPI/SQLite/openJiuwen Workflow + 显式 synthetic fixture 浏览器实测两入口、21 事实、完整五题/一次追问、优化和打印；实际丢弃控制 202 后刷新重放未重复跳题，分析中 end 保留已保存回答。三个桌面尺寸 × light/dark × 五工作区共 30 组截图。移动端、生产模型质量及负责人独立验收 NOT_RUN；状态 IMPLEMENTED，不写 ACCEPTED。
+- 负责人 live 上传中，两次文本 PDF 的 P-EXTRACT 均已进入真实 openJiuwen generator 并向 `deepseek-flash` 发起 HTTP，请求各在私密配置的 45 秒 transport deadline 超时；另一次扫描件正确返回 `requires_text / workflow=not_run`，没有调用模型。旧异常展开把 transport timeout 错写成“来源校验失败”，属于错误分类缺陷。
+- 将模型请求异常移到应用端口并新增显式 timeout 子类；openJiuwen 包装链现在保留该类型，document/import、回答分析、回答优化和简历生成分别映射为 `UPSTREAM_TIMEOUT`，不再与模型返回后的 JSON/事实来源校验失败混为一谈。
+- 当前独立验收 runtime 使用 ignored、0600 的私密配置副本把单次模型 transport deadline 从 45 秒调到 55 秒，仍受 60 秒 Workflow 总 deadline 约束且不增加隐藏 retry。没有代替负责人再次发送原 PDF；最新后端为 **298 passed / 2 deselected / 78 warnings**，Ruff 78 files 全绿。
+- 按负责人指令新增 `MODEL_REASONING_EFFORT`，仅接受 `none / low / high / max`，默认并在当前 0600 live 配置中显式设为 `low`。Answer Analyzer、P-EXTRACT、回答优化与简历生成共用的 `/chat/completions` 请求全部发送 `reasoning_effort=low`；没有增加模型调用、隐藏 retry 或新依赖。
+
+## Unreleased — 2026-09-20｜P-EXTRACT 流式 + 分块超时修复
+
+- 直连探针定位根因：`reasoning_effort=low` 下 deepseek-flash 对 1.2k 字合成简历仍产生 22,420 字符推理、8,369 completion tokens，首 content token 26–28 秒；非流式请求必须静默等整段生成完，真实简历必然突破 55 秒总预算。流式时间线证明推理 token 自 0.63 秒起持续到达（max gap 0.63s），超时不是网络故障。
+- 所有 `/chat/completions` 请求改为 SSE 流式：`MODEL_TIMEOUT` 保持单请求总预算，新增 `MODEL_STREAM_STALL_SECONDS`（默认 20，生效 read 取两者较小）检测死流；`reasoning_content` 增量明确丢弃，不进入任何业务内容。Answer Analyzer、P-EXTRACT、回答优化与简历生成共用该路径。
+- P-EXTRACT 按 `max_chars_per_extract_call`（默认 1,600 字符）把块文本切成无损连续段分批调用真实 Workflow；每段是入库块的连续子串，逐字来源不变量保持。`extraction_metadata` 新增 `model_calls`；usage 仅在所有调用都报告时按字段求和，否则保持 null；合并后超过 50 条候选全部拒绝，不落部分结果、不静默截断。
+- 验证：后端 **311 passed / 2 deselected / 90 warnings**、Ruff 78 files 全绿；live 实测 2,184 字合成简历 `succeeded / 28.1s / model_calls=2 / usage 2101+7259=9360（cost null）`，19 条候选全部逐字命中块文本。OCR 未实现（P1，负责人确认暂不做；扫描简历仍走 `requires_text` 粘贴路径）。
+- 负责人 live 复验：真实上传两次 `document.import` succeeded，超时路径关闭。操作失败原因透出修复：`operations_runner` 此前只对上传保留领域 message，其它操作落错误码通用文案；现在所有 DomainError 优先显示受控可行动原因（如“JD 中没有可识别的岗位要求（需要显式标记如「必要项：」「加分项：」）”，不再是“请求格式或参数无效”）。错误码/字段/事件契约无变化。全量 **311 passed**、Ruff 78 files 全绿，live 按原输入复现确认新提示。
+
+## Unreleased — 2026-09-20｜岗位输入改为三分区表单
+
+- 准备页 JD 输入从“单个正文框 + 手写分区标记”改为岗位名称 + 必要项 / 加分项 / 岗位职责三个分区框，一行一条；`jd_text` 由新增纯模块 `apps/web/src/jdSections.ts` 确定性拼装（空分区省略、行去空白、固定顺序），**网络契约与后端零改动**。编辑回填反向解析；标记之前的旧行进入“未归位”提示，不自动归类、不静默丢弃、不把加分项升级为必备要求。
+- 验证：前端 **14 passed（新增 5 项分区序列化用例：拼装、幂等往返、unassigned、空输入、无标记不猜）**、TypeScript 与 Vite build 通过；真实浏览器端到端：三分区填写 → 计划生成“3 项岗位要求 · 5 个主问题方向”，核心 2 / 优先 1 分类正确，冻结原文可见，“修改岗位 / JD”回填逐字一致。docs/08-ux.md 同步；api.md 无变化。
+
+## Unreleased — 2026-09-20｜重试门控修复与失败恢复键完整浏览器 E2E
+
+- 复盘发现 §53 接线引入的新 bug：`canRetryAnalysis` 漏查 `operation.error.retryable`（Report/ResumeDraft 两页都查了），恢复键跨浏览器后预算耗尽的失败回答会亮出只会吃 409 的假"重试分析"按钮。修复为三页同构门控（retryable===true 才出现）；AnswerComposer 新增 `retryBudgetExhausted` 文案分支——有恢复键但预算用尽时说"重试预算已用完，可跳过本题或提前结束"，不再谎称"没有可恢复编号"。
+- 完整确定性浏览器 E2E（临时把 runtime 模型配置改为 MODEL_TIMEOUT=0.001/MODEL_MAX_RETRIES=1 制造真实超时失败，跑完还原并校验 sha256 一致、重启 API）：提交回答→超时失败→"重试分析"按钮出现→**清空 sessionStorage 刷新页面按钮仍在**（服务端恢复键跨刷新）→点重试→预算耗尽文案正确（假按钮不出现）→跳过本题→第 2 题再失败→恢复配置重启后点重试→分析完成→Policy 进入澄清追问。恢复键→重试→成功→继续面试的全链路首次拿到浏览器实证。
+- 过程中发现并如实记录：第一次尝试改根目录 `.env.model.local` 无效——API 实际读 `runtime/owner-validation-live/.env.model.local`（`ZHIJUE_MODEL_ENV_FILE`）；上一轮"真实超时"其实是语义校验失败（模型返回了但过不了契约），当时未察觉。
+- 验证：tsc + vitest 14 passed + vite build；E2E 面试 interview_7057f4f29f12fb1b5a6a（synthetic 演示档案内可审计操作）。api.md 无变化（retryable 门控是 UI 语义，契约早已规定）。
+
+## Unreleased — 2026-09-20｜第三轮前端逻辑审查：失败恢复键断链修复
+
+- 静态通读五页 + 浏览器实测发现系统性缺陷：**操作失败后服务端把 `active_operation_id` 清成 null，前端跨页面/跨刷新就再也找不到“重试”的入口**——“重试分析/重试回答优化/重试简历生成”只活在 sessionStorage 里，换浏览器、清缓存或从历史 URL 直入时，用户面对失败态永远只剩“预算已用完”文案，即使服务端其实还有重试额度。后端明明持久化了恢复键（`improvements_operation_id`/`generation_operation_id`/`accepted_operation_id`），视图层却没暴露。
+- 契约（api.md 先行）：ReportView/ResumeDraftView 的 `active_operation_id` 在 failed 态**保留失败链尾操作**作为恢复键，只有 succeeded 落库才清 null；QuestionView.accepted_answer 新增 `retry_operation_id`（仅 failed 非 null，指向 parent 链链尾——从中间节点重试会分叉绕过累计预算）。
+- 后端：`release_failed_operation`（content + interviews 两处）不再清 active_operation_id；`accept_retry` 门禁改为“failed 且恢复键指向本操作链”合法；`get_view` 用 `_failed_retry_tail`（沿 parent 链取最新 child）暴露 `retry_operation_id`。
+- 前端：ReportPage/ResumeDraftPage/InterviewPage 在 failed 态优先用服务端恢复键接回 Operation 监控与重试按钮，sessionStorage 降级为兜底；PreparePage `operationSettled` 失败分支补清陈旧计划操作键（旧代码 failed 时 no-op，每次进页面重复拉取并短暂误锁）。
+- 验证：后端 **317 passed**（新增 2 个恢复键契约测试：失败→链尾推进→成功清除；草稿失败保留恢复键；interview 精确形状断言更新）+ Ruff 全绿；真实浏览器端到端——live 简历生成真实超时失败后，**无 sessionStorage 的新浏览器直入草稿 URL**，页面仍显示“简历生成 · 处理失败”操作状态与如实预算文案；陈旧键注入测试确认 500ms 内被清除；计划生成流程回归正常（8 项要求 · 5 方向 · 开始按钮可用）。
+
+## Unreleased — 2026-09-20｜事实选择按钮逻辑修复（切换语义 / 过度锁定 / 误清竞态）
+
+- 浏览器实测确认三处按钮逻辑缺陷：① 采用/不采用/更正都渲染 `aria-pressed` 按下态，但**再点已选中按钮不取消**；最坏是“更正”——选中后输入更正正文，再点高亮的“更正”会把正文**静默重置回原文**（数据丢失级）。② 选择/编辑是本地动作（docs/08 明确不写 API），却被 `mutationDisabled` 整体禁用——后台简历生成/上传解析期间用户不能勾选事实。③ confirm 受理后 `setDecisions({})` 清空**全部**选择，运行期间新勾选的会被误删。
+- 修复：`ClaimConfirmList` 的 `decide()` 实现真实切换（再点已选动作 = 取消该条；“更正”再点 = 退出编辑，重新进入时以原文开新会话）；组件移除 `disabled` prop，选择、编辑、取消全部选择不再被后台操作锁死，只有“批量提交”保留 `mutationDisabled` 门禁；提交受理后只清除本批 `claim_id` 集合内的选择。
+- 验证：真实浏览器逐项量测——再点“采用”取消选择、更正输入自定义正文后切换动作不丢编辑、简历生成 running 期间勾选生效且提交禁用、提交后服务器与 UI 一致（测试事实撤回：proposed 0 / confirmed 38 / revision 4）；tsc + vitest 14 passed + vite build。docs/08-ux.md §2 补按钮切换与本地动作语义；api.md 无变化。
+
+## Unreleased — 2026-09-20｜第二轮前端布局与交互审查：面试 ready 态矛盾修复
+
+- 动态审查（真实浏览器逐路径量测五页：非法 ID 直入、前进/后退、1024px 窄视口、键盘 Enter/Space、三连点幂等、更正/取消编辑、手工表单校验、报告标签切换）发现 **InterviewProgress 把“还没有当前题”一律渲染成“本场提问完成 · 5 / 5”**：ready 态面试同屏出现“完成 5/5”与“面试尚未开始”两个互斥事实，并残留两个永远禁用的跳过/结束按钮（与已修的 completed 终态同类缺陷）。
+- 修复：`InterviewProgress` 新增 `started` 语义（active/finishing/finish_failed/completed 为已开始），未开始渲染“尚未开始 · 0 / 5”、进度 0、无激活点；控制区改为仅已开始且未完成时渲染。completed 路径回归确认仍显示“本场提问完成 · 5 / 5”。
+- 附带：删除档案成功后同时清理 `prepare` 作用域的 localStorage 操作键（此前只清 profile/resume，prepare 键会残留）。
+- 验证：tsc + vitest 14 passed + vite build；浏览器实测 ready 态“尚未开始 · 0 / 5”+ 无控制区 + Alert 一致，completed 态不回归。三连点“使用演示岗位配置”服务端仅创建 1 条 interview（幂等键生效，动态证实）。api.md 无变化。
+
+## Unreleased — 2026-09-20｜“查看解析文本”抽屉交互缺陷修复
+
+- 浏览器实测发现 `DocumentBlocksDrawer` 三处真实交互缺陷：① anyui Drawer 不处理键盘，**ESC 完全无效**；② 面板关闭动画进行中快速重开，leave 过渡竞态把**全屏遮罩滞留在页面上吞掉所有点击**（面板已消失、mask 仍在，页面看似死锁，只能盲点遮罩恢复）；③ 打开/关闭后焦点留在 body，键盘用户落空。
+- 修复：改为**条件挂载**（卸载整个 Drawer 换取确定性状态，杜绝过渡竞态残留）；本组件接管 window keydown 实现 ESC 关闭；打开时焦点移入“关闭”按钮、关闭后还给触发按钮；`role="dialog"` 与遮罩点击关闭保持。
+- 验证：真实浏览器四条路径逐项量测（打开→遮罩点击关 / 打开→ESC 关 / ESC 关后立刻重开→遮罩关 / 关闭按钮关），每次 mask/panel/滚动锁/焦点四指标全对；tsc + vitest 14 passed + vite build 通过。api.md 无变化。
+
+## Unreleased — 2026-09-20｜按钮↔API 双向审计：补齐删除/运行信息端点与桌面布局整改
+
+- 双向审计结论：api.md 20 端点中 `DELETE /profiles/{id}` 与 `GET /runtime/info` **有契约、无实现**（文档先行、代码缺席）；前端无孤儿按钮。本轮补齐实现而非删文档。
+- 后端：`profile.delete` 先 tombstone（status=deleting、拒绝其余写入、拒绝与在途操作并发），后台先删 Knowledge 索引（SDK `delete_documents`，M0-03 已验证生命周期），再单事务级联清理档案/材料/事实/快照/会话/草稿与关联 Operation+事件，只保留删除回执链；索引失败数据库不动、档案保持 deleting，failed/interrupted 的删除回执从 `ProfileView.active_operation_id` 可恢复并走通用 `/retry`（预算累计三次）。`runtime/info` 返回 run_mode/data_mode、锁定版本、feature_flags（事实性常量）与依赖健康摘要，不含密钥/路径。OpenAPI 契约物 `contracts/openapi.json` 重新导出（24 paths）。
+- 前端：api.ts 增 `deleteProfile`；资料页新增“删除档案”危险区（折叠 + 两步确认 + 不可恢复说明），成功回无档案入口；页头常显 `live · synthetic` 模式徽章（闭合“MUST 明示运行模式”硬约束）；`vite.config.ts` 代理目标支持 `VITE_PROXY_TARGET` 覆盖（默认仍 8000）。
+- 布局整改（浏览器量测驱动）：已确认/待确认列表获得视口高度上限并真实内滚（38 条约 4,900px 页面 → 800px 视口内，提交栏常驻）；简历失败态不再显示误导的“0 项已确认资料”，重试预算耗尽文案改为如实说明；面试 completed 终态不再渲染禁用的跳过/结束按钮；“更正”按钮垂直居中；“简历整理”改胶囊样式。
+- 验证：后端 **315 passed / 2 deselected**（新增 `tests/test_profile_deletion.py` 4 项：级联清理+回执保留、revision/幂等重放/缺 key 拒绝、索引失败 deleting 保持+恢复入口+重试成功、runtime/info 无泄漏）；前端 **14 passed** + tsc + build；真实浏览器端到端：创建临时档案→删除→`profile.delete succeeded`、档案行物理删除、页面回无档案态、模式徽章/内滚/终态/失败文案逐项量测通过。api.md 实现状态与 docs/08-ux.md 同步。
+
 ## Unreleased — 2026-09-20｜PDF 上传待确认事实缺口修复
 
 - 独立验收确认真实 PDF 已解析为 Document/SourceBlock，但旧 `document.import` 从未生成 Claim，页面因而显示 0 条待确认事实；同时 `expected_revision` 被忽略。原始回归稳定复现 revision 未增长与 stale upload 被接受。

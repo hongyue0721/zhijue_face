@@ -5,7 +5,7 @@
 这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答→评分报告→回答优化→简历草稿的 React 纵切面。M4-02 已实现受事实约束的生成 Workflow、Operation/恢复、五页首屏收口和确认后打印；生产内容模型已用 synthetic 输入分别跑通 coaching/resume，但不把单样本外推为质量、稳定性、成本或负责人验收，也尚未部署。
 
 
-## 当前工程快照（2026-09-20，M4-02 生产内容模型 synthetic live 后）
+## 当前工程快照（2026-09-20，桌面闭环整改后）
 
 - `M0-02`：真实 openJiuwen Workflow/WorkflowAgent smoke 已实现并完成本地回归，状态 `IMPLEMENTED`；额外官方 Base Agent/starter 要求仍 `BLOCKED / UNCONFIRMED`。
 - `M0-03 / M0-03-DEL`：真实 Knowledge 四进程生命周期 `VERIFIED`，覆盖解析、入库、检索、provenance、重启、删除和删除后重启零命中。项目临时锁定到基于 openJiuwen v0.1.18 和官方 PR #1344 的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；不得描述成官方新发布版。
@@ -20,10 +20,10 @@
 - `M3-03`：`/start`、`/profiles/:id/prepare`、`/interviews/:id` 三页业务链 `VERIFIED`；负责人后续明确授权后已与 Report/Resume 一并完成五页首屏、响应式、中文展示语义和 lost-202 恢复。真实 fixture 纵切面继续覆盖 PDF/blocks、手工 fact/确认快照、演示与用户 JD、五题计划、PROBE/CLARIFY/NEXT/END、失败重试、幂等与 polling 收敛。跨代理 UTF-8 分块与 `EVENT_HISTORY_GONE` 组合仍未做浏览器级验收。
 - `M4-01`：新增确定性根题评分、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、Assessment/Report 唯一约束和 `report.ready`。未测/跳过/覆盖不足/冲突均保持 null；至少三根 scored 才给总分。自然五题、主答+追问合并、skip/end、回答中 end、报告失败后无模型重调 retry 均通过；状态 `VERIFIED`。
 - `M4-02`：`report.coach` 与 `resume.compose` 通过真实 openJiuwen Workflow 编排和确定性来源校验；Report/Resume API、持久化、事件、retry、五页 Product Polish 与打印均完成。生产 `deepseek-flash` 首轮暴露 Prompt 没有实际下发 Schema 结构，服务端正确拒绝；明确精确字段后，synthetic coaching/resume 均通过原 Schema 和事实校验。负责人独立验收仍 `NOT_RUN`，状态保持 `IMPLEMENTED`。
-- 当前全量回归：后端 273 passed / 2 skipped / 0 failed / 73 warnings；前端锁定 Node 24.21.0 下 16/16 passed、TypeScript 通过、生产构建 112 modules；规范校验 46/46，Ruff 74 files 全绿；doctor 18 PASS / 0 WARN / 0 FAIL；完整性 223/223。
+- `M4-02-DESKTOP`：快照代次激活门禁/恢复、无简历与独立简历入口、批量事实核对、岗位修改、skip/end、报告原题/原答和桌面浅色布局已实现。负责人 live 上传暴露的 P-EXTRACT 模型 HTTP 超时已与模型返回后的来源校验失败分型；按负责人要求，所有业务模型请求现显式发送 `reasoning_effort=low`。最新后端回归为 299 passed / 2 deselected / 78 warnings，Ruff 78 files。前端仍为 9/9、TypeScript 和 Vite 112 modules 通过；三个桌面尺寸/light-dark 实际浏览器证据与静态完整性结果见 process §43，本次 live 超时与低思考配置见 §44—§45。负责人须重新上传原文件才能验证上游恢复，不宣称本轮移动端或生产模型质量通过。
 - 模型实测：BGE-M3 embedding 已 live；`deepseek-flash` Answer Analyzer 成功样本为 10.650749 秒、usage 1156/2544/3700；Content Generator 成功 coaching/resume 分别为 27.727351/10.839200 秒、usage 669/6377/7046 与 535/2325/2860。provider 未返回价格，cost 均为 null / NOT_MEASURED；不估造费用。
 
-当前事实、证据和下一任务以 [process.md](process.md) 为权威；最新交接见 [M4-02 Content Generator live handoff](docs/handoffs/2026-09-20-m4-02-content-live.md)，五页收口见 [UI handoff](docs/handoffs/2026-09-19-ui-first-screen-closure.md)，评分基线见 [M4-01 handoff](docs/handoffs/2026-09-19-m4-01.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。
+当前事实、证据和唯一下一任务以 [process.md §43](process.md#43-2026-09-20m4-02-desktop-桌面业务闭环整改implemented) 的桌面交接为准；历史生产模型记录见 [Content Generator live handoff](docs/handoffs/2026-09-20-m4-02-content-live.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。现有业务库部署前须明确选择数据库并执行新迁移；本轮没有迁移或重启负责人真实 runtime。
 
 ## 项目一句话
 

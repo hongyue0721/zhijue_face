@@ -494,3 +494,22 @@ P-EXTRACT 仅发 **1 次真实 HTTP**，Operation 从 `2026-09-20T10:25:49.51576
 | 实际 Chromium `/start` | synthetic PDF 显示 4 条待确认事实；重启后的空白 owner runtime 文件选择控件可用 |
 
 本节验证缺口复现、真实 P-EXTRACT、来源约束、原子写入和实际页面展示；不证明真实简历召回率、批量稳定性、p95、价格或负责人复验通过。M4-02 仍为 `IMPLEMENTED`；负责人需要重新上传一次原 PDF，完成独立验收后才能写 ACCEPTED。
+
+## M4-02-DESKTOP 桌面闭环整改（2026-09-20）
+
+本轮只验收桌面，使用隔离 `runtime/desktop-fix-20260920/`、FastAPI/SQLite、真实 openJiuwen 0.1.18 Workflow 与显式 fixture Knowledge/Analyzer/ContentGenerator。没有读取真实简历或私密 env；不将 fixture 当作生产 Knowledge/模型效果证明。
+
+| 实际命令/场景 | 结果 |
+|---|---|
+| `services/api`：`.venv/bin/python -m pytest -m 'not integration_live' -q --tb=short` | exit 0；**295 passed / 2 deselected / 0 failed / 76 warnings** |
+| `.venv/bin/ruff check . && .venv/bin/ruff format --check .` | exit 0；All checks passed；78 files |
+| `apps/web`：锁定 Node 执行 `tsc --noEmit && vite build && vitest run` | exit 0；**9/9 passed**；112 modules |
+| 激活失败与恢复 | 失败保留已确认事实；计划 409；retry 成功保持同 snapshot/revision；单元/API 回归另覆盖空快照、旧代、三次预算、容量、事务回滚、重启及迁移回填 |
+| 两入口与事实 | 无 PDF 创建/确认/更正；上传合成 PDF 得到 21 proposed，一次批量确认；已确认原文可回看；独立通用简历确认/打印 |
+| JD 与五题 | 刷新恢复冻结原文；取消不改变 revision；修改创建新 interview，旧 JD 不变；五主题加一次 probe，共六次 UI 作答，报告保留六份原答 |
+| 恢复与控制 | Chromium 在真实控制响应阶段丢弃 202；刷新后原 key/body replay 未再次跳题；分析中 end 保留已受理回答，skipped/unmeasured 分数均 null |
+| 桌面视觉 | 五工作区 × 1366×768/1440×900/1920×1080 × light/dark 共 30 组截图；无横向溢出；1366 下事实提交栏底部 748px，事实区约 263px；正文 #1c2638 对白底约 15.18:1 |
+
+新回归位于 `tests/test_profile_activation.py`、`tests/test_report_context.py` 及既有 API/Knowledge/migration 测试；删除前端固定文案、常量和纯转发/接线断言，未删除业务失败断言。初次检查发现 TypeScript 回调缺类型、OpenAPI 导出未同步及两个 import 排序问题，修正后以上最终命令通过。烟测脚本最初使用错误 extraction section 枚举，现有 Schema 正确拒绝；修正合成 fixture 后重传成功，未放宽生产校验。
+
+证据：`runtime/desktop-fix-20260920/browser-evidence.json`、`verification-summary.json`、`backend-tests.log`、30 张工作区截图及 `confirmed-resume.pdf`。规范、doctor、checksum 收尾结果写同一 verification-summary。移动端/缩放、真实模型五题全场、live Knowledge 本轮重跑和负责人独立验收均 NOT_RUN；既有六 Seed 外的经历/证据回退题措辞策略未修改，不能从 fixture 分数推断问题或模型质量。
