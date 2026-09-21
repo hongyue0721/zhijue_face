@@ -37,7 +37,9 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
     api.ready(controller.signal)
-      .then((ready) => setService({ status: "ready", runMode: ready.run_mode }))
+      .then((ready) =>
+        setService({ status: "ready", runMode: ready.run_mode, dataMode: ready.data_mode }),
+      )
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (error instanceof ApiError && error.code === "SERVICE_NOT_READY") {
@@ -57,12 +59,12 @@ export default function App() {
         ? 3
         : route.page === "report"
           ? 4
-          : 5;
+          : null;
   const serviceReady = service.status === "ready";
 
   return (
     <div className="app-shell">
-      <AppHeader currentStep={currentStep} />
+      <AppHeader currentStep={currentStep} mode={service.status === "ready" ? `${service.runMode} · ${service.dataMode}` : undefined} />
       <ServiceNotice state={service} />
       {route.page === "start" ? (
         <StartPage profileId={route.profileId} serviceReady={serviceReady} navigate={navigate} />
@@ -86,7 +88,7 @@ export default function App() {
           navigate={navigate}
         />
       ) : (
-        <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} />
+        <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} navigate={navigate} />
       )}
     </div>
   );

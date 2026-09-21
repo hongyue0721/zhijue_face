@@ -4,10 +4,25 @@ import type { QuestionView } from "../../api";
 export function InterviewProgress({
   total,
   question,
+  started,
 }: {
   total: number;
   question: QuestionView | null;
+  started: boolean;
 }) {
+  // “没有当前题”有两种真相：还没开始，或已全部问完。混为一谈会把
+  // ready 态面试渲染成“本场提问完成 5/5”，与页面其他状态自相矛盾。
+  if (!question && !started) {
+    return (
+      <div className="interview-progress">
+        <div className="progress-copy"><strong>尚未开始 · 0 / {total}</strong><span>共 {total} 个主问题</span></div>
+        <div className="progress-dots" aria-label="面试尚未开始">
+          {Array.from({ length: total }, (_, index) => <span key={index} />)}
+        </div>
+        <Progress value={0} />
+      </div>
+    );
+  }
   const current = question ? Math.min(question.order_index + 1, total) : total;
   const label = question?.kind === "main"
     ? `主问题 ${current} / ${total}`

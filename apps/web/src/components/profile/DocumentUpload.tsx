@@ -45,7 +45,11 @@ export function DocumentUpload({
           type="file"
           accept="application/pdf,.pdf"
           disabled={disabled || busy}
-          onChange={(event) => accept(event.target.files?.[0])}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            accept(file);
+          }}
         />
         <span className="upload-guidance">拖入文件，或点击选择</span>
         <Button
@@ -60,7 +64,7 @@ export function DocumentUpload({
       </div>
       <p className="upload-limits">PDF · 最大 10 MiB · 最多 5 页</p>
       {validation ? <p className="field-error" role="alert">{validation}</p> : null}
-      <p className="privacy-note">隐私提示：文件只进入本地业务后端，不会把完整正文或服务器路径写入地址栏。</p>
+      <p className="privacy-note">文件由业务后端处理；live 模式下，提取文本可能发送给配置的模型服务。正文不会写入地址栏或浏览器会话存储。</p>
     </section>
   );
 }

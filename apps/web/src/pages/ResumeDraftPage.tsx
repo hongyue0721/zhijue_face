@@ -11,6 +11,7 @@ import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { resumeDraftStatusText, resumeTargetText } from "../presentation";
+import { reportPath, startPath } from "../routing";
 import {
   clearOperationId,
   clearRecoverableCommand,
@@ -26,9 +27,11 @@ type ResumeRetryCommand = Extract<RecoverableCommand, { kind: "resume-retry" }>;
 export function ResumeDraftPage({
   draftId,
   serviceReady,
+  navigate,
 }: {
   draftId: string;
   serviceReady: boolean;
+  navigate: (path: string) => void;
 }) {
   const [draft, setDraft] = useState<ResumeDraftView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
@@ -57,6 +60,13 @@ export function ResumeDraftPage({
       saveOperationId("resume", next.id, next.active_operation_id);
       clearRecoverableCommand("resume-retry", next.id);
       setPendingRetry(null);
+      setOperationId(next.active_operation_id);
+      return;
+    }
+    // generation_failed 时服务端保留失败链尾操作作为恢复键（api.md §6）：
+    // 跨浏览器、清缓存后仍能 GET 该 Operation 并走 /retry。
+    if (next.status === "generation_failed" && next.active_operation_id) {
+      saveOperationId("resume", next.id, next.active_operation_id);
       setOperationId(next.active_operation_id);
       return;
     }
@@ -173,16 +183,30 @@ export function ResumeDraftPage({
 
   return (
     <main className="page-container resume-page">
+      <nav className="page-backlinks no-print" aria-label="简历返回导航">
+        <Button type="secondary" size="small" onClick={() => navigate(startPath(draft.profile_id))}>
+          返回资料核对
+        </Button>
+        {draft.interview_id ? (
+          <Button type="secondary" size="small" onClick={() => navigate(reportPath(draft.interview_id!))}>
+            返回面试报告
+          </Button>
+        ) : null}
+      </nav>
       <header className="compact-page-heading resume-heading no-print">
         <div>
           <p className="eyebrow">简历草稿</p>
           <h1>基于已确认事实的表达版本</h1>
-          <p>
-            {resumeItems.length} 条正文
-            {" · "}{draft.source_claims.length} 项已确认资料
-            {" · "}待补充 {draft.missing_facts.length} 项
-            {" · "}注意 {draft.cautions.length} 项
-          </p>
+          {draft.status === "generating" || draft.status === "generation_failed" ? (
+            <p>本次生成未产出正文；已确认事实保留在资料页，不会丢失。</p>
+          ) : (
+            <p>
+              {resumeItems.length} 条正文
+              {" · "}{draft.source_claims.length} 项草稿引用资料
+              {" · "}待补充 {draft.missing_facts.length} 项
+              {" · "}注意 {draft.cautions.length} 项
+            </p>
+          )}
         </div>
         <div className="heading-actions">
           <Tag>{resumeDraftStatusText[draft.status]}</Tag>
@@ -217,7 +241,7 @@ export function ResumeDraftPage({
         <OperationStatus operation={operation} label="简历生成" />
         {draft.status === "generation_failed" && !canRetry ? (
           <Alert type="danger" title="简历生成未完成">
-            请刷新操作状态后再决定是否重试。
+            本次生成失败，且该操作的重试预算已用完；草稿与失败原因保留在服务端，不会自动重发请求。
           </Alert>
         ) : null}
       </div>

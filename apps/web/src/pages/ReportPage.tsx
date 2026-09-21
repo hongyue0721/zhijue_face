@@ -20,7 +20,7 @@ import {
   rootAssessmentStatusText,
   scoreText,
 } from "../presentation";
-import { resumeDraftPath } from "../routing";
+import { preparePath, resumeDraftPath, startPath } from "../routing";
 import {
   clearOperationId,
   clearRecoverableCommand,
@@ -91,6 +91,13 @@ export function ReportPage({
       clearRecoverableCommand("report-retry", next.id);
       setPendingImprovements(null);
       setPendingRetry(null);
+      setOperationId(next.active_operation_id);
+      return;
+    }
+    // failed 时服务端保留失败链尾操作作为恢复键（api.md §6）：跨浏览器、
+    // 清缓存后仍能 GET 该 Operation 并走 /retry，不依赖 localStorage。
+    if (next.improvements_status === "failed" && next.active_operation_id) {
+      saveOperationId("report", next.id, next.active_operation_id);
       setOperationId(next.active_operation_id);
       return;
     }
@@ -287,6 +294,14 @@ export function ReportPage({
 
   return (
     <main className="page-container report-page">
+      <nav className="page-backlinks" aria-label="报告返回导航">
+        <Button type="secondary" size="small" onClick={() => navigate(startPath(interview.profile_id))}>
+          返回资料
+        </Button>
+        <Button type="secondary" size="small" onClick={() => navigate(preparePath(interview.profile_id))}>
+          重新准备面试
+        </Button>
+      </nav>
       <header className="compact-page-heading report-heading">
         <div>
           <p className="eyebrow">面试报告</p>
@@ -328,6 +343,9 @@ export function ReportPage({
                 onClick={() => setSelectedRootId(assessment.root_question_id)}
               >
                 <span>问题 {index + 1}</span>
+                <span className="question-rail-title" title={assessment.question_text}>
+                  {assessment.question_text}
+                </span>
                 <small>
                   {assessment.score === null
                     ? rootAssessmentStatusText[assessment.status]
@@ -339,6 +357,23 @@ export function ReportPage({
         </aside>
 
         <section className="surface-card report-detail">
+          {selectedAssessment ? (
+            <section className="report-question-context" aria-label="原题与回答">
+              <p className="eyebrow">第 {selectedIndex + 1} 题 · 原题</p>
+              <h2>{selectedAssessment.question_text}</h2>
+              <details className="report-original-answers" open key={selectedAssessment.root_question_id}>
+                <summary>你的原回答（{selectedAssessment.answers.length} 次）</summary>
+                {selectedAssessment.answers.length ? selectedAssessment.answers.map((answer) => (
+                  <article key={answer.answer_id}>
+                    {answer.question_kind !== "main" ? (
+                      <h3>{answer.question_kind === "probe" ? "追问" : "澄清"}：{answer.question_text}</h3>
+                    ) : null}
+                    <p>{answer.raw_text}</p>
+                  </article>
+                )) : <p>本题没有提交回答，未回答不代表不会。</p>}
+              </details>
+            </section>
+          ) : null}
           <div className="segmented-tabs" role="tablist" aria-label="报告内容">
             <button
               type="button"
@@ -380,9 +415,14 @@ export function ReportPage({
                         {" · "}{criterionLevelText(criterion.level)}
                       </span>
                     </div>
-                    {(criterion.answer_quotes.length
-                      || criterion.explanations.length
-                      || criterion.knowledge_refs.length) ? (
+                    {criterion.explanations.length ? (
+                      <ul className="criterion-explanations">
+                        {criterion.explanations.map((text, index) => (
+                          <li key={`${criterion.criterion_id}-explanation-${index}`}>{text}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {(criterion.answer_quotes.length || criterion.knowledge_refs.length) ? (
                       <details className="compact-details">
                         <summary>查看来源与技术详情</summary>
                         {criterion.answer_quotes.length ? (
@@ -393,18 +433,6 @@ export function ReportPage({
                                 {quote.exact_quote}
                               </blockquote>
                             ))}
-                          </div>
-                        ) : null}
-                        {criterion.explanations.length ? (
-                          <div>
-                            <h3>评价说明</h3>
-                            <ul>
-                              {criterion.explanations.map((text, index) => (
-                                <li key={`${criterion.criterion_id}-explanation-${index}`}>
-                                  {text}
-                                </li>
-                              ))}
-                            </ul>
                           </div>
                         ) : null}
                         {criterion.knowledge_refs.length ? (
@@ -435,7 +463,7 @@ export function ReportPage({
                 <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
               </div>
               <p className="panel-intro">
-                这是整场报告的一次生成动作；切换问题或页签只读取已返回内容。
+                基于本场已保存的回答整理表达，不补造经历或数据；一次生成覆盖本场已回答题目。
               </p>
               {report.improvements_status === "not_requested" || pendingImprovements ? (
                 <Button
@@ -528,7 +556,7 @@ export function ReportPage({
           ) : null}
         </div>
         <Button
-          type="primary"
+          type="secondary"
           loading={busy}
           disabled={!serviceReady || busy}
           onClick={() => void createResumeDraft()}

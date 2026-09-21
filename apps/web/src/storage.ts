@@ -1,4 +1,4 @@
-export type OperationScope = "profile" | "prepare" | "interview" | "report" | "resume";
+export type OperationScope = "profile" | "prepare" | "interview" | "interview-control" | "report" | "resume";
 
 function storageKey(scope: OperationScope, resourceId: string): string {
   return `zhijue:${scope}:operation:${resourceId}`;
@@ -33,12 +33,40 @@ export function clearOperationId(scope: OperationScope, resourceId: string): voi
 }
 
 export type RecoverableCommandScope =
+  | "prepare-start"
+  | "interview-control"
+  | "interview-control-retry"
   | "report-improvements"
+  | "profile-resume"
   | "report-resume"
   | "report-retry"
   | "resume-retry";
 
 export type RecoverableCommand =
+  | {
+      kind: "prepare-start";
+      idempotencyKey: string;
+      input: { expected_revision: number };
+    }
+  | {
+      kind: "interview-control";
+      idempotencyKey: string;
+      input: { expected_revision: number; action: "skip" | "end" };
+    }
+  | {
+      kind: "interview-control-retry";
+      idempotencyKey: string;
+      input: { expected_revision: number; operation_id: string };
+    }
+  | {
+      kind: "profile-resume";
+      idempotencyKey: string;
+      input: {
+        profile_id: string;
+        expected_revision: number;
+        profile_snapshot_id: string;
+      };
+    }
   | {
       kind: "report-improvements";
       idempotencyKey: string;
@@ -89,11 +117,39 @@ function parseRecoverableCommand(value: unknown): RecoverableCommand | null {
   const revision = value.input.expected_revision;
   if (typeof revision !== "number") return null;
 
-  if (value.kind === "report-improvements") {
+  if (value.kind === "report-improvements" || value.kind === "prepare-start") {
     return {
       kind: value.kind,
       idempotencyKey: value.idempotencyKey,
       input: { expected_revision: revision },
+    };
+  }
+  if (
+    value.kind === "interview-control"
+    && "action" in value.input
+    && (value.input.action === "skip" || value.input.action === "end")
+  ) {
+    return {
+      kind: value.kind,
+      idempotencyKey: value.idempotencyKey,
+      input: { expected_revision: revision, action: value.input.action },
+    };
+  }
+  if (
+    value.kind === "profile-resume"
+    && "profile_id" in value.input
+    && "profile_snapshot_id" in value.input
+    && typeof value.input.profile_id === "string"
+    && typeof value.input.profile_snapshot_id === "string"
+  ) {
+    return {
+      kind: value.kind,
+      idempotencyKey: value.idempotencyKey,
+      input: {
+        profile_id: value.input.profile_id,
+        expected_revision: revision,
+        profile_snapshot_id: value.input.profile_snapshot_id,
+      },
     };
   }
   if (
@@ -117,7 +173,7 @@ function parseRecoverableCommand(value: unknown): RecoverableCommand | null {
     };
   }
   if (
-    (value.kind === "report-retry" || value.kind === "resume-retry")
+    (value.kind === "report-retry" || value.kind === "resume-retry" || value.kind === "interview-control-retry")
     && "operation_id" in value.input
     && typeof value.input.operation_id === "string"
   ) {

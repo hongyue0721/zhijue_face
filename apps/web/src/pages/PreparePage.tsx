@@ -1,9 +1,10 @@
 import { Alert, Button, Tag } from "@any-design/anyui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   api,
   newCommandKey,
+  requestRetryReason,
   type CreateInterviewOptions,
   type CoverageEntryView,
   type InterviewView,
@@ -24,7 +25,21 @@ import {
   interviewRoleText,
   requirementTitle,
 } from "../presentation";
-import { clearOperationId, loadOperationId, saveOperationId } from "../storage";
+import {
+  clearOperationId, loadOperationId, saveOperationId,
+  clearRecoverableCommand, loadRecoverableCommand, saveRecoverableCommand,
+  type RecoverableCommand,
+} from "../storage";
+
+type PendingPlan = {
+  profileId: string;
+  revision: number;
+  options: CreateInterviewOptions;
+  key: string;
+};
+type PendingStart = Extract<RecoverableCommand, { kind: "prepare-start" }>;
+// Private JD bodies survive in-app navigation only; never browser storage.
+const pendingPlans = new Map<string, PendingPlan>();
 
 const REQUIREMENT_TIER_COPY = {
   required: { count: "核心要求", item: "核心要求" },
@@ -115,6 +130,13 @@ export function PreparePage({
   const [operationId, setOperationId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [editing, setEditing] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState(() => pendingPlans.get(profileId) ?? null);
+  const [pendingStart, setPendingStart] = useState<PendingStart | null>(() => {
+    const stored = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
+    return stored?.kind === "prepare-start" ? stored : null;
+  });
+  const requestInFlight = useRef(false);
 
   const applyInterview = useCallback((next: InterviewView) => {
     setInterview(next);
@@ -134,6 +156,11 @@ export function PreparePage({
 
   useEffect(() => {
     const controller = new AbortController();
+    setInterview(null);
+    setEditing(false);
+    setPendingPlan(pendingPlans.get(profileId) ?? null);
+    const storedStart = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
+    setPendingStart(storedStart?.kind === "prepare-start" ? storedStart : null);
     const storedOperationId = loadOperationId("prepare", profileId);
     setOperationId(storedOperationId);
     setError(null);
@@ -169,8 +196,14 @@ export function PreparePage({
         } else {
           setInterview(next);
         }
-      } else if (interviewId && settled.kind !== "interview.plan") {
-        applyInterview(await api.getInterview(interviewId));
+      } else {
+        // 失败/中断的旧计划操作：清掉恢复键，避免每次进页面重复拉取并短暂
+        // 误锁 busy；用户下次显式生成会创建全新 operation。
+        clearOperationId("prepare", profileId);
+        setOperationId(null);
+        if (interviewId && settled.kind !== "interview.plan") {
+          applyInterview(await api.getInterview(interviewId));
+        }
       }
     } catch (nextError) {
       setError(nextError);
@@ -178,60 +211,90 @@ export function PreparePage({
   }, [applyInterview, interviewId, navigate, profileId]);
 
   const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
-  const operationActive = operation?.status === "queued" || operation?.status === "running";
+  const operationActive = Boolean(operationId) && (!operation || operation.status === "queued" || operation.status === "running");
   const busy = submitting || operationActive;
+  const profileReady = Boolean(profile?.latest_snapshot_id
+    && profile.snapshot_activation?.snapshot_id === profile.latest_snapshot_id
+    && profile.snapshot_activation.status === "ready");
 
   const createPlan = async (options: CreateInterviewOptions) => {
-    if (!profile?.latest_snapshot_id) return;
+    if (!profile || requestInFlight.current || (!pendingPlan && !profileReady)) return;
+    const command = pendingPlan ?? {
+      profileId: profile.id, revision: profile.revision, options, key: newCommandKey("plan"),
+    };
+    pendingPlans.set(profile.id, command);
+    setPendingPlan(command);
     setSubmitting(true);
+    requestInFlight.current = true;
     setError(null);
     try {
-      const accepted = await api.createInterview(
-        profile.id,
-        profile.revision,
-        options,
-        newCommandKey("plan"),
-      );
+      const accepted = await api.createInterview(command.profileId, command.revision, command.options, command.key);
+      pendingPlans.delete(profile.id);
+      setPendingPlan(null);
+      setEditing(false);
+      setInterview(null);
       saveOperationId("prepare", profile.id, accepted.operation_id);
-      navigate(preparePath(profile.id, accepted.resource_id), true);
       setOperationId(accepted.operation_id);
+      navigate(preparePath(profile.id, accepted.resource_id), true);
     } catch (nextError) {
-      setSubmitting(false);
       setError(nextError);
+      if (nextError instanceof ApiError && !requestRetryReason(nextError)) {
+        pendingPlans.delete(profile.id);
+        setPendingPlan(null);
+      }
+    } finally {
+      setSubmitting(false);
+      requestInFlight.current = false;
     }
   };
 
   const startInterview = async () => {
-    if (!interview) return;
+    if (!interview || requestInFlight.current || (!pendingStart && !profileReady)) return;
+    const command: PendingStart = pendingStart ?? {
+      kind: "prepare-start", idempotencyKey: newCommandKey("start"),
+      input: { expected_revision: interview.revision },
+    };
+    setPendingStart(command);
+    saveRecoverableCommand("prepare-start", interview.id, command);
     setSubmitting(true);
+    requestInFlight.current = true;
     setError(null);
     try {
-      const accepted = await api.startInterview(
-        interview.id,
-        interview.revision,
-        newCommandKey("start"),
-      );
+      const accepted = await api.startInterview(interview.id, command.input.expected_revision, command.idempotencyKey);
+      clearRecoverableCommand("prepare-start", interview.id);
+      setPendingStart(null);
       saveOperationId("prepare", profileId, accepted.operation_id);
       setOperationId(accepted.operation_id);
     } catch (nextError) {
-      setSubmitting(false);
       setError(nextError);
+      if (nextError instanceof ApiError && !requestRetryReason(nextError)) {
+        clearRecoverableCommand("prepare-start", interview.id);
+        setPendingStart(null);
+      }
+    } finally {
+      setSubmitting(false);
+      requestInFlight.current = false;
     }
   };
 
-  if (profile && !profile.latest_snapshot_id) {
+  if (profile && !profileReady && !pendingPlan && !pendingStart) {
     return (
       <main className="page-container narrow-page">
-        <Alert type="warn" title="资料尚未确认">
-          创建面试前必须存在服务端资料快照。页面不会绕过这一门槛。
+        <Alert type="warn" title="资料快照尚未就绪">
+          {profile.latest_snapshot_id
+            ? "已确认的资料还未完成索引激活。请返回资料页查看进度或恢复失败操作，完成后再创建和开始面试。"
+            : "请先返回资料页确认有效事实，生成并激活资料快照。"}
         </Alert>
-        <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回确认资料</Button>
+        <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回资料并恢复</Button>
       </main>
     );
   }
 
   return (
     <main className="page-container prepare-page">
+      <div className="prepare-navigation">
+        <Button disabled={submitting || Boolean(pendingPlan || pendingStart)} onClick={() => navigate(startPath(profileId))}>返回资料</Button>
+      </div>
       {interview ? (
         <header className="compact-page-heading prepare-ready-heading">
           <div>
@@ -245,11 +308,12 @@ export function PreparePage({
           </div>
           <div className="heading-actions">
             <Tag>本场计划已准备</Tag>
+            <Button disabled={busy || Boolean(pendingPlan || pendingStart)} onClick={() => setEditing(true)}>修改岗位 / JD</Button>
             <Button
               type="primary"
               size="large"
               loading={busy && operation?.kind === "interview.start"}
-              disabled={!serviceReady || busy || interview.status !== "ready"}
+              disabled={!serviceReady || busy || editing || !profileReady || Boolean(pendingPlan || pendingStart) || interview.status !== "ready"}
               onClick={startInterview}
             >
               开始模拟面试
@@ -263,11 +327,52 @@ export function PreparePage({
         </div>
       )}
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
-      {!interview ? (
-        <JDInput disabled={!serviceReady} busy={busy} onGenerate={createPlan} />
+      {pendingPlan || pendingStart ? (
+        <Alert type="warn" title="上次请求尚未取得明确受理结果">
+          不会自动创建第二份计划。请使用原请求标识与原始内容重试；岗位正文只在本次页面会话内保留，刷新前请先恢复。
+          <Button disabled={!serviceReady || busy} onClick={() => void (pendingPlan ? createPlan(pendingPlan.options) : startInterview())}>
+            使用原请求重试{pendingPlan ? "生成计划" : "开始面试"}
+          </Button>
+        </Alert>
+      ) : null}
+      {!interview || editing ? (
+        <JDInput
+          key={interview?.id ?? "new"}
+          disabled={!serviceReady || !profileReady || Boolean(pendingPlan || pendingStart)}
+          busy={busy}
+          initialOptions={interview ? {
+            jd_source_name: interviewRoleText(interview),
+            jd_text: interview.jd_text ?? "",
+          } : pendingPlan?.options}
+          regenerating={Boolean(interview)}
+          onCancel={interview ? () => setEditing(false) : undefined}
+          onGenerate={createPlan}
+        />
       ) : (
         <>
           <div className="prepare-workspace">
+            <section className="surface-card prepare-job-context" aria-labelledby="prepare-job-title">
+              <div className="section-heading compact">
+                <p className="eyebrow">核对本场岗位</p>
+                <h2 id="prepare-job-title">{interviewRoleText(interview)}</h2>
+                <JDSourceBadge source={interview.jd_source} />
+              </div>
+              {interview.jd_text !== null ? (
+                <p className="prepare-jd-original">{interview.jd_text}</p>
+              ) : (
+                <>
+                  <p>{interview.jd_source.source_type === "synthetic_demo_jd"
+                    ? "本场采用演示岗位配置，以下为计划使用的岗位要求。"
+                    : "该历史会话未保存原始岗位输入。以下是已冻结要求，不冒充完整 JD 原文；修改时请重新粘贴原文。"}</p>
+                  <ul className="requirement-list">
+                    {interview.jd_requirements.filter((requirement) => requirement.tier === "required" || requirement.tier === "responsibility").map((requirement) => (
+                      <li key={requirement.id}>{requirement.statement}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <Button disabled={busy || Boolean(pendingStart)} onClick={() => setEditing(true)}>修改岗位并生成新计划</Button>
+            </section>
             <JobSummary interview={interview} />
             <InterviewPlan
               slots={interview.root_plan.slots}

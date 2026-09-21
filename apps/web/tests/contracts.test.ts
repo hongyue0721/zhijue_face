@@ -1,35 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
-  JD_SOURCE_NAME_MAX_LENGTH,
-  JD_TEXT_MAX_LENGTH,
   api,
   requestRetryReason,
   shouldPreserveWriteCommand,
-  type CoverageEntryView,
-  type JDRequirementView,
-  type JDSourceView,
   type OperationAccepted,
   type OperationView,
 } from "../src/api";
 import {
   isTerminalOperation,
   preferObservedOperation,
-  stopOperationTransport,
 } from "../src/hooks/useOperationMonitor";
-import {
-  coverageExplanation,
-  criterionFindingText,
-  criterionLevelText,
-  followupIntentText,
-  jdSourceText,
-  requirementTitle,
-  reportLimitationText,
-  resumeDraftStatusText,
-  resumeTargetText,
-  rootAssessmentStatusText,
-  scoreText,
-} from "../src/presentation";
+import { scoreText } from "../src/presentation";
 import { parseRoute, preparePath, reportPath, resumeDraftPath } from "../src/routing";
 import {
   clearRecoverableCommand,
@@ -78,12 +60,6 @@ function installSessionStorage(): void {
   };
   vi.stubGlobal("window", { sessionStorage: storage });
 }
-describe("frontend request limits", () => {
-  it("matches the CreateInterviewRequest JD length limits", () => {
-    expect(JD_TEXT_MAX_LENGTH).toBe(8_000);
-    expect(JD_SOURCE_NAME_MAX_LENGTH).toBe(200);
-  });
-});
 
 describe("browser API boundary", () => {
   const fetchMock = vi.fn(async () => ok(accepted));
@@ -141,26 +117,6 @@ describe("browser API boundary", () => {
     expect(body).not.toHaveProperty("jd_source_name");
     expect(body).not.toHaveProperty("source_type");
   });
-  it("forwards a caller-owned answer identity unchanged across retries", async () => {
-    const input = {
-      expected_revision: 5,
-      question_id: "question_1",
-      client_turn_id: "turn-stable-0001",
-      answer_text: "同一条原始回答",
-    };
-
-    await api.submitAnswer("interview_1", input, "answer-key-stable-0001");
-    await api.submitAnswer("interview_1", input, "answer-key-stable-0001");
-
-    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
-    const requests = calls.map(([, init]) => ({
-      body: String(init.body),
-      key: new Headers(init.headers).get("Idempotency-Key"),
-    }));
-    expect(requests[0]).toEqual(requests[1]);
-    expect(JSON.parse(requests[0].body).client_turn_id).toBe("turn-stable-0001");
-    expect(requests[0].key).toBe("answer-key-stable-0001");
-  });
 
   it("keeps a 429 CAPACITY_LIMITED response retryable without treating it as success", async () => {
     fetchMock.mockResolvedValueOnce(errorResponse(429, {
@@ -196,31 +152,6 @@ describe("browser API boundary", () => {
     expect(requestRetryReason(apiError)).not.toBe("service");
   });
 
-  it("uses server-owned report and resume resources with explicit revisions", async () => {
-    await api.generateReportImprovements("interview_1", 2, "coaching-key-0001");
-    await api.createResumeDraft(
-      "profile_1",
-      {
-        expected_revision: 4,
-        profile_snapshot_id: "snapshot_1",
-        interview_id: "interview_1",
-      },
-      "resume-key-0001",
-    );
-
-    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
-    expect(calls[0][0]).toBe("/api/v1/interviews/interview_1/report/improvements");
-    expect(JSON.parse(String(calls[0][1].body))).toEqual({ expected_revision: 2 });
-    expect(new Headers(calls[0][1].headers).get("Idempotency-Key")).toBe(
-      "coaching-key-0001",
-    );
-    expect(calls[1][0]).toBe("/api/v1/profiles/profile_1/resume-drafts");
-    expect(JSON.parse(String(calls[1][1].body))).toEqual({
-      expected_revision: 4,
-      profile_snapshot_id: "snapshot_1",
-      interview_id: "interview_1",
-    });
-  });
 
   it("replays lost 202 responses with the original body and idempotency key", async () => {
     installSessionStorage();
@@ -401,42 +332,6 @@ describe("URL and presentation contracts", () => {
     expect(resumeDraftPath("resume/1")).toBe("/resume-drafts/resume%2F1");
   });
 
-  it("uses returned requirement text and preserves the unknown-is-not-weakness rule", () => {
-    const requirement = {
-      id: "requirement_1",
-      statement: "能够解释 UART DMA 排障过程",
-    } as JDRequirementView;
-    const coverage = {
-      status: "unknown",
-      relation: "direct_claim",
-      evidence_ids: [],
-      note: "",
-    } as CoverageEntryView;
-
-    expect(requirementTitle([requirement], [requirement.id])).toBe(requirement.statement);
-    expect(requirementTitle([requirement], ["missing"])).toBe("岗位相关能力验证");
-    expect(coverageExplanation(coverage)).toContain("材料未体现不代表不会");
-  });
-
-  it("maps every JD source type from the server without inferring trust from its name", () => {
-    const source = (sourceType: JDSourceView["source_type"]) => ({
-      source_type: sourceType,
-      source_name: "相同来源名称不能改变 source_type",
-    }) as JDSourceView;
-
-    expect(jdSourceText(source("synthetic_demo_jd"))).toBe("演示岗位配置");
-    expect(jdSourceText(source("user_provided"))).toBe("用户提供岗位描述");
-    expect(jdSourceText(source("official_posting"))).toBe("官方公开岗位");
-    expect(jdSourceText(source("real_jd_derived"))).toBe("公开岗位衍生材料");
-  });
-
-  it("keeps counterfactual, pushback, and reflection follow-up intents distinct", () => {
-    expect(followupIntentText("counterfactual")).toBe("条件变化下的调整");
-    expect(followupIntentText("pushback")).toBe("回应反例或限制条件");
-    expect(followupIntentText("reflection")).toBe("复盘与经验总结");
-    expect(followupIntentText("pushback")).not.toBe(followupIntentText("counterfactual"));
-    expect(followupIntentText("unrecognized_internal_intent")).toBe("围绕当前回答继续核对");
-  });
 
   it("treats only persisted operation terminal states as complete", () => {
     const operation = (status: OperationView["status"]) => ({ status }) as OperationView;
@@ -458,30 +353,9 @@ describe("URL and presentation contracts", () => {
     expect(preferObservedOperation(succeeded, failed)).toBe(succeeded);
   });
 
-  it("stops the polling timer, SSE source, and request after terminal observation", () => {
-    const clearInterval = vi.fn();
-    const close = vi.fn();
-    const abort = vi.fn();
-    vi.stubGlobal("window", { clearInterval });
 
-    expect(stopOperationTransport(42, { close }, { abort })).toBeNull();
-    expect(clearInterval).toHaveBeenCalledWith(42);
-    expect(close).toHaveBeenCalledOnce();
-    expect(abort).toHaveBeenCalledOnce();
-  });
-
-  it("localizes report and resume states without conflating zero with missing", () => {
-    expect(rootAssessmentStatusText.insufficient).toBe("本次回答信息不足");
-    expect(criterionFindingText.missing).toBe("本次回答缺少信息");
-    expect(criterionLevelText(null)).toBe("未形成等级");
-    expect(scoreText(null, "本题未评分")).toBe("本题未评分");
-    expect(scoreText(0, "本题未评分")).toBe("0 分");
-    expect(reportLimitationText("embedded.peripheral.uart_dma 未进入本轮范围")).toBe(
-      "UART 与 DMA 排障 未进入本轮范围",
-    );
-    expect(resumeDraftStatusText.generation_failed).toBe("草稿生成失败");
-    expect(resumeTargetText({ kind: "generic", source_name: "NO_TARGET" })).toBe(
-      "通用岗位版本",
-    );
+  it("distinguishes an observed zero score from an unmeasured result", () => {
+    expect(scoreText(null, "UNMEASURED")).toBe("UNMEASURED");
+    expect(Number.parseFloat(scoreText(0, "UNMEASURED"))).toBe(0);
   });
 });

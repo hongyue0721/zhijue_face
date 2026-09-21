@@ -59,6 +59,12 @@ export interface ProfileView {
   proposed_claims: ClaimView[];
   confirmed_claims: ClaimView[];
   latest_snapshot_id: string | null;
+  active_operation_id: string | null;
+  snapshot_activation: {
+    snapshot_id: string;
+    status: "pending" | "indexing" | "ready" | "failed";
+    operation_id: string | null;
+  } | null;
 }
 
 export interface OperationAccepted {
@@ -166,6 +172,8 @@ export interface AcceptedAnswerView {
   client_turn_id: string;
   raw_text: string;
   evaluation_status: "processing" | "evaluated" | "failed";
+  /** failed 时的失败链尾 operation 恢复键（api.md §6）；其他状态为 null。 */
+  retry_operation_id: string | null;
 }
 
 export interface QuestionBasisView {
@@ -224,6 +232,7 @@ export interface InterviewView {
   run_mode: string;
   profile_id: string;
   profile_snapshot_id: string;
+  jd_text: string | null;
   jd_requirements: JDRequirementView[];
   jd_source: JDSourceView;
   root_plan: {
@@ -262,6 +271,14 @@ export interface RootAssessmentView {
   id: string;
   root_question_id: string;
   status: RootAssessmentStatus;
+  question_text: string;
+  answers: Array<{
+    answer_id: string;
+    question_id: string;
+    question_kind: "main" | "probe" | "clarification";
+    question_text: string;
+    raw_text: string;
+  }>;
   score: number | null;
   coverage: number;
   criterion_results: ReportCriterionResult[];
@@ -515,6 +532,19 @@ export const api = {
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision, decisions }),
     }),
+
+  activateProfile: (profileId: string, expectedRevision: number, idempotencyKey: string) =>
+    request<OperationAccepted>(`/profiles/${profileId}/activate`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    }),
+
+  deleteProfile: (profileId: string, expectedRevision: number, idempotencyKey: string) =>
+    request<OperationAccepted>(
+      `/profiles/${profileId}?expected_revision=${expectedRevision}`,
+      { method: "DELETE", headers: { "Idempotency-Key": idempotencyKey } },
+    ),
 
   getOperation: (operationId: string, signal?: AbortSignal) =>
     request<OperationView>(`/operations/${operationId}`, { signal }),

@@ -10,6 +10,7 @@ export function AnswerComposer({
   pendingRetryText,
   retryReason,
   canRetryAnalysis,
+  retryBudgetExhausted,
   onSubmit,
   onResetRetry,
   onRetryAnalysis,
@@ -21,6 +22,7 @@ export function AnswerComposer({
   pendingRetryText: string | null;
   retryReason: "network" | "capacity" | "service" | null;
   canRetryAnalysis: boolean;
+  retryBudgetExhausted: boolean;
   onSubmit: (text: string) => void;
   onResetRetry: () => void;
   onRetryAnalysis: () => void;
@@ -60,7 +62,9 @@ export function AnswerComposer({
           <Alert type="danger" title="分析失败，原回答已保留">
             {canRetryAnalysis
               ? "重试只会重新分析这条已保存回答，不会再次提交文本。"
-              : "当前标签页没有可恢复的失败操作编号；原回答仍保存在服务端。"}
+              : retryBudgetExhausted
+                ? "该失败操作的重试预算已用完；原回答仍保存在服务端，可跳过本题或提前结束。"
+                : "当前没有可恢复的失败操作编号；原回答仍保存在服务端。"}
             {canRetryAnalysis ? (
               <Button type="primary" loading={submitting} disabled={!serviceReady || submitting} onClick={onRetryAnalysis}>
                 重试分析

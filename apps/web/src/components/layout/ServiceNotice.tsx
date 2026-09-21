@@ -2,7 +2,7 @@ import { Alert } from "@any-design/anyui/react";
 
 export type ServiceState =
   | { status: "checking" }
-  | { status: "ready"; runMode: string }
+  | { status: "ready"; runMode: string; dataMode: string }
   | { status: "unavailable" };
 
 export function ServiceNotice({ state }: { state: ServiceState }) {

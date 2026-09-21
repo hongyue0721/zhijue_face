@@ -1,6 +1,12 @@
 import { StepProgress } from "./StepProgress";
 
-export function AppHeader({ currentStep }: { currentStep: 1 | 2 | 3 | 4 | 5 }) {
+export function AppHeader({
+  currentStep,
+  mode,
+}: {
+  currentStep: 1 | 2 | 3 | 4 | null;
+  mode?: string;
+}) {
   return (
     <header className="app-header">
       <div className="header-inner">
@@ -11,7 +17,11 @@ export function AppHeader({ currentStep }: { currentStep: 1 | 2 | 3 | 4 | 5 }) {
             <small>AI 面试陪练</small>
           </span>
         </div>
-        <StepProgress current={currentStep} />
+        <div className="header-right">
+          {/* live/fixture/replay 与 synthetic 数据模式必须对用户明示（工程规范第 2 条）。 */}
+          {mode ? <span className="runtime-mode-chip">{mode}</span> : null}
+          {currentStep ? <StepProgress current={currentStep} /> : <span className="header-context">简历整理</span>}
+        </div>
       </div>
     </header>
   );
