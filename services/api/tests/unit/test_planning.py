@@ -123,6 +123,56 @@ def test_preferred_never_becomes_required(snapshot):
     assert tiers  # 明确：抽取结果非空
 
 
+def test_common_explicit_section_titles_preserve_tiers_and_offsets():
+    raw_text = (
+        "岗位名称：嵌入式软件工程师🙂\n"
+        "任职要求：熟悉 C 语言指针；理解中断机制。\n"
+        "优先条件：有 FreeRTOS 任务与 Queue 实践。\n"
+        "工作职责：负责 UART DMA 通信调试。\n"
+    )
+    common_titles = make_snapshot(
+        snapshot_id="jd_snapshot_common_titles",
+        profile_id="profile_common_titles",
+        raw_text=raw_text,
+        source_type=JDSourceType.USER_PROVIDED,
+        source_name="用户提供岗位描述",
+    )
+
+    requirements = extract_requirements(common_titles)
+    assert [requirement.tier for requirement in requirements] == [
+        RequirementTier.REQUIRED,
+        RequirementTier.REQUIRED,
+        RequirementTier.PREFERRED,
+        RequirementTier.RESPONSIBILITY,
+    ]
+    assert common_titles.raw_text == raw_text.strip()
+    assert common_titles.source_type is JDSourceType.USER_PROVIDED
+    assert common_titles.source_name == "用户提供岗位描述"
+
+    for requirement in requirements:
+        span = requirement.source_span
+        assert common_titles.raw_text[span["start"] : span["end"]] == span["quote"]
+        assert span["quote"] == requirement.statement
+        assert span["utf16_start"] == (
+            len(common_titles.raw_text[: span["start"]].encode("utf-16-le")) // 2
+        )
+        assert span["utf16_end"] == (
+            len(common_titles.raw_text[: span["end"]].encode("utf-16-le")) // 2
+        )
+
+
+def test_unsectioned_job_text_is_not_silently_promoted_to_required():
+    unsectioned = make_snapshot(
+        snapshot_id="jd_snapshot_unsectioned",
+        profile_id="profile_unsectioned",
+        raw_text="岗位名称：嵌入式软件工程师\n熟悉 C 语言指针\n有 FreeRTOS Queue 实践",
+        source_type=JDSourceType.USER_PROVIDED,
+        source_name="用户提供岗位描述",
+    )
+
+    assert extract_requirements(unsectioned) == []
+
+
 def test_non_requirement_lines_are_not_extracted(snapshot):
     requirements = extract_requirements(snapshot)
     assert not any("不是任何企业" in r.statement for r in requirements)

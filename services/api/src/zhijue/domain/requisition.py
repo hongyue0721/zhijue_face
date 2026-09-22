@@ -156,10 +156,56 @@ class JDImportResult:
 MAX_JD_CHARS = 8_000  # config/demo.yaml limits.max_jd_chars
 
 # 规则抽取的显式标记。**只做分级与定位，不生成原文之外的要求**（负责人决策 §5）。
-_REQUIRED_MARKERS = ("必要项", "必备", "要求", "must", "required")
+_REQUIRED_MARKERS = (
+    "必要项",
+    "必备",
+    "要求",
+    "任职资格",
+    "任职条件",
+    "基本条件",
+    "qualification",
+    "must",
+    "required",
+)
 _PREFERRED_MARKERS = ("加分项", "优先", "nice", "preferred", "plus")
 _RESPONSIBILITY_MARKERS = ("岗位职责", "工作内容", "职责", "responsibility")
 _CONTEXTUAL_MARKERS = ("考察范围", "重点考察", "不要求", "context", "scope")
+
+# 常见 JD 区段标题只在明确的 Markdown 标题或“标题：”边界生效。
+# 不能因为正文里出现“要求/职责”字样就把无分类文本升级成 Requirement。
+_PREFIXED_SECTION_TITLES = (
+    "Responsibilities",
+    "Qualifications",
+    "Nice to Have",
+    "任职要求",
+    "岗位要求",
+    "职位要求",
+    "基本要求",
+    "资格要求",
+    "任职资格",
+    "任职条件",
+    "基本条件",
+    "优先条件",
+    "加分条件",
+    "岗位职责",
+    "工作职责",
+    "职位职责",
+    "主要职责",
+    "考察范围",
+    "重点考察",
+    "Required",
+    "Preferred",
+    "必要项",
+    "工作内容",
+    "加分项",
+    "必备",
+    "优先",
+    "职责",
+)
+_PREFIXED_SECTION_RE = re.compile(
+    rf"^({'|'.join(re.escape(title) for title in _PREFIXED_SECTION_TITLES)})[：:]",
+    re.IGNORECASE,
+)
 
 # 这些行不是要求，是来源声明/边界提示；抽取时跳过但保留在 raw_text 里。
 _NON_REQUIREMENT_MARKERS = (
@@ -395,10 +441,7 @@ def split_sections(raw_text: str) -> list[_CandidateSpan]:
     for line in lines:
         stripped = line.strip()
         header_m = re.match(r"^#{1,3}\s+(.+)$", stripped)
-        prefix_m = re.match(
-            r"^(必要项|必备|加分项|优先|岗位职责|工作内容|职责|考察范围|重点考察)[：:]",
-            stripped,
-        )
+        prefix_m = _PREFIXED_SECTION_RE.match(stripped)
 
         new_header = None
         if header_m:
@@ -432,11 +475,7 @@ def _split_statements(text: str) -> list[str]:
         if not cleaned:
             continue
         cleaned = re.sub(r"^#{1,3}\s+.*$", "", cleaned)
-        cleaned = re.sub(
-            r"^(必要项|必备|加分项|优先|岗位职责|工作内容|职责|考察范围|重点考察)[：:]",
-            "",
-            cleaned,
-        )
+        cleaned = _PREFIXED_SECTION_RE.sub("", cleaned, count=1)
         cleaned = re.sub(r"^[\-\*\d\.\、\s]+", "", cleaned).strip()
         if not cleaned:
             continue
