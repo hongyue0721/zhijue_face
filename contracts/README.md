@@ -1,6 +1,6 @@
 # 机器可校验契约
 
-本目录使用 JSON Schema Draft 2020-12，规范版本 1.0.0，覆盖 Claim 提取、Claim、题目种子、已校验 Observation、程序 Policy Decision、受约束回答/简历生成结果和持久化事件。它们不是完整 REST OpenAPI；全部 HTTP DTO 在施工时按 api.md 用 Pydantic 实现，再导出 OpenAPI 和前端类型。
+本目录使用 JSON Schema Draft 2020-12，规范版本 1.0.0，覆盖 Claim 提取、Claim、题目种子、已校验 Observation、程序 Policy Decision、受约束回答/简历生成结果和持久化事件。它们不是完整 REST OpenAPI；HTTP 请求 DTO 已按 api.md 用 Pydantic 实现并导出 OpenAPI 快照，部分资源响应仍是服务层字典视图，前端网络类型仍在 `apps/web/src/api.ts` 手工维护。响应生成链尚未建立前不得把它们称为“生成类型”，必须靠精确契约测试、快照比较和 TypeScript 编译同步两端。
 
 Schema 只能检查字段和部分逻辑，不会证明引文存在、语义支持、资料属于当前用户、技术参考已审核或业务状态转换正确。这些必须由服务器语义校验和测试补齐。
 

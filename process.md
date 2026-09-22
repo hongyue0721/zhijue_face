@@ -1029,3 +1029,122 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 修复：三页同构 retryable===true 门控；AnswerComposer 新增 `retryBudgetExhausted` 分支，有恢复键但预算尽时如实说“重试预算已用完，可跳过本题或提前结束”，不再谎称“没有可恢复编号”。
 - 确定性浏览器 E2E（真实点击、真实模型链）：临时改 runtime/owner-validation-live/.env.model.local 为 MODEL_TIMEOUT=0.001/MODEL_MAX_RETRIES=1（第一次误改根目录文件无效——API 实际读 ZHIJUE_MODEL_ENV_FILE 指向的 runtime 副本，已如实记录；上一轮“真实超时”其实是语义校验失败）→ 新面试 interview_7057f4f29f12fb1b5a6a 提交回答 → 确定性超时 failed、重试分析按钮出现 → **清 sessionStorage+localStorage 刷新，按钮仍在**（服务端恢复键跨刷新实证）→ 点重试（仍超时）→ 预算耗尽文案正确、假按钮不出现 → 跳过本题 → 第 2 题再失败 → 还原 MODEL_TIMEOUT=55 重启 → 清 sessionStorage 刷新 → 点重试 → 分析完成 → Policy CLARIFY 进入澄清追问。恢复键→重试→成功→继续面试全链路闭合。
 - 配置还原校验：runtime env sha256 与备份一致（a50f43b6fb812c5e）；API 以原配置重启 ready。tsc、vitest 14 passed、vite build。E2E 操作均在 synthetic 演示档案内，可审计。状态 IMPLEMENTED。
+
+## 55. 2026-09-21｜前端资料核对收纳盒式重构、三态滑钮与专业交互动效（IMPLEMENTED）
+
+### 任务卡与门禁
+- 任务目标：按负责人要求重构资料页与事实核对前端交互。提供收纳盒式弹出卡片、精密三态分段滑钮（不采用/待定/采用），为耗时操作添加真实状态驱动的非阻塞等待动效；移除冗余说教黑话，提升演示专业质感，严禁破坏业务契约、事实边界与无障碍规范。
+- 允许修改路径：`apps/web/src/components/profile/`、`apps/web/src/pages/StartPage.tsx`、`apps/web/src/styles.css`、`apps/web/tests/`、`docs/08-ux.md`、`docs/ui-contract.md`、`CHANGELOG.md`、`process.md`、`CHECKSUMS.sha256`、`runtime/redesign-live/`（仅隔离浏览器证据与测试数据库，Git ignored）。
+- 严禁修改：`services/`、`config/`、`api.md`（接口契约保持不变）、现有运行中的 owner 进程及数据。
+- 回滚点：Git commit `85d4b1f5630be12af798f0aad3da3052baec91dc`。
+- 验收命令：
+  1. `cd apps/web && PATH="$PWD/../../toolchain/node24/bin:$PATH" corepack pnpm test`；
+  2. `cd apps/web && PATH="$PWD/../../toolchain/node24/bin:$PATH" corepack pnpm build`；
+  3. 启动隔离测试环境（独立端口与独立临时数据库），用真实浏览器验证三态滑钮、收纳盒弹窗、真实 Operation 等待动效及无横向溢出。
+
+### 实现、验证与交接
+- 实现：新增 `SegmentedSlider`、`FactModal` 与 `claimDecisions` 纯状态模块；待确认事实使用“不采用 / 待定 / 采用”三态控件，更正保持独立 `correct`；第 51 条新选择/更正返回明确上限错误且弹卡不关闭。补充经历在已有 Profile 时改为弹卡，初始无 Profile 仍保留内联入口；没有新增依赖。
+- 状态反馈：发送前与真实 `profile.confirm` queued/running 分开；运行期间本地选择与“取消全部选择”不受服务端写门禁限制，只有下一次批量提交受限。failed/interrupted/canceled 立即停动画，展示服务端错误并在 `retryable=true` 时提供原 Operation 重试；不可重试表示确认裁决已保存、但本代资料激活无法继续 retry，不引导重复确认。succeeded 重读 Profile 并显示 2.4 秒完成反馈。动画全部是 CSS transform/opacity/色彩过渡，`prefers-reduced-motion` 下停用非必要动画；没有假百分比和模糊玻璃。
+- 无障碍：三态控件是 radiogroup/radio 语义，只有当前档位进入 Tab 序列，方向键按相邻档位移动且焦点同步；弹卡为原生 dialog，`showModal()` 后通过 AnyUI `Textarea` 转发的原生 ref 直接设置首焦点，不依赖定时器；Tab/Shift+Tab 不会进入背景交互元素，ESC、遮罩、关闭、取消均可退出并将焦点归还触发按钮。更正暂存后隐藏互相矛盾的三态控件。原文、来源标签、隐私/模型流向、requires_text、错误和重试语义全部保留。
+- 自动回归：锁定 Node **v24.21.0**、pnpm **10.34.5**；从 `apps/web` 使用 Corepack 执行 `pnpm test`，**19 passed / 0 failed**；执行 `pnpm build` exit 0，TypeScript 通过，Vite **116 modules transformed**。
+- 规范完整性：已将本轮新增/修改的前端、测试与规范文件纳入 `CHECKSUMS.sha256`；`sha256sum --check --quiet CHECKSUMS.sha256` exit 0。
+- 浏览器证据：隔离 fixture/synthetic API `127.0.0.1:8012`（pid 907470）使用 openJiuwen SDK **0.1.18**、独立 SQLite `runtime/redesign-live/test.db` 与独立本地 Milvus `runtime/redesign-live/knowledge.db`；隔离 Vite `127.0.0.1:5200`（pid 901526），未复用/停止 owner 进程。实际点击验证鼠标三态、方向键与 roving tabindex、弹卡 textarea 直接首焦点、焦点圈闭与归还、ESC/遮罩、确认失败后的原 Operation 重试、真实 queued/running 与成功反馈。另以浏览器内拦住未发出的 `POST /confirm` Promise 验证发送中“取消全部选择”仍启用且能把本地选择归零，该检查未产生服务端写入或新增 embedding 调用。1366×768、1440×900、1920×1080 均无横向溢出；弹卡截图在打开 **260ms** 后采集，已越过 180ms 入场动画。证据为 `runtime/redesign-live/browser-evidence.json` 与四张截图。
+- 失败尝试：首个 Alembic 命令因从仓库根目录运行缺 `script_location`；第二次误用 `-x db_url` 未被本项目 env.py 读取，命中默认库而出现“table operation already exists”。随后删除仅隔离测试目标文件并使用项目约定的 `ZHIJUE_DATABASE_URL`，迁移成功。首个隔离 API 缺 `PYTHONPATH=src` 启动失败；补齐后成功。第一次 confirm 在未配 Knowledge 的 fixture 真实失败为 `SERVICE_NOT_READY`，页面重试入口通过；随后只给隔离进程引用开发者已有私密 embedding 配置并重启，原 Operation retry → queued/running → succeeded 闭环通过，密钥未读取、未写文档。
+- 外部调用事实：隔离 Knowledge 链路使用 embedding provider `openjiuwen_api`、model `BAAI/bge-m3`；日志观察到两次单文档索引，记为 **2 次逻辑 embedding 请求**。两次成功 `profile.confirm` 端到端耗时分别为 **7.350s / 3.917s**，失败前置操作为 **0.184s**；embedding 单调用延迟、token usage 与 cost 未由 SDK 返回，分别记录为 `NOT_MEASURED`、`null`、`null`，不填造 0。未读取、记录或输出密钥。
+- API/OpenAPI、数据库 Schema、迁移、后端实现与依赖均无变化。状态 IMPLEMENTED；负责人独立体验/验收待在上述隔离 URL 完成，不自行写 ACCEPTED。
+
+## 56. 2026-09-21｜前端文案去黑话、JD 未分区原文防丢失、重试编辑保字（IMPLEMENTED）
+
+### 任务卡与门禁
+- 任务目标：负责人要求通查前端“黑话、废话与反人类操作逻辑”。落地三类已证实问题：①用户可见文案暴露内部实现词（幂等键/受理/快照/激活/链尾恢复键/落库/冻结/拼装/可审计字段等）与开发自辩式免责句；②JD 编辑路径 `splitJdText` 未分区行被 `assembleJdText` 静默丢弃（数据丢失缺陷）；③AnswerComposer 重试态点“修改回答”丢失原文。
+- 允许修改路径：`apps/web/src/`、`apps/web/tests/`、`CHANGELOG.md`、`process.md`、`CHECKSUMS.sha256`。
+- 严禁修改：`services/`、`api.md`（契约不变）、fixture/replay 明示要求（AGENTS 负责人约束第 2/6 条：只翻译措辞，不删除、不藏成内部标签）、confirm 自动激活调度（`routes.py` `_schedule_profile_activation` 已存在，pending 按钮只是恢复入口，未新增第二次激活调用）。
+- 回滚点：本轮改动前的工作区（Git `85d4b1f` 之后的未提交改动中新增部分）。
+- 验收命令：`cd apps/web && pnpm exec tsc --noEmit && pnpm test && pnpm build`；隔离 fixture 环境真实浏览器走资料→准备→面试→报告→简历草稿五页。
+
+### 实现、验证与交接
+- 文案：五页与组件层全部改为“事实 + 下一步动作”的中文；`presentation.ts` 新增 `runtimeModeText` 把 `live/fixture/replay` 与数据模式翻译为“实时模式/演示数据/回放数据 · 合成数据”等（明示保留），`reportLimitationText` 追加服务端领域词翻译（根题→主问题、JD 可用能力维度→岗位可考察的能力方向、槽位→出题名额），事实内容不变。恢复按钮统一“重新提交/重试上次操作/继续未完成的生成”。删除“远端调用不保证退费”“不冒充”“可审计字段”等内部规则句；隐私与模型流向声明改为一句事实描述。
+- JD 数据丢失：`jdSections.ts` 新增 `assignSectionLine`；`JDInput` 把 `unassigned` 提升为受控 state，逐行展示原文与“归入必要项/加分项/岗位职责/删除该行”动作，未处理完之前点生成被拦截并说明原因，不发请求。新增 2 条回归用例（归类进入提交文本 + 往返闭环；追加不粘连），vitest **21 passed**。
+- 重试编辑保字：`AnswerComposer` 初始 state 取 `pendingRetryText`，“修改回答”先把原文写回 `text` 再清重试暂存；纯函数路径经浏览器实测确认不再丢字。
+- 浏览器证据：隔离 fixture API（`ZHIJUE_RUN_MODE=fixture`，端口 8020，独立 gitignored `services/api/runtime/verify-ui/`）+ Vite 5199。真实点击闭环：勾选→批量提交→fixture 无 Knowledge 真实 failed（“依赖未就绪。”如实透出）→点“重试资料准备”→引用开发者本机既有私密 embedding 配置（未读取/记录密钥）重启隔离进程→queued/running→“资料已就绪”；准备页“修改岗位 / JD”回填出现 1 行未分区原文→点“归入岗位职责”面板消失、文本入框→重新进入编辑点生成被拦截、`performance` 资源计时确认未发出 `POST /interviews`；面试页提交回答→fixture 无模型真实“分析失败”→“重试分析”入口与保留原文文案；“提前结束面试”确认与新文案；报告页限制条目翻译生效；简历草稿失败态与“重试简历生成”入口。验证后已停止进程并删除 `verify-ui` runtime。
+- 未改动：后端、OpenAPI、Schema、迁移、依赖、`api.md` 均无变化。
+- 已知边界：服务端错误 message（如“依赖未就绪。”“回答分析模型尚未配置。”“JD 可用能力维度不足 3 个…”）来自后端受控文案，前端只透传；进一步润色属后端契约文案任务，未在本轮擅改。移动端 NOT_RUN；负责人独立验收待做。状态 IMPLEMENTED，不写 ACCEPTED。
+
+## 57. 2026-09-21｜全链路前端恢复、运行库迁移与可访问性审查（IMPLEMENTED）
+
+### 任务卡与审查门禁
+
+- 负责人在真实准备页遇到“`RESOURCE_NOT_FOUND` / 资源不存在或不可见”后，要求先全面审查、把完整发现和修复顺序写入文档，再继续修复。本节即修复前冻结记录；审查范围覆盖五个页面、路由/API/storage、Operation/SSE/轮询恢复、表单数据保真、错误与可访问性、前端测试、OpenAPI/迁移契约及当前 live SQLite。
+- 开工分支 `feature/web-ui-redesign`，HEAD `85d4b1f5630be12af798f0aad3da3052baec91dc`；工作区已有负责人授权的前端重构未提交改动，`git status --short --branch` 为 staged 0、unstaged 27、untracked 4。不得 reset/stash/覆盖。当前 API 8000、Vite 5180 使用既有 live runtime；审查只做 GET、浏览器只读交互和回滚事务探针，不调用模型/embedding，不改真实资料。
+- 时间顺序如实记录：在负责人追加“先审查并记录”之前，已先对本次直接故障做过一版 `PreparePage` 热修（失败计划清陈旧 query、失败 start 不再把同一终态重新挂回 monitor），并以陈旧 URL 验证不再显示通用 404。收到新要求后立即冻结实现；以下其余修复均在本节登记完成后才允许开始，热修也须纳入后续回归而不能视为已验收。
+- 审查基线：锁定 Node 24.21.0 下 Vitest **21/21 passed**、`tsc --noEmit` exit 0；规范校验 **47/47 passed**。这些结果只证明现有用例通过，不能覆盖下面已由代码、live 数据和浏览器复现证实的缺陷。
+
+### 已确认发现
+
+| 编号 | 严重度 | 证据与根因 | 必须达到的修复结果 |
+|---|---|---|---|
+| R57-01 | P0 | 当前 `services/api/runtime/business.db` 没有 `alembic_version`；migration head 为 `e62a9f8c10bd`。live `question.seed_id` 仍为 NOT NULL，`answer` 缺 `accepted_operation_id`，`report` 缺三项生成状态列，而 ORM/契约允许 fallback question 的 `seed_id=null`。回滚事务插入 null 确定得到 `NOT NULL constraint failed: question.seed_id`。对数据库副本直接 `alembic upgrade head` 又在初版迁移报 `table operation already exists`，说明它是 `create_all` 形成的无版本混合 Schema，现有“升级前运行 Alembic”说明本身不可执行。实际 start operation `operation_b63788dda082fc95c43a` 为 `INTERNAL_ERROR`，runner 仅记录 `OperationalError`；失败清理异常还可能覆盖原异常，当前日志不足以还原完整异常链。 | 先备份真实业务库；给无版本 `create_all` 历史库提供可测试、保数据、可重复的迁移桥接，迁到 head 后用真实 start 证明可写 nullable fallback question；应用启动不再用 `create_all()` 掩盖旧表漂移，而应在业务写入前完成或明确拒绝错误 Schema。失败清理不得覆盖原始失败。 |
+| R57-02 | P0 | `POST /interviews` 先返回预留 ID，计划随后失败时该 Interview 不存在；旧 Prepare 立即把预留 ID 写进 URL，GET 404 覆盖真实 PlanningRejected。start 失败时 `operationSettled → setOperationId(null) → applyInterview(active_operation_id=同一失败操作)` 形成终态反复挂载，API 日志出现数百组 GET/SSE。 | 失败计划移除无效 query、保留真实 Operation 错误并回到 JD 输入；任何终态只收敛一次，失败 start 重读业务快照但不重新挂载同一终态。该项包含已做热修，仍需永久回归与浏览器复验。 |
+| R57-03 | P1 | 后端和 `test_profile_deletion.py` 明确规定删除失败后 Profile 保持 `deleting` 且 `active_operation_id` 暴露失败链尾；Start 对 `profile.delete` 失败直接 return，没有 retry 入口，同时 `busy` 因 `profile.active_operation_id` 永久为真，整个档案被锁死。删除危险区也没有显示规范要求的“不可恢复”说明。 | failed/interrupted 删除只在 `error.retryable=true` 时恢复原 Operation；不可重试时给出真实阻断；成功后清理并返回 `/start`。两次确认前必须明示永久删除及范围。 |
+| R57-04 | P1 | Interview 的 `controlBlocked` 对所有 failed/interrupted 控制操作恒真，但 `controlFailed` 在 `retryable=false` 时不渲染；结果是回答、跳过、结束和重试入口全部消失。 | 可重试控制只开放原 Operation retry；不可重试控制解除陈旧前端锁并按服务端 Interview 状态给出可行动出口，不能永久冻结会话。 |
+| R57-05 | P1 | `useOperationMonitor` 在 Operation GET 永久 404 时只 `setError`，不关闭 interval/EventSource；Prepare/Interview 又把“有 operationId 但无 snapshot”视为 active，导致每 800ms 永久请求并锁住写操作。 | 404 等不可恢复监控错误立即停止 transport、清对应陈旧恢复键并解除假 busy；临时网络失败仍保留显式刷新/恢复，不冒充终态。 |
+| R57-06 | P1 | Start 恢复顺序为 `active_operation_id → sessionStorage → snapshot_activation.operation_id`，陈旧本地键可压过服务端最新激活事实；服务端已 ready 时也可能重新监控旧操作。activation failed 的重试按钮在 Operation 尚未读到或读取失败时仍可点击，不符合“仅明确 retryable=true”门禁。 | Profile/activation 服务端快照优先，本地键只作受约束的同标签页加速；服务端无恢复操作时清陈旧键。重试 affordance 必须等待真实 `error.retryable=true`。 |
+| R57-07 | P1 | 页面 path builder 会编码不透明 ID，但 `api.ts` 所有动态路径和 SSE URL 都直接插入已解码 ID；含 `/`、`?`、`#` 的合法不透明 ID 会请求错误资源。`parseRoute` 直接 `decodeURIComponent`，浏览器把 history 改为 `/interviews/%` 后实测页面白屏；未知路径则静默渲染 Start 而保留错误 URL。 | 统一 API path-segment 编码；路由安全解码，非法/未知路径规范化到 `/start` 并保留可理解提示，不能崩溃或在错误 URL 下渲染另一页。 |
+| R57-08 | P1 | 解析文本 Drawer 只取首批 100 block，忽略 `next_cursor`，长文档静默截断；旧请求 `.finally` 可在文档切换后清掉新请求 loading。1365×768 Chromium 实测：打开焦点落在 `tabIndex=-1` 包装 div，不是“关闭”按钮；一次 Tab 后即可到 body，再进入背景“生成简历”等按钮；ESC 关闭后焦点回到包装 div而非触发按钮，Drawer `role=dialog` 但没有 `aria-modal`。这与 docs/08 §2 的既有验收声明直接冲突。 | 读取全部游标页且防循环/竞态；真实首焦点、模态 Tab 圈闭、可访问名称/`aria-modal`、ESC/遮罩/按钮关闭和焦点归还均用实际 DOM 验证。 |
+| R57-09 | P1 | `JDInput` 用原文字符串作 key，并以 `filter(item !== line)` 归类/删除；两行相同未分区原文时操作一行会同时删除全部重复项，只向目标分区追加一次，造成静默数据丢失。 | 未分区行以稳定位置/ID 单条处理；重复文本逐条归类或删除，剩余行和提交正文都不丢失。 |
+| R57-10 | P2 | Report/Resume 在失败业务快照已到、Operation snapshot 尚未到或读取失败时，立即断言“没有恢复入口/自动重试次数已用完”；这不是服务端已确认事实。创建手工事实的 modal 保存失败时，精确 `ErrorNotice` 留在原生 dialog 背后，弹窗内没有失败反馈。计划失败原因则只在表单底部 OperationStatus，首屏易看不到。 | 明确区分“正在读取失败详情 / 可重试 / 预算耗尽 / 恢复信息不可用”；modal 内保留正文并显示可行动错误；关键计划失败在当前操作附近可见。 |
+| R57-11 | P2 | App 只在首次 mount 调一次 readiness；依赖从 not-ready 恢复后所有写操作仍永久禁用，除非整页刷新。 | 服务提示提供显式“重新检查服务”并复用单一 readiness 函数；不自动切 fixture/replay。 |
+| R57-12 | P2 | 通用 ErrorNotice 标题直接暴露 `RESOURCE_NOT_FOUND/INTERNAL_ERROR` 等内部 code；任何非 ApiError 都被称为“网络连接失败”，即使是页面本地异常。未知 run/data/extract 状态会把内部枚举原样显示。Report 仍有“使用原请求创建草稿”实现术语。 | 用户标题只表达事实与动作，受控 code 可留给可折叠技术详情而不占主标题；网络与页面异常分型；未知枚举使用中性文案；清除残留实现黑话。 |
+| R57-13 | P2 | Report 自定义 `tablist` 的两个 tab 都在 Tab 序列，没有 roving tabindex、方向键、`aria-controls/labelledby`；JS 导航固定 smooth scroll，未遵守 reduced-motion。三态 slider 也只支持左右键，缺少同类 radio 预期的上下/Home/End。 | 按 WAI-ARIA 键盘模式补齐 tab/radio 行为与关联；导航在 reduced-motion 下立即滚动。 |
+| R57-14 | P2/结构性 | `api.md` 声明“前端类型由生成类型派生”，实际 `apps/web/src/api.ts` 是手写 DTO；导出的 OpenAPI 主要只有 request schema，grep 不到 Profile/Interview/Report/Resume response schema。`"literal" \| string` 还会把枚举收缩全部抹掉。现有 47 项规范校验不检查这一漂移。 | 不在本轮假装已生成：先补充可执行的响应契约/生成链或正式修订契约并加漂移守卫；至少消除失效 union，确保 API 变更能在编译/契约测试中暴露。 |
+| R57-15 | P2/测试 | 前端只有 3 个纯函数/网络边界测试文件；21 项全过仍未覆盖组件生命周期、404 停轮询、服务端/本地恢复优先级、删除/控制失败、Drawer 焦点与分页、坏 URL。迁移测试只覆盖空库从 base 到 head，没有覆盖仓库实际存在的无版本 `create_all` 历史库。 | 为上述有真实回归风险的状态机和迁移桥接补行为测试；浏览器负责 DOM/焦点/网络停止的可观察证明，不用源码文本断言冒充行为。 |
+
+### 审查后保留的正确边界
+
+- Report/ResumeDraft 的 202 响应已同步建立资源行，先导航到固定 draft ID 符合现有契约；不能把 Prepare 的“预留但可能不存在”问题机械套到这两页。
+- Report/Resume 失败回调不会像旧 Prepare 一样执行 `null → 同一 failed ID` 的重新挂载；Answer 恢复键来自服务端 `retry_operation_id`，正文没有写 sessionStorage。保留这些既有设计，不另造第二套恢复机制。
+- 用户资料、JD、回答和 document block 都以 React 文本节点渲染，未发现 `innerHTML` 注入；fixture/replay 明示仍保留。技术明细里的 planner/seed 信息处于用户主动展开区域，不按普通文案泄露处理。
+
+### 冻结修复顺序与验收
+
+1. **先救运行库**：停止业务写入，备份 live SQLite；在副本上验证无版本历史库迁移桥接、数据行数与关键 FK/唯一键，再迁移真实库并重启。真实 `start` 必须成功写入 5 个允许 `seed_id=null` 的问题；若失败，保留原异常与清理异常两条证据，不盲改。
+2. **再收敛状态机**：R57-02—R57-07，统一 server-authoritative 恢复、终态/404 transport 停止、删除和控制出口、路由与 API segment。
+3. **再修数据与交互**：R57-08—R57-13，先防静默截断/丢失，再补错误分型、服务重检和键盘焦点。
+4. **最后收契约与测试**：R57-14—R57-15；同步 `api.md`（如 HTTP/DTO 契约实际变化）、迁移/数据说明、docs/08、ui-contract、CHANGELOG、process、handoff 与完整性清单。无 API 变化时明确记录“API 无变化”，不伪造 generated 类型完成度。
+5. 自动验证至少包含：历史库迁移专项 + 后端全量非 live；锁定 Node 前端测试/TypeScript/build；规范/doctor/完整性/空白检查。浏览器逐条验证坏 URL、陈旧 Operation、计划/start 失败、删除/控制两类失败、服务恢复、重复 JD 行、Drawer 多页与完整焦点循环、Report/Resume 失败详情加载。生产模型质量与移动端仍不从本轮结果外推。
+
+### 修复闭环
+
+- **R57-01 / 运行库**：初版 migration 只接管“完整初始表集”的无版本历史库，部分 Schema 明确拒绝；后续四个 revision 改为可重复补齐 nullable/FK/unique/新表。应用启动在构造仓储前执行 Alembic `upgrade head`，删除运行时 `create_all()`。异步任务的资源释放改为 best-effort，清理异常只记录类型、不能覆盖主失败。新增历史混合库保数据/metadata 零漂移、部分库拒绝、应用启动 head 与清理异常回归。
+- **R57-02—R57-07 / 恢复状态机**：Prepare 的计划失败移除无效 interview query，同时用仅驻留应用内存的 plan attempt 保留原 JD 与精确 Operation 错误；start 失败不再经 `applyInterview` 重新挂载同一终态。Interview 启动恢复扫描持久化 terminal/missing `active_operation_id`，清掉上次清理丢失造成的永久锁。Profile/Interview/Report/Resume 以服务端资源快照为权威清陈旧本地键；Operation 404 立即关闭 fetch/interval/EventSource 并解除假 busy。删除和 control 依据 `retryable` 分流，不可重试不再锁死页面。所有 API 动态 path segment 与 SSE URL 统一编码；坏 history/未知路由安全归一到带提示的 `/start`。
+- **R57-08—R57-13 / 数据与交互**：Drawer 遍历全部 cursor、检测重复 cursor、防旧请求 finally 竞态，并补真实 AnyUI 控件焦点、`aria-modal/labelledby`、Tab 圈闭、ESC 与焦点归还。未归类 JD 按 index 单行删除/归类，重复文本不再批量消失。Report/Resume 失败详情区分 loading/unavailable/retryable/exhausted；FactModal 保存失败保留正文并在 dialog 内提示；计划错误移到表单前。readiness 可显式重检；错误主标题、未知 enum 与残留实现术语改为用户事实，技术 code 只在折叠详情。Report tab、事实 slider、reduced-motion 导航按键盘/动效约定补齐。
+- **R57-14—R57-15 / 契约与守卫**：删除会抹平枚举的 `literal | string`；新增不透明 ID 编码、坏路由、永久 Operation 404、重复 JD、slider 键盘、历史库迁移、terminal 指针恢复和清理异常测试。`api.md`、`contracts/README.md`、`docs/10-doc-sync.md` 正式改成当前事实：请求 DTO/OpenAPI snapshot 已有，部分响应与 TS 网络类型仍手写；不再假称“生成类型”。既有 API 精确 shape/OpenAPI snapshot 测试、TypeScript 编译和同发布更新仍是当前漂移守卫。规范校验器排除自己生成的 `validation-report.md`，并避免把 `R57-01` 这类审查编号误判成 PRD `Rxx`。
+- HTTP 路径、请求/响应字段、错误码、SSE 事件与业务枚举均未变化；本轮变化是启动迁移执行、浏览器恢复/展示语义和文档真值修正。因此没有重导 `contracts/openapi.json`，没有新增依赖、模型 fallback 或第二业务写入方。
+
+### live 数据迁移与真实纵切面
+
+- 写入前停止 API；备份 `services/api/runtime/backups/business-pre-r57-20260921.db`（0600，SHA256 `5a12549f6d0acbe1e162b20799a64c8050f75534a6e151f546e86439a2771991`）。迁移前后行数完全相同：Operation 22、Profile 1、Snapshot 1、Activation 1、Interview 1、Question/Answer/Report 0、ResumeDraft 1；`foreign_key_check` 零异常。
+- 真实库从无 `alembic_version` 的混合 Schema 升到 `e62a9f8c10bd`。迁移后 `question.seed_id` 与 `decision.target` nullable，Answer/Report 新列、FK/unique 均存在。API 重启时自动清掉遗留 failed start 指针；第一次旧 revision 提交如实返回冲突，页面重读后再次点击成功进入 active 面试。
+- live start 实际写入 5 条 Question，其中 3 条 fallback question 的 `seed_id=null`；Chromium 显示“主问题 1 / 5”与真实题面。没有调用 Answer Analyzer、Content Generator 或 embedding；usage/cost 为 null。
+
+### 浏览器行为证据
+
+- 受控响应注入逐条验证：计划失败保留精确 PlanningRejected 与全部 JD、移除无效 query，终态后 1.8 秒 Operation 读取计数不再增长；start 失败同样只收敛一次。Operation 404 清 session key，2.6 秒后读取计数不增长。readiness 503 出现“重新检查服务”，一次点击恢复 live 标记，不刷新整页、不切模式。
+- non-retryable skip 失败后回答/跳过均恢复可用且没有假 retry；non-retryable delete 显示永久删除范围、失败事实和无 retry 出口。FactModal 写入 500 后正文逐字保留，关闭焦点回“+ 补充经历事实”。
+- Drawer 实际发出两页请求；`aria-modal=true`、`aria-labelledby=document-drawer-title`，首焦点“关闭”，ESC 后焦点回“查看解析文本”。两个同文 JD 未归类行先删一条只剩一条，再归类后必要项仅保留该一条。坏 history `/interviews/%` 归一到 `/start?notice=invalid_route` 并显示提示。
+- Report ArrowRight 从“评分依据”移到“回答优化”，`aria-selected=true` 且 panel `aria-labelledby=report-tab-improvement`；不可重试生成失败没有 retry 按钮并显示服务端已确认的预算状态。现有失败 ResumeDraft 同样无假 retry、主界面不暴露 raw code。证据汇总：`runtime/evidence/r57-recovery-review/verification.json`（ignored、无资料正文/密钥）。
+
+### 最终自动验证与边界
+
+| 命令 | 结果 |
+|---|---|
+| `cd services/api && .venv/bin/python -m pytest tests -q -m 'not integration_live'` | exit 0；**321 passed / 2 deselected / 96 warnings** |
+| `cd services/api && .venv/bin/ruff check src tests smoke migrations && .venv/bin/ruff format --check src tests smoke migrations` | exit 0；All checks passed；79 files |
+| Node 24.21.0：`pnpm test && pnpm build` | exit 0；**25/25 passed**；TypeScript 通过；Vite **116 modules transformed** |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；**47/47 passed** |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；**18 PASS / 0 WARN / 0 FAIL** |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；**237/237 OK** |
+| `git diff --check` | exit 0；无空白错误 |
+| `git diff HEAD~3..HEAD --check` | 仅交接文档 Markdown 硬换行双空格（与既有 handoff 一致），无错误空白 |
+
+移动端/缩放、生产模型质量/延迟/费用与负责人独立验收均 NOT_RUN。SDK、provider/model、Prompt、Seed/Rubric/Policy 未改；本轮没有真实模型调用。状态为 IMPLEMENTED，不写 ACCEPTED；下一唯一建议是负责人用当前 live 页面独立复验“重新生成计划 → 开始面试”，确认体验后再决定是否 ACCEPTED。

@@ -78,7 +78,7 @@ ReportView 的 `root_assessments[].question_text/answers[]` 只读关联该场�
 
 业务表使用 SQLite，JSON 字段存储版本化快照；第一版不把每个词建表。使用外键约束、事务、唯一键与索引。关键唯一键：`(interview_id,client_turn_id)`、`question_id`（一题一份 Answer）、`accepted_operation_id`、`(interview_id,root_question_id)`（一根一份 Assessment）、`report.interview_id`（一场一份 Report）、`(profile_snapshot_id,target_hash)`（同一快照与目标只生成一份 ResumeDraft）、`(scope,idempotency_key)`、`(operation_id,seq)`。
 
-开发者需设计明确 SQL migration，不在请求中 `create_all()` 临时改表。连接启用 foreign_keys，配置 busy_timeout；WAL 是否启用与备份策略一起测试。[S12]
+应用启动必须在打开业务仓储前执行 Alembic `upgrade head`，不得用 `create_all()` 在运行时补表掩盖版本漂移。连接启用 foreign_keys、busy_timeout 与 WAL。历史 `create_all` 形成且没有 `alembic_version` 的完整初始 Schema 由 base migration 先登记初版，再由后续 revision 幂等补齐列、约束和表；只有部分初始表的未知 Schema 必须拒绝启动，不能猜测迁移。真实库迁移前先做受限备份，并在副本或专项测试中核对行数、FK 与 metadata 零漂移。[S12]
 
 服务端所有列表有明确 order_by，不依赖 SQLite 偶然返回顺序。测试数据与真实数据使用独立目录/数据库。前端 refresh 从服务端快照恢复，不从上一个用户的 React 内存拼凑资料。
 

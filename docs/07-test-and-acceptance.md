@@ -513,3 +513,19 @@ P-EXTRACT 仅发 **1 次真实 HTTP**，Operation 从 `2026-09-20T10:25:49.51576
 新回归位于 `tests/test_profile_activation.py`、`tests/test_report_context.py` 及既有 API/Knowledge/migration 测试；删除前端固定文案、常量和纯转发/接线断言，未删除业务失败断言。初次检查发现 TypeScript 回调缺类型、OpenAPI 导出未同步及两个 import 排序问题，修正后以上最终命令通过。烟测脚本最初使用错误 extraction section 枚举，现有 Schema 正确拒绝；修正合成 fixture 后重传成功，未放宽生产校验。
 
 证据：`runtime/desktop-fix-20260920/browser-evidence.json`、`verification-summary.json`、`backend-tests.log`、30 张工作区截图及 `confirmed-resume.pdf`。规范、doctor、checksum 收尾结果写同一 verification-summary。移动端/缩放、真实模型五题全场、live Knowledge 本轮重跑和负责人独立验收均 NOT_RUN；既有六 Seed 外的经历/证据回退题措辞策略未修改，不能从 fixture 分数推断问题或模型质量。
+
+## §57 全链路恢复、历史库迁移与可访问性整改（2026-09-21）
+
+本轮先完成静态/动态审查并在 `process.md §57` 冻结 15 项发现与修复顺序，再开始实现。测试证明范围是本地 SQLite、前后端状态机和桌面 Chromium 交互，不证明生产模型质量。
+
+| 验证面 | 实际结果 | 证据 |
+|---|---|---|
+| 无版本历史库 | `create_all` 混合 Schema 保留原行并升级到 head；关键 nullable/列/FK/unique 补齐；metadata 零漂移；部分初始表的未知库明确拒绝 | `services/api/tests/unit/test_migrations.py` |
+| 应用启动与重启 | 启动前自动 Alembic；`alembic_version=head`；queued/running 及上次已 terminal 但遗留的 Interview 指针均释放 | `tests/test_api_contract.py`、`tests/test_interview_runtime.py` |
+| 主失败保真 | 次生资源清理异常不替换 runner 的主失败 | `tests/test_api_contract.py::test_failed_operation_cleanup_cannot_replace_primary_failure` |
+| 前端纯行为 | opaque ID 编码、坏路由、Operation 永久 404 分类、重复 JD 单行删除、slider Up/Down/Home/End | `apps/web/tests/contracts.test.ts`、`jdSections.test.ts`、`claimInteractions.test.ts` |
+| live 运行库 | 备份后无损迁移到 `e62a9f8c10bd`；真实 start 写入 5 Question，其中 3 条 `seed_id=null`，页面进入主问题 1/5 | `runtime/evidence/r57-recovery-review/verification.json` |
+| 浏览器恢复 | plan/start 失败终态停止查询；404 清陈旧键；readiness 显式恢复；delete/control 不可重试不锁死；Report/Resume 不显示假 retry | 同上 |
+| 浏览器数据/无障碍 | Drawer 两页、modal 名称/首焦点/ESC/焦点归还；FactModal 失败保字；重复 JD 单条处理；Report tab 键盘关联；坏 history 归一 | 同上 |
+
+最终命令：后端非 live **321 passed / 2 deselected / 96 warnings**；Ruff check/format **79 files**；Node 24.21.0 前端 **25/25 passed**、TypeScript 与 Vite build（116 modules）通过；规范 **47/47**；doctor **18 PASS / 0 WARN / 0 FAIL**；checksum **237/237 OK**；空白检查通过。真实模型/embedding 本轮 0 调用，usage/cost 为 null；移动端、缩放、生产模型质量及负责人独立验收 NOT_RUN。

@@ -1,6 +1,6 @@
 # api.md｜HTTP 与事件契约
 
-**契约版本 1.0.0。** 根目录此文件为人类可读接口语义真源。后端由 FastAPI 导出 OpenAPI 到 `contracts/openapi.json`，前端类型由生成类型派生；不得另外手写一份独立含义的 OpenAPI。
+**契约版本 1.0.0。** 根目录此文件为人类可读接口语义真源。后端由 FastAPI 导出 OpenAPI 快照到 `contracts/openapi.json`；请求 DTO 由 Pydantic 建模。当前部分资源响应仍由服务层字典视图返回，`apps/web/src/api.ts` 的网络边界类型也仍为手工维护，尚不能宣称“前端类型由 OpenAPI 自动生成”；两端必须在同一变更中更新，并由精确响应契约测试、TypeScript 编译和 OpenAPI 快照检查防漂移。不得另外手写一份与本文件含义冲突的 OpenAPI。
 
 **实现状态（2026-09-20）**：M4-01 评分/报告后端已实现并测试；M4-02 回答优化、简历草稿与对应页面已实现。已实现资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`、`POST /profiles/{id}/activate`、`DELETE /profiles/{id}`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、`POST /interviews/{id}/report/improvements`，简历链 `POST /profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}`、`POST /resume-drafts/{id}/accept`，以及 Operation/SSE/retry/health 与 `GET /runtime/info`。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report。`DELETE /profiles/{id}` 先 tombstone（status=deleting，拒绝其余写入）再由 `profile.delete` Operation 后台清理：先删 Knowledge 索引（SDK delete_documents），再单事务级联删除档案/材料/事实/快照/会话/草稿与关联 Operation 与事件，只保留删除回执；索引删除失败时数据库不动，档案保持 deleting，可从 ProfileView 的 active_operation_id 恢复显式重试。
 

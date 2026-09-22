@@ -5,7 +5,7 @@
 | 事实 | 真源 | 衍生项 |
 |---|---|---|
 | 需求/范围 | docs/01-prd.md 与已接受 ADR | 页面文案、计划书 |
-| HTTP 语义/错误/幂等/SSE | 根 api.md | Pydantic DTO、实际 OpenAPI、生成 TS 类型、契约测试 |
+| HTTP 语义/错误/幂等/SSE | 根 api.md | Pydantic 请求 DTO、实际 OpenAPI 快照、当前手工维护的 TS 网络边界类型、契约测试；未建立响应生成链前不得称为“生成类型” |
 | 领域意义 | docs/03-data-model.md | 表结构、迁移、实体 |
 | Policy | docs/04-workflow-policy.md | 纯函数、参数、测试 |
 | 当前实现进度 | process.md | 交接摘要与迭代说明 |

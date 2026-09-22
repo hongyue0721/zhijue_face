@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-21｜全链路恢复、历史库迁移与可访问性整改（IMPLEMENTED）
+
+- 全面审查后先在 `process.md §57` 冻结 15 项发现与修复顺序，再按 P0→P2 实施。根因级修复 live `create_all` 无版本混合 Schema：应用启动改为仓储打开前自动执行 Alembic；完整初始历史库可无损接管，部分未知 Schema 明确拒绝；真实库备份后迁到 `e62a9f8c10bd`，原行数不变。真实 start 写入 5 题（3 条 fallback `seed_id=null`）并进入主问题 1/5。
+- 收敛 Operation 恢复：计划/start 失败不再被预留资源 404 覆盖或循环挂载；重启清理遗留 terminal Interview 指针；Profile/Interview/Report/Resume 以服务端快照为权威；Operation 永久 404 停止三类 transport 并清陈旧键。删除/control 不可重试失败不再永久锁死；readiness 可显式重检。
+- 修复数据与交互：全部 API 动态路径编码、坏路由归一；Drawer 全 cursor 分页、防竞态、真实 modal/焦点圈闭；重复未分区 JD 单行处理；FactModal 失败保字；Report/Resume 失败详情不抢跑结论；错误标题/未知 enum/残留实现术语用户化；Report tab、事实 slider 与 reduced-motion 键盘/动效补齐。
+- 契约真值修正：`api.md`、`contracts/README.md`、`docs/10-doc-sync.md` 不再假称前端类型已由 OpenAPI 生成，明确当前请求 Pydantic/OpenAPI snapshot 与手工响应/TS 边界及现有漂移守卫；HTTP 字段、错误码、SSE、业务枚举、依赖与模型配置无变化。
+- 验证：后端非 live **321 passed / 2 deselected / 96 warnings**；Ruff check/format **79 files**；Node 24.21.0 前端 **25/25 passed**、TypeScript、Vite build（116 modules）；规范 **47/47**；doctor **18 PASS / 0 WARN / 0 FAIL**；checksum **237/237 OK**。受控 Chromium 逐项证明 plan/start 终态停止、404 停询、服务恢复、删除/control 分流、Drawer 两页与焦点、FactModal 保字、重复 JD、坏 history、Report tab/失败和 Resume 失败。证据 `runtime/evidence/r57-recovery-review/verification.json`；真实模型/embedding 0 调用，usage/cost=null；负责人独立验收 NOT_RUN。
+
+## Unreleased — 2026-09-21｜前端文案去黑话、JD 未分区原文防丢失与重试编辑保字（IMPLEMENTED）
+
+- 全量审查五页用户可见文案：删除“幂等键 / 受理 / 快照 / 激活 / 本代 / 链尾恢复键 / 落库 / 冻结 / 拼装 / 入库 / 可审计字段 / 重试预算”等内部术语与开发自辩式免责句（“不冒充”“不会被当作”），改为描述事实与下一步动作的中文；保留负责人要求的 fixture/replay 与数据模式明示，改为“演示数据模式 / 回放数据模式”“演示数据 · 合成数据”而非裸枚举值。服务端结构化限制（根题/槽位/JD 维度）在展示层翻译为“主问题 / 出题名额 / 岗位可考察的能力方向”，事实内容不变。
+- 修复 JD 编辑路径数据丢失缺陷：`splitJdText` 归不进分区的原文此前只显示“有 N 行”计数、提交时被 `assembleJdText` 静默丢弃。现在未分区行逐行可见，每行提供“归入必要项 / 加分项 / 岗位职责 / 删除该行”显式动作；存在未处理行时生成按钮被拦截并说明原因，不发请求。新增 `assignSectionLine` 纯函数与 2 条回归用例（归类后进入提交文本、往返闭环、追加不粘连）。
+- 修复 AnswerComposer“修改回答”丢字：重试态下编辑器展示 `pendingRetryText` 但内部 `text` 为空，点“修改回答”后原文消失。现在清除重试暂存前先把原文同步回编辑器，初始 state 也以 `pendingRetryText` 起算。
+- 恢复入口文案统一为“重新提交 / 重试上次操作 / 继续未完成的生成”，不再向用户暴露“使用原请求 + 幂等键”语义；激活卡片改名“资料准备状态”，pending 恢复按钮“继续准备资料”仍只调用既有 `/activate`，未新增第二次激活路径（confirm 已自动调度激活，routes.py 不变）。
+- 验证：TypeScript 通过；vitest **21 passed**（新增 2 项）；Vite build 通过。真实浏览器闭环（隔离 fixture API `127.0.0.1:8020` + Vite `5199`，独立 gitignored runtime `verify-ui`，跑完已删除）：暂存→批量提交→fixture 无 Knowledge 真实 failed→“重试资料准备”→queued/running→ready；JD 编辑未分区行可见、归类入岗位职责、拦截生成且未发出 POST；面试提交回答→分析失败→“重试分析”入口；结束面试确认与报告页翻译后文案；简历草稿失败态与恢复入口。API/OpenAPI、Schema、迁移、后端与依赖零变化。状态 IMPLEMENTED；负责人独立验收待做。
+
+## Unreleased — 2026-09-21｜资料事实核对专业交互重构
+
+- 资料核对由并排按钮改为“不采用 / 待定 / 采用”三态分段控件；待定明确表示未选择，鼠标与方向键均可操作。仅当前档位进入 Tab 序列，方向键同步移动档位和焦点。“不采用”使用中性灰而非错误红。更正继续是独立 `correct` 动作，不会偷换为 accept；暂存更正后隐藏冲突的三态控件。
+- 新增原文对照的收纳盒式更正弹卡与手工补充弹卡；支持 ESC、遮罩、取消、关闭，焦点圈闭在 dialog 内且关闭后回到触发按钮。弹卡主体可在短视口内独立滚动。第 51 条新选择或更正不会关闭弹卡伪装成功。
+- 资料确认等待反馈绑定真实 `profile.confirm` Operation：发送前、原 Operation retry 发送、queued/running、failed/retryable、failed/non-retryable、succeeded 分态展示；后台处理中仍可编辑和取消本地选择。失败保留可用的原 Operation 重试；不可重试明确说明确认结果已保存、但本代激活无法 retry，不引导重复确认。成功展示短暂反馈。无假百分比，`prefers-reduced-motion` 下停用非必要动画。
+- 网络接口、snake_case DTO、数据库 Schema、迁移与后端代码均无变化；无新增依赖。Node 24.21.0 / pnpm 10.34.5 下前端 **19 passed**，TypeScript 与 Vite 116 modules 构建通过。
+- 隔离 synthetic/fixture 环境真实浏览器验证：三态鼠标、方向键与 roving tabindex，更正/新增弹卡、焦点圈闭/归还、ESC/遮罩、confirm 首次依赖失败与原 Operation 重试、真实 queued/running 反馈、成功反馈；1366×768、1440×900、1920×1080 均无横向溢出。settled 弹卡截图在打开 260ms 后采集。Knowledge 使用 openJiuwen 0.1.18、本地 Milvus、`openjiuwen_api` / `BAAI/bge-m3`；两次单文档索引记为 2 次逻辑 embedding 请求，端到端分别 7.350s / 3.917s，usage 与 cost 未返回，记录为 `null`，不填造 0。负责人独立体验待在隔离 URL 进行；状态 IMPLEMENTED，不写 ACCEPTED。
+
 ## Unreleased — 2026-09-20｜M4-02-DESKTOP 桌面闭环与激活恢复
 
 - 新增按 ProfileSnapshot 代次持久化的 activation；confirm 原子受理裁决、revision、快照与 Operation，后台只激活该代。失败 retry 不再重复确认或创建新快照，累计最多三次；计划/start 同时拒绝空快照与非 ready 代次。

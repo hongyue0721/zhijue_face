@@ -1,6 +1,6 @@
 # UI Contract｜P0 面试陪练、报告与简历草稿
 
-更新时间：2026-09-20。适用实现：`apps/web`。本文登记桌面闭环整改后的实际 HTTP 消费、展示语义与恢复边界；本轮不包含移动端验收。
+更新时间：2026-09-21。适用实现：`apps/web`。本文登记桌面闭环整改后的实际 HTTP 消费、展示语义与恢复边界；本轮不包含移动端验收。
 
 ## 1. 路由与业务门槛
 
@@ -22,10 +22,10 @@
 | Profile | `POST /api/v1/profiles`、`GET /api/v1/profiles/{id}` | `id/revision/documents/claims/latest_snapshot_id/active_operation_id/snapshot_activation` | 不从文件名生成事实，不凭快照存在推断索引成功 |
 | PDF 上传 | `POST /api/v1/profiles/{id}/documents` | multipart `file`、`kind=resume`、`expected_revision`；`Idempotency-Key`；成功 Operation result 含 `resource_revision/proposed_claim_count/extraction_metadata` | 浏览器不得手工设置 multipart `Content-Type` boundary；202 不冒充候选事实已生成 |
 | 文档处理状态 | `GET /api/v1/operations/{id}` + `GET /api/v1/documents/{id}` + `GET /api/v1/profiles/{id}` | Operation `status/error/result`；Document `extract_status/index_status/warnings/page_count`；Profile `proposed_claims` | SSE 关闭不等于成功；只有 operation succeeded 后重读 Document/Profile；`pending` 不显示成完成 |
-| 解析文本抽屉 | `GET /api/v1/documents/{id}/blocks` | `items[].page_number/block_index/text` | 不从浏览器重新解析 PDF |
-| 候选/已确认事实 | `ProfileView.proposed_claims/confirmed_claims` | `text/source_quotes/status/supersedes_id`；服务端顺序，单列表滚动 | 切换、选择、更正编辑与取消零写入；不默认采用，不再分页 |
-| 手工事实 | `POST /api/v1/profiles/{id}/facts` | `expected_revision`、`items[].section/text` | 无简历也可创建 Profile；提交后仍 proposed |
-| 事实确认/更正 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action/corrected_text`、Operation；每批最多 50 | 裁决受理与索引成功分开；失败也重读真实 Profile，不能把更正标成 PDF 原文 |
+| 解析文本抽屉 | `GET /api/v1/documents/{id}/blocks` | `items[].page_number/block_index/text`、`next_cursor` 全量遍历 | 不从浏览器重新解析 PDF；游标重复时报错停止，不静默截断；modal 有可访问名称、真实首焦点、Tab 圈闭、ESC 关闭与触发焦点归还 |
+| 候选/已确认事实 | `ProfileView.proposed_claims/confirmed_claims` | `text/source_quotes/status/supersedes_id`；服务端顺序，单列表滚动 | 待确认采用“不采用 / 待定 / 采用”三态分段控件，待定对应未选择；仅当前档位进入 Tab 序列，方向键同步档位与焦点；切换、选择、更正编辑与取消零写入；不默认采用，不再分页 |
+| 手工事实 | `POST /api/v1/profiles/{id}/facts` | `expected_revision`、`items[].section/text` | 无简历也可创建 Profile；有 Profile 时通过“+ 补充经历事实”打开收纳盒式弹卡；提交后仍 proposed，保持服务端返回顺序 |
+| 事实确认/更正 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action/corrected_text`、Operation；每批最多 50 | `correct` 是独立动作，不自动改为 accept；暂存更正后隐藏冲突的三态控件；第 51 条选择/更正保持界面并提示上限；弹卡焦点圈闭在 dialog 内，ESC/遮罩/取消关闭后焦点归还触发按钮 |
 | 资料激活 | `ProfileView.snapshot_activation`、`POST /profiles/{id}/activate`、Operation retry | `snapshot_id/status/operation_id` | pending 显式激活，failed 重试原操作；只接受该代 ready，不用 Document 全局状态 |
 | 用户 JD | `POST /api/v1/interviews` | `jd_text` 最多 8,000 字符、`jd_source_name` 1—200 字符 | 客户端不传 `source_type`；不把用户 JD 标成演示数据；不得截断超限正文后静默提交 |
 | 演示 JD | `POST /api/v1/interviews` | 省略 `jd_text`、`jd_source_name` | 来源必须由响应 `jd_source.source_type=synthetic_demo_jd` 证明 |
@@ -67,14 +67,16 @@
 1. 每个 202 响应的 `operation_id` 写入当前标签页 `sessionStorage`；正文不写入 storage。
 2. 浏览器同时连接 `GET /operations/{id}/events` 并轮询 `GET /operations/{id}`。SSE 只用于促使立即刷新，Operation snapshot 才是终态真值。
 3. 页面切换或资源 ID 变化时关闭旧 EventSource、取消旧 fetch、停止旧轮询。首次观察到 `succeeded/failed/interrupted/canceled` 后立即停止三类 transport；迟到的 `queued/running` 不得覆盖该终态快照。
-4. `queued/running` 禁止重复提交；`succeeded` 后重新读取对应 Profile/Interview/Report/ResumeDraft；失败终态保持可见。
+4. `queued/running` 禁止重复提交，但本地选择、取消和“取消全部选择”继续可用；资料确认栏只在请求发送、原 Operation retry 发送或真实 `profile.confirm` queued/running 时显示处理反馈。succeeded 显示短暂完成反馈并重新读取 Profile；failed/interrupted/canceled 立即停止动画并保留真实错误。仅 `retryable=true` 提供原 Operation 重试；不可重试表示确认裁决已保存、但本代资料激活无法继续 retry，应保留错误并刷新资料状态，不得引导重发 `POST /confirm`。不得用定时假百分比。
 5. 回答 202 后，`accepted_answer.raw_text` 来自服务端快照，因此刷新页面不要求重新填写。
-6. 后端失败释放后，`InterviewView.active_operation_id` 为空，`accepted_answer` 也没有 operation ID。当前实现通过同标签页 `sessionStorage` 恢复 retry ID；跨标签页打开失败状态时只能展示“原回答已保存”，不能调用 retry。这是现有响应契约限制，不以猜测补齐。
+6. 失败恢复键以服务端视图为权威：回答使用 `accepted_answer.retry_operation_id`，Report/ResumeDraft 使用 failed 状态下保留的 `active_operation_id`；`sessionStorage` 只作同标签页加速。重试必须指向失败链尾 Operation，不能重发原回答或新建第二份内容任务。
 7. Report 改善稿、创建 ResumeDraft 及两页 operation retry 在发送前把不含正文的请求体标识与 `Idempotency-Key` 写入对应 sessionStorage scope。网络未取得明确响应时保留；用户显式重试必须逐字段复用原 body/key，不能生成新业务命令。观察到 202 或确定的不可重试 HTTP 错误后清理。
 8. Report 与 Resume 使用各自的 sessionStorage scope 恢复 operation ID；正文仍不进入 storage。generation failed 只能 retry 原 operation，不能以新 POST 绕过累计尝试预算。
 9. ResumeDraft 的 resource ID 在 202 响应中已固定；页面可先导航并显示 generating 状态，Operation succeeded 后重新读取同一 Draft，不创建第二份草稿。
 10. 资料页从 Profile.active_operation_id 与 snapshot_activation 恢复激活；retry 不重复裁决。document.import 未保存上传字节，确知失败/中断须重新选择文件，未知响应在当前内存保留 File/body/key。
 11. 独立简历、start、control/control-retry 安全命令使用各自 scope 跨刷新恢复；上传、更正、JD 和回答正文不写 storage。控制回调不能释放回答请求锁，反之亦然。
+12. 业务资源快照优先于 `sessionStorage`；快照没有对应操作时清陈旧键。Operation GET 明确 404 `RESOURCE_NOT_FOUND` 时立即停止 fetch/interval/EventSource、清引用并解除假 busy；临时网络错误仍保留明确刷新。
+13. Profile 删除与 Interview control 的 failed/interrupted 操作按 `error.retryable` 分流：可重试只续原链，不可重试解除前端永久锁并根据最新资源快照提供可行动出口。应用 readiness 失败后必须允许用户显式重新检查，不能要求整页刷新或自动切运行模式。
 
 ## 5. 错误状态
 
