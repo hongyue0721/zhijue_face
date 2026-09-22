@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   api,
+  pathSegment,
   requestRetryReason,
   shouldPreserveWriteCommand,
   type OperationAccepted,
   type OperationView,
 } from "../src/api";
 import {
+  isPermanentOperationMonitorError,
   isTerminalOperation,
   preferObservedOperation,
 } from "../src/hooks/useOperationMonitor";
@@ -86,6 +88,17 @@ describe("browser API boundary", () => {
     expect(form.get("file")).toBe(file);
     expect(form.get("kind")).toBe("resume");
     expect(form.get("expected_revision")).toBe("4");
+  });
+
+  it("encodes every opaque resource id as one API path segment", async () => {
+    await api.startInterview("interview/a?#", 2, "start-key-encoded-0001");
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/interviews/interview%2Fa%3F%23/start");
+    expect(api.eventsUrl("operation/a?#")).toBe(
+      "/api/v1/operations/operation%2Fa%3F%23/events",
+    );
+    expect(pathSegment("profile/a?#")).toBe("profile%2Fa%3F%23");
   });
 
   it("sends user JD fields but never sends a client-authored source type", async () => {
@@ -331,6 +344,16 @@ describe("URL and presentation contracts", () => {
     expect(reportPath("interview/1")).toBe("/interviews/interview%2F1/report");
     expect(resumeDraftPath("resume/1")).toBe("/resume-drafts/resume%2F1");
   });
+  it("redirects malformed and unknown paths instead of throwing or rendering another page", () => {
+    expect(parseRoute("/interviews/%", "")).toEqual({
+      page: "redirect",
+      path: "/start?notice=invalid_route",
+    });
+    expect(parseRoute("/not-a-page", "")).toEqual({
+      page: "redirect",
+      path: "/start?notice=invalid_route",
+    });
+  });
 
 
   it("treats only persisted operation terminal states as complete", () => {
@@ -351,6 +374,21 @@ describe("URL and presentation contracts", () => {
     expect(preferObservedOperation(running, failed)).toBe(failed);
     expect(preferObservedOperation(failed, running)).toBe(failed);
     expect(preferObservedOperation(succeeded, failed)).toBe(succeeded);
+  });
+
+  it("stops monitoring only when the operation resource is permanently missing", () => {
+    expect(isPermanentOperationMonitorError(new ApiError(404, {
+      code: "RESOURCE_NOT_FOUND",
+      message: "不存在",
+      retryable: false,
+      details: {},
+    }))).toBe(true);
+    expect(isPermanentOperationMonitorError(new ApiError(503, {
+      code: "SERVICE_NOT_READY",
+      message: "暂未就绪",
+      retryable: true,
+      details: {},
+    }))).toBe(false);
   });
 
 

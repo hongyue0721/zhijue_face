@@ -1,5 +1,5 @@
 import { Alert, Button, Tag } from "@any-design/anyui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   newCommandKey,
@@ -57,6 +57,8 @@ export function ReportPage({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const assessmentTabRef = useRef<HTMLButtonElement>(null);
+  const improvementTabRef = useRef<HTMLButtonElement>(null);
 
   const applyReport = useCallback((next: ReportView) => {
     setReport(next);
@@ -146,7 +148,16 @@ export function ReportPage({
     },
     [applyReport, interviewId, report],
   );
-  const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
+  const operationUnavailable = useCallback((nextError: unknown) => {
+    if (report) clearOperationId("report", report.id);
+    setOperationId(null);
+    setError(nextError);
+  }, [report]);
+  const { operation, error: operationError } = useOperationMonitor(
+    operationId,
+    operationSettled,
+    operationUnavailable,
+  );
 
   const generateImprovements = async () => {
     if (!report || busy) return;
@@ -280,6 +291,37 @@ export function ReportPage({
   const canRetry = report.improvements_status === "failed"
     && Boolean(operationId)
     && Boolean(operation?.error?.retryable);
+  const operationLoading = Boolean(operationId && !operation && !operationError);
+  const failureDetail = report.improvements_status === "failed"
+    ? operationLoading
+      ? "正在读取这次失败的详细状态。"
+      : operation?.error?.retryable === false
+        ? "这次生成失败，服务端已确认重试次数用完。已有报告和原回答不受影响。"
+        : operationError
+          ? "失败详情暂时无法读取；页面已经停止重复查询，请刷新报告状态。"
+          : !operationId
+            ? "服务端没有提供可恢复的操作记录；已有报告和原回答不受影响。"
+            : null
+    : null;
+  const selectReportTab = (
+    tab: "assessment" | "improvement",
+    moveFocus = false,
+  ) => {
+    setActiveReportTab(tab);
+    if (moveFocus) {
+      requestAnimationFrame(() =>
+        (tab === "assessment" ? assessmentTabRef : improvementTabRef).current?.focus()
+      );
+    }
+  };
+  const handleReportTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" || event.key === "ArrowLeft"
+      ? "assessment"
+      : "improvement";
+    selectReportTab(next, true);
+  };
   const selectedIndex = Math.max(
     0,
     report.root_assessments.findIndex((item) => item.root_question_id === selectedRootId),
@@ -314,7 +356,7 @@ export function ReportPage({
         </div>
         <div className="score-summary" aria-label="本场总分">
           <strong>{scoreText(report.overall_score, "未形成总分")}</strong>
-          <span>{report.completion === "complete" ? "完整场次" : "未完整场次"}</span>
+          <span>{report.completion === "complete" ? "全部题目已作答" : "部分题目未作答"}</span>
         </div>
       </header>
 
@@ -374,27 +416,46 @@ export function ReportPage({
               </details>
             </section>
           ) : null}
-          <div className="segmented-tabs" role="tablist" aria-label="报告内容">
+          <div
+            className="segmented-tabs"
+            role="tablist"
+            aria-label="报告内容"
+            onKeyDown={handleReportTabKeyDown}
+          >
             <button
+              ref={assessmentTabRef}
+              id="report-tab-assessment"
               type="button"
               role="tab"
               aria-selected={activeReportTab === "assessment"}
-              onClick={() => setActiveReportTab("assessment")}
+              aria-controls="report-panel-assessment"
+              tabIndex={activeReportTab === "assessment" ? 0 : -1}
+              onClick={() => selectReportTab("assessment")}
             >
               评分依据
             </button>
             <button
+              ref={improvementTabRef}
+              id="report-tab-improvement"
               type="button"
               role="tab"
               aria-selected={activeReportTab === "improvement"}
-              onClick={() => setActiveReportTab("improvement")}
+              aria-controls="report-panel-improvement"
+              tabIndex={activeReportTab === "improvement" ? 0 : -1}
+              onClick={() => selectReportTab("improvement")}
             >
               回答优化
             </button>
           </div>
 
           {activeReportTab === "assessment" && selectedAssessment ? (
-            <div className="report-tab-panel" role="tabpanel">
+            <div
+              id="report-panel-assessment"
+              className="report-tab-panel"
+              role="tabpanel"
+              aria-labelledby="report-tab-assessment"
+              tabIndex={0}
+            >
               <div className="report-detail-heading">
                 <div>
                   <p className="eyebrow">问题 {selectedIndex + 1}</p>
@@ -454,7 +515,13 @@ export function ReportPage({
           ) : null}
 
           {activeReportTab === "improvement" ? (
-            <div className="report-tab-panel" role="tabpanel">
+            <div
+              id="report-panel-improvement"
+              className="report-tab-panel"
+              role="tabpanel"
+              aria-labelledby="report-tab-improvement"
+              tabIndex={0}
+            >
               <div className="report-detail-heading">
                 <div>
                   <p className="eyebrow">问题 {selectedIndex + 1}</p>
@@ -472,7 +539,7 @@ export function ReportPage({
                   disabled={!serviceReady || busy}
                   onClick={() => void generateImprovements()}
                 >
-                  {pendingImprovements ? "使用原请求重试" : "生成本场回答优化"}
+                  {pendingImprovements ? "继续未完成的生成" : "生成本场回答优化"}
                 </Button>
               ) : null}
               {canRetry ? (
@@ -482,12 +549,12 @@ export function ReportPage({
                   disabled={!serviceReady || busy}
                   onClick={() => void retryImprovements()}
                 >
-                  {pendingRetry ? "使用原重试请求" : "重试回答优化"}
+                  {pendingRetry ? "继续未完成的生成" : "重试回答优化"}
                 </Button>
               ) : null}
-              {report.improvements_status === "failed" && !canRetry ? (
-                <Alert type="danger" title="回答优化未完成">
-                  请刷新操作状态后再决定是否重试。
+              {failureDetail && !canRetry ? (
+                <Alert type={operationLoading ? "info" : "danger"} title="回答优化未完成">
+                  {failureDetail}
                 </Alert>
               ) : null}
               {selectedImprovement ? (
@@ -538,7 +605,7 @@ export function ReportPage({
                   ) : null}
                 </div>
               ) : report.improvements_status === "ready" ? (
-                <p className="empty-state">本题没有返回可展示的回答优化。</p>
+                <p className="empty-state">这道题没有找到可以改写的回答内容。</p>
               ) : null}
             </div>
           ) : null}
@@ -547,10 +614,10 @@ export function ReportPage({
 
       <section className="surface-card report-next-step">
         <div className="report-limitations">
-          <strong>{limitations[0] ?? "本场报告未记录额外限制"}</strong>
+          <strong>{limitations[0] ?? "本场报告没有额外的注意事项"}</strong>
           {limitations.length > 1 ? (
             <details className="compact-details">
-              <summary>查看全部 {limitations.length} 项限制</summary>
+              <summary>查看全部 {limitations.length} 条注意事项</summary>
               <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
             </details>
           ) : null}
@@ -561,7 +628,7 @@ export function ReportPage({
           disabled={!serviceReady || busy}
           onClick={() => void createResumeDraft()}
         >
-          {pendingResume ? "使用原请求创建草稿" : "生成简历草稿"}
+          {pendingResume ? "继续未完成的简历生成" : "生成简历草稿"}
         </Button>
       </section>
     </main>

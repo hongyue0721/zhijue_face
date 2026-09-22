@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type OperationView } from "../api";
+import { ApiError, api, type OperationView } from "../api";
 
 const TERMINAL_STATUSES: Record<OperationView["status"], boolean> = {
   queued: false,
@@ -39,14 +39,23 @@ export function stopOperationTransport(
   return null;
 }
 
+export function isPermanentOperationMonitorError(error: unknown): error is ApiError {
+  return error instanceof ApiError
+    && error.status === 404
+    && error.code === "RESOURCE_NOT_FOUND";
+}
+
 export function useOperationMonitor(
   operationId: string | null,
   onTerminal: (operation: OperationView) => void,
+  onUnavailable?: (error: ApiError) => void,
 ) {
   const [operation, setOperation] = useState<OperationView | null>(null);
   const [error, setError] = useState<unknown>(null);
   const onTerminalRef = useRef(onTerminal);
   onTerminalRef.current = onTerminal;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
 
   useEffect(() => {
     setOperation(null);
@@ -58,13 +67,14 @@ export function useOperationMonitor(
     let timer: number | null = null;
     let disposed = false;
     let terminalSnapshot: OperationView | null = null;
+    let transportUnavailable = false;
 
     const stopTransport = () => {
       timer = stopOperationTransport(timer, source, controller);
     };
 
     const refresh = async () => {
-      if (disposed || terminalSnapshot) return;
+      if (disposed || terminalSnapshot || transportUnavailable) return;
       try {
         const next = await api.getOperation(operationId, controller.signal);
         if (disposed || terminalSnapshot) return;
@@ -77,11 +87,17 @@ export function useOperationMonitor(
         }
       } catch (nextError) {
         if (
-          !disposed
-          && !terminalSnapshot
-          && !(nextError instanceof DOMException && nextError.name === "AbortError")
+          disposed
+          || terminalSnapshot
+          || (nextError instanceof DOMException && nextError.name === "AbortError")
         ) {
-          setError(nextError);
+          return;
+        }
+        setError(nextError);
+        if (isPermanentOperationMonitorError(nextError)) {
+          transportUnavailable = true;
+          stopTransport();
+          onUnavailableRef.current?.(nextError);
         }
       }
     };

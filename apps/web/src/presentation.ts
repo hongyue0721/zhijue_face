@@ -101,12 +101,34 @@ const competencyText: Record<string, string> = {
 };
 
 export function reportLimitationText(limitation: unknown): string {
-  if (typeof limitation !== "string") return "本场报告包含一项结构化限制";
-  let text = limitation;
+  let text = typeof limitation === "string" ? limitation : "本场报告有一条注意事项";
   for (const [competency, label] of Object.entries(competencyText)) {
     text = text.replaceAll(competency, label);
   }
-  return text;
+  // 服务端结构化理由里的领域词按用户视角改写，事实内容不变。
+  return text
+    .replaceAll("根题", "主问题")
+    .replaceAll("JD 可用能力维度", "岗位可考察的能力方向")
+    .replaceAll("槽位", "出题名额")
+    .replaceAll("非按简历篇幅选择", "与简历长短无关");
+}
+
+const runModeText: Record<string, string> = {
+  live: "实时模式",
+  fixture: "演示数据",
+  replay: "回放数据",
+};
+
+const dataModeText: Record<string, string> = {
+  synthetic: "合成数据",
+  user_confirmed: "用户确认资料",
+};
+
+/** live/fixture/replay 与数据模式必须对用户明示（负责人约束），明示的是中文事实，不是内部枚举值。 */
+export function runtimeModeText(runMode: string, dataMode: string): string {
+  const run = runModeText[runMode] ?? "未知运行模式";
+  const data = dataModeText[dataMode] ?? "数据来源待确认";
+  return `${run} · ${data}`;
 }
 
 export const actionText: Record<PolicyAction, string> = {

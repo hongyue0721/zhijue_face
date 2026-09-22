@@ -104,7 +104,16 @@ export function ResumeDraftPage({
     },
     [applyDraft, draftId],
   );
-  const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
+  const operationUnavailable = useCallback((nextError: unknown) => {
+    clearOperationId("resume", draftId);
+    setOperationId(null);
+    setError(nextError);
+  }, [draftId]);
+  const { operation, error: operationError } = useOperationMonitor(
+    operationId,
+    operationSettled,
+    operationUnavailable,
+  );
 
   const retryGeneration = async () => {
     if (!draft || !operationId || busy) return;
@@ -169,6 +178,18 @@ export function ResumeDraftPage({
   const canRetry = draft.status === "generation_failed"
     && Boolean(operationId)
     && Boolean(operation?.error?.retryable);
+  const operationLoading = Boolean(operationId && !operation && !operationError);
+  const failureDetail = draft.status === "generation_failed"
+    ? operationLoading
+      ? "正在读取这次失败的详细状态。"
+      : operation?.error?.retryable === false
+        ? "这次生成失败，服务端已确认重试次数用完。已确认的资料不受影响。"
+        : operationError
+          ? "失败详情暂时无法读取；页面已经停止重复查询，请刷新草稿状态。"
+          : !operationId
+            ? "服务端没有提供可恢复的操作记录；已确认的资料不受影响。"
+            : null
+    : null;
   const resumeItems = draft.sections.flatMap((section) => section.items);
   const selectedItem = resumeItems.find((item) => item.item_id === selectedItemId) ?? null;
   const selectedChange = draft.changes.find(
@@ -198,7 +219,7 @@ export function ResumeDraftPage({
           <p className="eyebrow">简历草稿</p>
           <h1>基于已确认事实的表达版本</h1>
           {draft.status === "generating" || draft.status === "generation_failed" ? (
-            <p>本次生成未产出正文；已确认事实保留在资料页，不会丢失。</p>
+            <p>这次没有生成出简历正文；你确认过的经历都还在资料页，不会丢失。</p>
           ) : (
             <p>
               {resumeItems.length} 条正文
@@ -217,7 +238,7 @@ export function ResumeDraftPage({
               disabled={!serviceReady || busy}
               onClick={() => void retryGeneration()}
             >
-              {pendingRetry ? "使用原重试请求" : "重试简历生成"}
+              {pendingRetry ? "继续未完成的重试" : "重试简历生成"}
             </Button>
           ) : null}
           {draft.status === "draft" ? (
@@ -239,9 +260,9 @@ export function ResumeDraftPage({
       <div className="no-print">
         <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
         <OperationStatus operation={operation} label="简历生成" />
-        {draft.status === "generation_failed" && !canRetry ? (
-          <Alert type="danger" title="简历生成未完成">
-            本次生成失败，且该操作的重试预算已用完；草稿与失败原因保留在服务端，不会自动重发请求。
+        {failureDetail && !canRetry ? (
+          <Alert type={operationLoading ? "info" : "danger"} title="简历生成未完成">
+            {failureDetail}
           </Alert>
         ) : null}
       </div>
@@ -256,7 +277,7 @@ export function ResumeDraftPage({
           <header>
             <p className="eyebrow no-print">正文预览</p>
             <h2 id="resume-document-title">个人简历</h2>
-            <p className="resume-target no-print">目标来源：{targetName}</p>
+            <p className="resume-target no-print">目标岗位：{targetName}</p>
           </header>
           {draft.sections.length ? draft.sections.map((section) => (
             <section className="resume-section" key={section.section_id}>
@@ -277,15 +298,15 @@ export function ResumeDraftPage({
               </ul>
             </section>
           )) : (
-            <p className="empty-state no-print">生成完成后，服务端会返回可追溯正文。</p>
+            <p className="empty-state no-print">生成完成后，这里会显示简历正文。</p>
           )}
         </article>
 
         <aside className="surface-card resume-audit-panel no-print" aria-labelledby="resume-audit-title">
           <div className="report-detail-heading">
             <div>
-              <p className="eyebrow">可追溯编辑</p>
-              <h2 id="resume-audit-title">来源与改写差异</h2>
+              <p className="eyebrow">来源核对</p>
+              <h2 id="resume-audit-title">这条正文从哪来、改了什么</h2>
             </div>
             <Tag>{selectedItem ? "已选择正文" : "暂无正文"}</Tag>
           </div>
@@ -317,7 +338,7 @@ export function ResumeDraftPage({
             </div>
           ) : (
             <p className="empty-state">
-              {selectedItem ? "这条正文没有返回改写差异。" : "选择一条正文查看来源。"}
+              {selectedItem ? "这一条是直接采用的原文，没有改写差异。" : "点击左侧任意一条正文，查看它的来源。"}
             </p>
           )}
 

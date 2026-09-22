@@ -38,8 +38,13 @@ type PendingPlan = {
   key: string;
 };
 type PendingStart = Extract<RecoverableCommand, { kind: "prepare-start" }>;
-// Private JD bodies survive in-app navigation only; never browser storage.
+type PlanAttempt = {
+  options: CreateInterviewOptions;
+  failure: OperationView | null;
+};
+// Private JD bodies survive in-app route replacement only; never browser storage.
 const pendingPlans = new Map<string, PendingPlan>();
+const planAttempts = new Map<string, PlanAttempt>();
 
 const REQUIREMENT_TIER_COPY = {
   required: { count: "核心要求", item: "核心要求" },
@@ -130,8 +135,13 @@ export function PreparePage({
   const [operationId, setOperationId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [settledOperation, setSettledOperation] = useState<OperationView | null>(null);
+  const [planNotice, setPlanNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [pendingPlan, setPendingPlan] = useState(() => pendingPlans.get(profileId) ?? null);
+  const [planAttempt, setPlanAttempt] = useState<PlanAttempt | null>(
+    () => planAttempts.get(profileId) ?? null,
+  );
   const [pendingStart, setPendingStart] = useState<PendingStart | null>(() => {
     const stored = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
     return stored?.kind === "prepare-start" ? stored : null;
@@ -139,6 +149,7 @@ export function PreparePage({
   const requestInFlight = useRef(false);
 
   const applyInterview = useCallback((next: InterviewView) => {
+    setPlanNotice(null);
     setInterview(next);
     if (next.active_operation_id) {
       saveOperationId("prepare", profileId, next.active_operation_id);
@@ -151,14 +162,26 @@ export function PreparePage({
   const reload = useCallback(async () => {
     const nextProfile = await api.getProfile(profileId);
     setProfile(nextProfile);
-    if (interviewId) applyInterview(await api.getInterview(interviewId));
-  }, [applyInterview, interviewId, profileId]);
+    if (!interviewId) return;
+    try {
+      applyInterview(await api.getInterview(interviewId));
+    } catch (nextError) {
+      if (nextError instanceof ApiError && nextError.code === "RESOURCE_NOT_FOUND") {
+        setInterview(null);
+        setPlanNotice("这个链接对应的面试计划不存在或没有生成成功，已返回岗位输入。");
+        navigate(preparePath(profileId), true);
+        return;
+      }
+      throw nextError;
+    }
+  }, [applyInterview, interviewId, navigate, profileId]);
 
   useEffect(() => {
     const controller = new AbortController();
     setInterview(null);
     setEditing(false);
     setPendingPlan(pendingPlans.get(profileId) ?? null);
+    setPlanAttempt(planAttempts.get(profileId) ?? null);
     const storedStart = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
     setPendingStart(storedStart?.kind === "prepare-start" ? storedStart : null);
     const storedOperationId = loadOperationId("prepare", profileId);
@@ -173,10 +196,16 @@ export function PreparePage({
       api.getInterview(interviewId, controller.signal)
         .then(applyInterview)
         .catch((nextError) => {
-          const waitingForPlan = nextError instanceof ApiError
-            && nextError.code === "RESOURCE_NOT_FOUND"
-            && storedOperationId;
-          if (!waitingForPlan && !(nextError instanceof DOMException && nextError.name === "AbortError")) {
+          const missingInterview = nextError instanceof ApiError
+            && nextError.code === "RESOURCE_NOT_FOUND";
+          if (missingInterview && storedOperationId) return;
+          if (missingInterview) {
+            setInterview(null);
+            setPlanNotice("这个链接对应的面试计划不存在或没有生成成功，已返回岗位输入。");
+            navigate(preparePath(profileId), true);
+            return;
+          }
+          if (!(nextError instanceof DOMException && nextError.name === "AbortError")) {
             setError(nextError);
           }
         });
@@ -188,6 +217,9 @@ export function PreparePage({
     setSubmitting(false);
     try {
       if (settled.status === "succeeded") {
+        setSettledOperation(null);
+        planAttempts.delete(profileId);
+        setPlanAttempt(null);
         const next = await api.getInterview(settled.resource_id);
         clearOperationId("prepare", profileId);
         setOperationId(null);
@@ -196,22 +228,48 @@ export function PreparePage({
         } else {
           setInterview(next);
         }
-      } else {
-        // 失败/中断的旧计划操作：清掉恢复键，避免每次进页面重复拉取并短暂
-        // 误锁 busy；用户下次显式生成会创建全新 operation。
-        clearOperationId("prepare", profileId);
-        setOperationId(null);
-        if (interviewId && settled.kind !== "interview.plan") {
-          applyInterview(await api.getInterview(interviewId));
+        return;
+      }
+
+      // 终态失败要留在页面说明真实原因，但不能再把同一个 failed operation
+      // 从 Interview.active_operation_id 挂回监控，否则会无限重读。
+      setSettledOperation(settled);
+      if (settled.kind === "interview.plan") {
+        const attempt = planAttempts.get(profileId);
+        if (attempt) {
+          const failedAttempt = { ...attempt, failure: settled };
+          planAttempts.set(profileId, failedAttempt);
+          setPlanAttempt(failedAttempt);
         }
+      }
+      clearOperationId("prepare", profileId);
+      setOperationId(null);
+      if (settled.kind === "interview.plan") {
+        setInterview(null);
+        navigate(preparePath(profileId), true);
+      } else if (interviewId) {
+        setInterview(await api.getInterview(interviewId));
       }
     } catch (nextError) {
       setError(nextError);
     }
-  }, [applyInterview, interviewId, navigate, profileId]);
+  }, [interviewId, navigate, profileId]);
 
-  const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
-  const operationActive = Boolean(operationId) && (!operation || operation.status === "queued" || operation.status === "running");
+  const operationUnavailable = useCallback(() => {
+    clearOperationId("prepare", profileId);
+    setOperationId(null);
+    setSubmitting(false);
+    setPlanNotice("上次处理记录已经不存在，页面已停止继续查询。请核对岗位内容后重新生成。");
+    if (!interview) navigate(preparePath(profileId), true);
+  }, [interview, navigate, profileId]);
+  const { operation, error: operationError } = useOperationMonitor(
+    operationId,
+    operationSettled,
+    operationUnavailable,
+  );
+  const operationActive = Boolean(operationId)
+    && !operationError
+    && (!operation || operation.status === "queued" || operation.status === "running");
   const busy = submitting || operationActive;
   const profileReady = Boolean(profile?.latest_snapshot_id
     && profile.snapshot_activation?.snapshot_id === profile.latest_snapshot_id
@@ -226,6 +284,10 @@ export function PreparePage({
     setPendingPlan(command);
     setSubmitting(true);
     requestInFlight.current = true;
+    setSettledOperation(null);
+    planAttempts.delete(profile.id);
+    setPlanAttempt(null);
+    setPlanNotice(null);
     setError(null);
     try {
       const accepted = await api.createInterview(command.profileId, command.revision, command.options, command.key);
@@ -235,6 +297,9 @@ export function PreparePage({
       setInterview(null);
       saveOperationId("prepare", profile.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
+      const attempt = { options: command.options, failure: null };
+      planAttempts.set(profile.id, attempt);
+      setPlanAttempt(attempt);
       navigate(preparePath(profile.id, accepted.resource_id), true);
     } catch (nextError) {
       setError(nextError);
@@ -259,6 +324,7 @@ export function PreparePage({
     setSubmitting(true);
     requestInFlight.current = true;
     setError(null);
+    setSettledOperation(null);
     try {
       const accepted = await api.startInterview(interview.id, command.input.expected_revision, command.idempotencyKey);
       clearRecoverableCommand("prepare-start", interview.id);
@@ -280,12 +346,12 @@ export function PreparePage({
   if (profile && !profileReady && !pendingPlan && !pendingStart) {
     return (
       <main className="page-container narrow-page">
-        <Alert type="warn" title="资料快照尚未就绪">
+        <Alert type="warn" title="资料还没有准备完成">
           {profile.latest_snapshot_id
-            ? "已确认的资料还未完成索引激活。请返回资料页查看进度或恢复失败操作，完成后再创建和开始面试。"
-            : "请先返回资料页确认有效事实，生成并激活资料快照。"}
+            ? "你确认的经历还在处理中。请回资料页查看进度，如果处理失败了可以在那里重试；准备完成后再来创建和开始面试。"
+            : "请先回资料页核对并确认至少一条经历，等资料准备完成后再来。"}
         </Alert>
-        <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回资料并恢复</Button>
+        <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回资料页</Button>
       </main>
     );
   }
@@ -326,12 +392,17 @@ export function PreparePage({
           <p>填写真实岗位描述，或明确选择演示岗位配置后生成本场计划。</p>
         </div>
       )}
+      {planNotice ? <Alert type="warn" title="面试计划需要重新确认">{planNotice}</Alert> : null}
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
+      <OperationStatus
+        operation={operation ?? settledOperation ?? planAttempt?.failure ?? null}
+        label={(operation ?? settledOperation ?? planAttempt?.failure)?.kind === "interview.start" ? "开始面试" : "生成面试计划"}
+      />
       {pendingPlan || pendingStart ? (
-        <Alert type="warn" title="上次请求尚未取得明确受理结果">
-          不会自动创建第二份计划。请使用原请求标识与原始内容重试；岗位正文只在本次页面会话内保留，刷新前请先恢复。
+        <Alert type="warn" title="上次请求未确认完成">
+          已保留这次的内容和操作，点重试会原样续上，不会生成第二份计划或重复开始面试。岗位正文只存在本页面里，刷新前请先点重试。
           <Button disabled={!serviceReady || busy} onClick={() => void (pendingPlan ? createPlan(pendingPlan.options) : startInterview())}>
-            使用原请求重试{pendingPlan ? "生成计划" : "开始面试"}
+            重试{pendingPlan ? "生成计划" : "开始面试"}
           </Button>
         </Alert>
       ) : null}
@@ -343,7 +414,7 @@ export function PreparePage({
           initialOptions={interview ? {
             jd_source_name: interviewRoleText(interview),
             jd_text: interview.jd_text ?? "",
-          } : pendingPlan?.options}
+          } : pendingPlan?.options ?? planAttempt?.options}
           regenerating={Boolean(interview)}
           onCancel={interview ? () => setEditing(false) : undefined}
           onGenerate={createPlan}
@@ -362,8 +433,8 @@ export function PreparePage({
               ) : (
                 <>
                   <p>{interview.jd_source.source_type === "synthetic_demo_jd"
-                    ? "本场采用演示岗位配置，以下为计划使用的岗位要求。"
-                    : "该历史会话未保存原始岗位输入。以下是已冻结要求，不冒充完整 JD 原文；修改时请重新粘贴原文。"}</p>
+                    ? "本场使用演示岗位配置，下面是计划采用的岗位要求。"
+                    : "这场面试没有保存你当时粘贴的岗位原文。下面是当时提取并锁定的岗位要求，措辞可能与原文不完全一致；如需修改请重新粘贴完整原文。"}</p>
                   <ul className="requirement-list">
                     {interview.jd_requirements.filter((requirement) => requirement.tier === "required" || requirement.tier === "responsibility").map((requirement) => (
                       <li key={requirement.id}>{requirement.statement}</li>
@@ -382,7 +453,6 @@ export function PreparePage({
           <TechnicalDetails interview={interview} />
         </>
       )}
-      <OperationStatus operation={operation} label={operation?.kind === "interview.start" ? "开始面试" : "生成面试计划"} />
     </main>
   );
 }

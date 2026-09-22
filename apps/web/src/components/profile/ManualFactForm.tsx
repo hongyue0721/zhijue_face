@@ -16,7 +16,7 @@ export function ManualFactForm({
   const submit = async () => {
     const value = text.trim();
     if (!value) {
-      setValidation("请写下一条可由你确认的项目或技能事实。");
+      setValidation("请输入一条真实的项目、经历或技能事实。");
       return;
     }
     setValidation(null);
@@ -25,24 +25,24 @@ export function ManualFactForm({
 
   return (
     <section className="surface-card manual-fact" aria-labelledby="manual-fact-title">
-      <div>
+      <div className="manual-fact-header">
         <p className="eyebrow">补充经历</p>
-        <h2 id="manual-fact-title">手工补充一条事实</h2>
-        <p>系统不会补造资料；你提交的内容仍需经过确认才能进入资料快照。</p>
+        <h2 id="manual-fact-title">手工录入经历事实</h2>
+        <p className="manual-fact-subtext">填写后会先进入“待确认事实”列表，你确认后才会计入面试资料。</p>
       </div>
       <label className="field-label">
-        项目或技能事实
+        项目或技能事实描述
         <Textarea
           modelValue={text}
           onUpdateModelValue={setText}
-          placeholder="例如：我在项目中使用 UART + DMA 接收数据，并通过日志与逻辑分析仪定位错帧。"
+          placeholder="例如：在 STM32 平台使用 UART + DMA 接收多传感器数据，并通过逻辑分析仪分析错帧。"
           maxlength={2000}
-          rows={5}
+          rows={4}
           disabled={disabled || busy}
         />
       </label>
       <div className="field-footer">
-        <span>{text.length} / 2000</span>
+        <span className="char-counter">{text.length} / 2000</span>
         <Button type="primary" loading={busy} disabled={disabled || busy} onClick={submit}>
           保存为待确认事实
         </Button>

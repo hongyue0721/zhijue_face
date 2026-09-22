@@ -1,11 +1,14 @@
+import { runtimeModeText } from "../../presentation";
 import { StepProgress } from "./StepProgress";
 
 export function AppHeader({
   currentStep,
-  mode,
+  runMode,
+  dataMode,
 }: {
   currentStep: 1 | 2 | 3 | 4 | null;
-  mode?: string;
+  runMode?: string;
+  dataMode?: string;
 }) {
   return (
     <header className="app-header">
@@ -18,8 +21,9 @@ export function AppHeader({
           </span>
         </div>
         <div className="header-right">
-          {/* live/fixture/replay 与 synthetic 数据模式必须对用户明示（工程规范第 2 条）。 */}
-          {mode ? <span className="runtime-mode-chip">{mode}</span> : null}
+          {/* live/fixture/replay 与数据模式必须对用户明示（负责人约束第 2 条）；
+              明示用中文事实，不直接展示内部枚举值。 */}
+          {runMode && dataMode ? <span className="runtime-mode-chip">{runtimeModeText(runMode, dataMode)}</span> : null}
           {currentStep ? <StepProgress current={currentStep} /> : <span className="header-context">简历整理</span>}
         </div>
       </div>

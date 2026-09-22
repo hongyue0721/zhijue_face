@@ -1,4 +1,4 @@
-import { Button, Input, Textarea } from "@any-design/anyui/react";
+import { Button, Input, Tag, Textarea } from "@any-design/anyui/react";
 import { useMemo, useState } from "react";
 import {
   JD_SOURCE_NAME_MAX_LENGTH,
@@ -7,9 +7,17 @@ import {
 } from "../../api";
 import {
   assembleJdText,
+  assignSectionLine,
+  removeLineAt,
   splitJdText,
   type JDSections,
 } from "../../jdSections";
+
+const ASSIGN_TARGETS: { key: keyof JDSections; label: string }[] = [
+  { key: "required", label: "必要项" },
+  { key: "preferred", label: "加分项" },
+  { key: "responsibilities", label: "岗位职责" },
+];
 
 export function JDInput({
   disabled,
@@ -36,17 +44,31 @@ export function JDInput({
     preferred: initial.preferred,
     responsibilities: initial.responsibilities,
   });
+  // 未分区原文必须可见、可归类；绝不静默丢弃（编辑旧 JD 时会发生数据丢失）。
+  const [unassigned, setUnassigned] = useState<string[]>(initial.unassigned);
   const [validation, setValidation] = useState<string | null>(null);
   const assembled = assembleJdText(sections);
 
   const setSection = (key: keyof JDSections) => (value: string) =>
     setSections((current) => ({ ...current, [key]: value }));
 
+  const assignLine = (line: string, index: number, key: keyof JDSections) => {
+    setSections((current) => assignSectionLine(current, key, line));
+    setUnassigned((current) => removeLineAt(current, index));
+    setValidation(null);
+  };
+
   const generate = () => {
     const name = jobName.trim();
+    if (unassigned.length > 0) {
+      setValidation(
+        `还有 ${unassigned.length} 行岗位原文没有归类。请把每一行归入上方分区，或明确删除不需要的行；不处理就无法生成，系统不会替你丢掉这些内容。`,
+      );
+      return;
+    }
     if (!name || !assembled) {
       setValidation(
-        "请填写岗位名称，并在必要项、加分项或岗位职责中至少填入一条；欠缺输入不会被自动补成真实岗位。",
+        "请填写岗位名称，并在必要项、加分项或岗位职责中至少填入一条。",
       );
       return;
     }
@@ -87,15 +109,44 @@ export function JDInput({
         <p className="eyebrow">岗位输入</p>
         <h2 id="jd-input-title">填写岗位信息</h2>
         <p>{regenerating
-          ? "修改只影响新计划和新面试，旧会话的岗位与资料快照保持不变。确认生成前不会发送请求。"
-          : "岗位要求与候选资料分别入库；系统不会从简历猜测 JD。"}</p>
-        <p className="field-hint">按分区逐行填写原岗位要求即可，分区标记由系统拼装；不要把加分项写成必备要求。</p>
-        {initial.unassigned.length > 0 ? (
-          <p className="field-hint" role="status">
-            原文有 {initial.unassigned.length} 行不属于任何分区，未被自动归位；如需保留请手动加入下方分区。
-          </p>
-        ) : null}
+          ? "修改只用于生成一份新计划；已开始的面试不受影响。点“生成”之前不会发送任何请求。"
+          : "岗位要求会单独保存，系统不会拿简历内容来冒充岗位要求。"}</p>
+        <p className="field-hint">按分区逐行填写岗位要求即可，保存时系统会自动整理分区标记；不要把加分项写成必备要求。</p>
       </div>
+      {unassigned.length > 0 ? (
+        <div className="jd-unassigned" role="group" aria-label="未归类的岗位原文">
+          <p className="jd-unassigned-heading">
+            有 {unassigned.length} 行原文不属于任何分区，需要你逐行安排；这些内容不会被自动归位，也不会被悄悄丢掉。
+          </p>
+          {unassigned.map((line, index) => (
+            <div className="jd-unassigned-row" key={`unassigned-${index}-${line}`}>
+              <span className="jd-unassigned-text">{line}</span>
+              <span className="jd-unassigned-actions">
+                {ASSIGN_TARGETS.map((target) => (
+                  <Button
+                    key={target.key}
+                    size="small"
+                    type="secondary"
+                    disabled={disabled || busy}
+                    onClick={() => assignLine(line, index, target.key)}
+                  >
+                    归入{target.label}
+                  </Button>
+                ))}
+                <Button
+                  size="small"
+                  type="secondary"
+                  disabled={disabled || busy}
+                  onClick={() => setUnassigned((current) => removeLineAt(current, index))}
+                >
+                  删除该行
+                </Button>
+              </span>
+            </div>
+          ))}
+          <Tag className="jd-unassigned-count">待处理 {unassigned.length} 行</Tag>
+        </div>
+      ) : null}
       <label className="field-label">
         岗位名称
         <Input
@@ -122,7 +173,7 @@ export function JDInput({
         "例如：参与嵌入式固件模块开发与联调",
       )}
       <span className="character-count" aria-live="polite">
-        拼装后 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
+        岗位内容共 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
       </span>
       <div className="button-row split-actions">
         <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>

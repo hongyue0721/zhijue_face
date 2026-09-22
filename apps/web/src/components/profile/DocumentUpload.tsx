@@ -18,11 +18,11 @@ export function DocumentUpload({
   const accept = (file?: File) => {
     if (!file) return;
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setValidation("请选择 PDF 文件。扫描版 PDF 可能需要手工补充事实。");
+      setValidation("请选择 PDF 文件。扫描版（图片式）简历可能需要手工填写经历。");
       return;
     }
     if (file.size > MAX_PDF_BYTES) {
-      setValidation("文件超过当前 P0 的 10 MiB 上传限制。请压缩后重试。");
+      setValidation("文件超过 10 MiB 的大小限制。请压缩后重试。");
       return;
     }
     setValidation(null);
@@ -64,7 +64,7 @@ export function DocumentUpload({
       </div>
       <p className="upload-limits">PDF · 最大 10 MiB · 最多 5 页</p>
       {validation ? <p className="field-error" role="alert">{validation}</p> : null}
-      <p className="privacy-note">文件由业务后端处理；live 模式下，提取文本可能发送给配置的模型服务。正文不会写入地址栏或浏览器会话存储。</p>
+      <p className="privacy-note">文件只发送到本地业务服务处理；实时模式下，提取出的文字可能发送给已配置的模型服务。正文不会写入网址或浏览器存储。</p>
     </section>
   );
 }

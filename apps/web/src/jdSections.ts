@@ -70,3 +70,14 @@ export function splitJdText(text: string): SplitJDText {
     unassigned: buckets.unassigned,
   };
 }
+
+/** 把一行原文追加进某个分区（编辑路径归类未分区行的唯一入口）。 */
+export function assignSectionLine(sections: JDSections, key: keyof JDSections, line: string): JDSections {
+  const current = sections[key].trim();
+  return { ...sections, [key]: current ? `${current}\n${line}` : line };
+}
+
+/** 只移除用户操作的那一行；重复文本仍是两条独立岗位原文。 */
+export function removeLineAt(lines: string[], index: number): string[] {
+  return lines.filter((_, currentIndex) => currentIndex !== index);
+}

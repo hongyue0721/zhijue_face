@@ -39,9 +39,9 @@ export function DecisionPanel({
           </div>
         </dl>
       ) : (
-        <p className="empty-state">服务端尚未返回本题的结构化决策摘要。</p>
+        <p className="empty-state">系统还没有给出这道题的分析依据。</p>
       )}
-      <p className="context-note">这里只展示服务端可审计字段，不展示模型私有推理过程。</p>
+      <p className="context-note">这里展示的是系统做出这一决定的公开依据，不包含模型内部的思考原文。</p>
     </aside>
   );
 }

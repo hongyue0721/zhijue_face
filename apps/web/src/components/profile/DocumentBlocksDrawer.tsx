@@ -10,31 +10,93 @@ export function DocumentBlocksDrawer({ document }: { document: DocumentView }) {
   const [error, setError] = useState<unknown>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLDivElement>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
+    let disposed = false;
+    setBlocks([]);
     setLoading(true);
     setError(null);
-    api.getDocumentBlocks(document.id, undefined, 100, controller.signal)
-      .then((page) => setBlocks(page.items))
-      .catch((nextError) => {
-        if (!(nextError instanceof DOMException && nextError.name === "AbortError")) setError(nextError);
-      })
-      .finally(() => setLoading(false));
-    // anyui Drawer 不处理键盘：对话框惯例要求 ESC 可关闭，由本组件接管。
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+
+    const loadAllBlocks = async () => {
+      const allBlocks: DocumentBlockView[] = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await api.getDocumentBlocks(
+          document.id,
+          cursor,
+          100,
+          controller.signal,
+        );
+        if (disposed) return;
+        allBlocks.push(...page.items);
+        if (page.next_cursor === null) break;
+        if (seenCursors.has(page.next_cursor)) {
+          throw new Error("解析文本分页没有继续前进，已停止读取以避免重复内容。");
+        }
+        seenCursors.add(page.next_cursor);
+        cursor = page.next_cursor;
+      } while (!disposed);
+      if (!disposed) setBlocks(allBlocks);
     };
-    window.addEventListener("keydown", onKey);
-    // 打开后焦点进入对话框；关闭后还给触发按钮，键盘用户不落空。
-    closeRef.current?.focus();
+
+    void loadAllBlocks()
+      .catch((nextError) => {
+        if (
+          !disposed
+          && !(nextError instanceof DOMException && nextError.name === "AbortError")
+        ) {
+          setError(nextError);
+        }
+      })
+      .finally(() => {
+        if (!disposed) setLoading(false);
+      });
+
+    const drawer = dialogContentRef.current?.closest<HTMLElement>(".a-drawer");
+    drawer?.setAttribute("aria-modal", "true");
+    drawer?.setAttribute("aria-labelledby", "document-drawer-title");
+    closeRef.current?.querySelector<HTMLElement>("button, [role='button']")?.focus();
     return () => {
+      disposed = true;
       controller.abort();
-      window.removeEventListener("keydown", onKey);
-      triggerRef.current?.focus();
+      triggerRef.current?.querySelector<HTMLElement>("button, [role='button']")?.focus();
     };
   }, [document.id, open]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const dialog = dialogContentRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [role='button']:not([aria-disabled='true']), "
+        + "input:not([disabled]), textarea:not([disabled]), "
+        + "summary, a[href], [tabindex]:not([tabindex='-1'])",
+      ),
+    ).filter((element) => element.getClientRects().length > 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && window.document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && window.document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const pages = useMemo(() => {
     const grouped = new Map<number | string, DocumentBlockView[]>();
@@ -56,11 +118,11 @@ export function DocumentBlocksDrawer({ document }: { document: DocumentView }) {
           （面板已消失但全屏 mask 吞点击）。卸载整个 Drawer 换取确定性状态。 */}
       {open ? (
         <Drawer modelValue onUpdateModelValue={(next: boolean) => setOpen(next)} position="right" width="min(560px, 92vw)">
-          <div className="drawer-content">
+          <div ref={dialogContentRef} className="drawer-content" onKeyDown={handleDialogKeyDown}>
             <div className="drawer-heading">
               <div>
                 <p className="eyebrow">解析结果</p>
-                <h2>{document.filename_display}</h2>
+                <h2 id="document-drawer-title">{document.filename_display}</h2>
               </div>
               <div ref={closeRef} tabIndex={-1}>
                 <Button size="small" type="secondary" onClick={() => setOpen(false)}>关闭</Button>
@@ -69,7 +131,7 @@ export function DocumentBlocksDrawer({ document }: { document: DocumentView }) {
             {loading ? <div className="loading-row"><Spinner />正在读取文本块</div> : null}
             <ErrorNotice error={error} />
             {!loading && !error && pages.length === 0 ? (
-              <p className="empty-state">服务端没有返回可展示的文本块。</p>
+              <p className="empty-state">这份文件没有解析出可展示的文字。</p>
             ) : null}
             {pages.map(([page, pageBlocks]) => (
               <section key={String(page)} className="document-page">

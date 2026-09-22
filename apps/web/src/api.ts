@@ -29,8 +29,8 @@ export interface DocumentView {
   filename_display: string;
   sha256: string;
   page_count: number | null;
-  extract_status: "pending" | "parsed" | "requires_text" | "failed" | string;
-  index_status: "pending" | "indexing" | "ready" | "failed" | string;
+  extract_status: string;
+  index_status: string;
   warnings: string[];
 }
 
@@ -92,7 +92,7 @@ export interface OperationView {
 
 export interface ReadinessView {
   status: "ok";
-  run_mode: "live" | "fixture" | "replay" | string;
+  run_mode: "live" | "fixture" | "replay";
   data_mode: string;
   database: string;
   knowledge: string;
@@ -178,7 +178,7 @@ export interface AcceptedAnswerView {
 
 export interface QuestionBasisView {
   schema_version?: string;
-  basis_type?: "resume" | "jd" | "gap" | string;
+  basis_type?: string;
   slot_id?: string;
   competency_id?: string;
   verification_goal?: string;
@@ -431,6 +431,10 @@ export function shouldPreserveWriteCommand(error: unknown): boolean {
 
 const BASE = "/api/v1";
 
+export function pathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -479,7 +483,7 @@ export const api = {
     }),
 
   getProfile: (profileId: string, signal?: AbortSignal) =>
-    request<ProfileView>(`/profiles/${profileId}`, { signal }),
+    request<ProfileView>(`/profiles/${pathSegment(profileId)}`, { signal }),
 
   uploadDocument: (
     profileId: string,
@@ -491,7 +495,7 @@ export const api = {
     form.append("file", file);
     form.append("kind", "resume");
     form.append("expected_revision", String(expectedRevision));
-    return request<OperationAccepted>(`/profiles/${profileId}/documents`, {
+    return request<OperationAccepted>(`/profiles/${pathSegment(profileId)}/documents`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: form,
@@ -499,7 +503,7 @@ export const api = {
   },
 
   getDocument: (documentId: string, signal?: AbortSignal) =>
-    request<DocumentView>(`/documents/${documentId}`, { signal }),
+    request<DocumentView>(`/documents/${pathSegment(documentId)}`, { signal }),
 
   getDocumentBlocks: (
     documentId: string,
@@ -509,11 +513,11 @@ export const api = {
   ) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (cursor) query.set("cursor", cursor);
-    return request<DocumentBlocksPage>(`/documents/${documentId}/blocks?${query}`, { signal });
+    return request<DocumentBlocksPage>(`/documents/${pathSegment(documentId)}/blocks?${query}`, { signal });
   },
 
   addFacts: (profileId: string, expectedRevision: number, texts: string[]) =>
-    request<ProfileView>(`/profiles/${profileId}/facts`, {
+    request<ProfileView>(`/profiles/${pathSegment(profileId)}/facts`, {
       method: "POST",
       body: JSON.stringify({
         expected_revision: expectedRevision,
@@ -527,14 +531,14 @@ export const api = {
     decisions: Array<{ claim_id: string; action: "accept" | "reject" | "correct"; corrected_text?: string }>,
     idempotencyKey: string,
   ) =>
-    request<OperationAccepted>(`/profiles/${profileId}/confirm`, {
+    request<OperationAccepted>(`/profiles/${pathSegment(profileId)}/confirm`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision, decisions }),
     }),
 
   activateProfile: (profileId: string, expectedRevision: number, idempotencyKey: string) =>
-    request<OperationAccepted>(`/profiles/${profileId}/activate`, {
+    request<OperationAccepted>(`/profiles/${pathSegment(profileId)}/activate`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision }),
@@ -542,16 +546,16 @@ export const api = {
 
   deleteProfile: (profileId: string, expectedRevision: number, idempotencyKey: string) =>
     request<OperationAccepted>(
-      `/profiles/${profileId}?expected_revision=${expectedRevision}`,
+      `/profiles/${pathSegment(profileId)}?expected_revision=${expectedRevision}`,
       { method: "DELETE", headers: { "Idempotency-Key": idempotencyKey } },
     ),
 
   getOperation: (operationId: string, signal?: AbortSignal) =>
-    request<OperationView>(`/operations/${operationId}`, { signal }),
+    request<OperationView>(`/operations/${pathSegment(operationId)}`, { signal }),
 
   eventsUrl: (operationId: string, after?: number) => {
     const query = after === undefined ? "" : `?after=${after}`;
-    return `${BASE}/operations/${operationId}/events${query}`;
+    return `${BASE}/operations/${pathSegment(operationId)}/events${query}`;
   },
 
   createInterview: (
@@ -572,10 +576,10 @@ export const api = {
     }),
 
   getInterview: (interviewId: string, signal?: AbortSignal) =>
-    request<InterviewView>(`/interviews/${interviewId}`, { signal }),
+    request<InterviewView>(`/interviews/${pathSegment(interviewId)}`, { signal }),
 
   startInterview: (interviewId: string, expectedRevision: number, idempotencyKey: string) =>
-    request<OperationAccepted>(`/interviews/${interviewId}/start`, {
+    request<OperationAccepted>(`/interviews/${pathSegment(interviewId)}/start`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision }),
@@ -591,7 +595,7 @@ export const api = {
     },
     idempotencyKey: string,
   ) =>
-    request<OperationAccepted>(`/interviews/${interviewId}/answers`, {
+    request<OperationAccepted>(`/interviews/${pathSegment(interviewId)}/answers`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(input),
@@ -603,21 +607,21 @@ export const api = {
     action: "skip" | "end",
     idempotencyKey: string,
   ) =>
-    request<OperationAccepted>(`/interviews/${interviewId}/control`, {
+    request<OperationAccepted>(`/interviews/${pathSegment(interviewId)}/control`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision, action }),
     }),
 
   getReport: (interviewId: string, signal?: AbortSignal) =>
-    request<ReportView>(`/interviews/${interviewId}/report`, { signal }),
+    request<ReportView>(`/interviews/${pathSegment(interviewId)}/report`, { signal }),
 
   generateReportImprovements: (
     interviewId: string,
     expectedRevision: number,
     idempotencyKey: string,
   ) =>
-    request<OperationAccepted>(`/interviews/${interviewId}/report/improvements`, {
+    request<OperationAccepted>(`/interviews/${pathSegment(interviewId)}/report/improvements`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision }),
@@ -633,23 +637,23 @@ export const api = {
     },
     idempotencyKey: string,
   ) =>
-    request<OperationAccepted>(`/profiles/${profileId}/resume-drafts`, {
+    request<OperationAccepted>(`/profiles/${pathSegment(profileId)}/resume-drafts`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(input),
     }),
 
   getResumeDraft: (draftId: string, signal?: AbortSignal) =>
-    request<ResumeDraftView>(`/resume-drafts/${draftId}`, { signal }),
+    request<ResumeDraftView>(`/resume-drafts/${pathSegment(draftId)}`, { signal }),
 
   acceptResumeDraft: (draftId: string, expectedRevision: number) =>
-    request<ResumeDraftView>(`/resume-drafts/${draftId}/accept`, {
+    request<ResumeDraftView>(`/resume-drafts/${pathSegment(draftId)}/accept`, {
       method: "POST",
       body: JSON.stringify({ expected_revision: expectedRevision }),
     }),
 
   retryOperation: (operationId: string, expectedRevision: number, idempotencyKey: string) =>
-    request<OperationAccepted>(`/operations/${operationId}/retry`, {
+    request<OperationAccepted>(`/operations/${pathSegment(operationId)}/retry`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({ expected_revision: expectedRevision }),

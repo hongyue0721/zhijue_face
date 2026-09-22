@@ -3,11 +3,20 @@ export type AppRoute =
   | { page: "prepare"; profileId: string; interviewId: string | null }
   | { page: "interview"; interviewId: string }
   | { page: "report"; interviewId: string }
-  | { page: "resume"; draftId: string };
+  | { page: "resume"; draftId: string }
+  | { page: "redirect"; path: string };
 
 function readQuery(search: string, name: string): string | null {
   const value = new URLSearchParams(search).get(name);
   return value?.trim() || null;
+}
+
+function decodePathSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value).trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseRoute(pathname: string, search: string): AppRoute {
@@ -16,25 +25,33 @@ export function parseRoute(pathname: string, search: string): AppRoute {
   }
   const prepareMatch = pathname.match(/^\/profiles\/([^/]+)\/prepare$/);
   if (prepareMatch) {
-    return {
-      page: "prepare",
-      profileId: decodeURIComponent(prepareMatch[1]),
-      interviewId: readQuery(search, "interview"),
-    };
+    const profileId = decodePathSegment(prepareMatch[1]);
+    return profileId
+      ? { page: "prepare", profileId, interviewId: readQuery(search, "interview") }
+      : { page: "redirect", path: "/start?notice=invalid_route" };
   }
   const reportMatch = pathname.match(/^\/interviews\/([^/]+)\/report$/);
   if (reportMatch) {
-    return { page: "report", interviewId: decodeURIComponent(reportMatch[1]) };
+    const interviewId = decodePathSegment(reportMatch[1]);
+    return interviewId
+      ? { page: "report", interviewId }
+      : { page: "redirect", path: "/start?notice=invalid_route" };
   }
   const interviewMatch = pathname.match(/^\/interviews\/([^/]+)$/);
   if (interviewMatch) {
-    return { page: "interview", interviewId: decodeURIComponent(interviewMatch[1]) };
+    const interviewId = decodePathSegment(interviewMatch[1]);
+    return interviewId
+      ? { page: "interview", interviewId }
+      : { page: "redirect", path: "/start?notice=invalid_route" };
   }
   const resumeMatch = pathname.match(/^\/resume-drafts\/([^/]+)$/);
   if (resumeMatch) {
-    return { page: "resume", draftId: decodeURIComponent(resumeMatch[1]) };
+    const draftId = decodePathSegment(resumeMatch[1]);
+    return draftId
+      ? { page: "resume", draftId }
+      : { page: "redirect", path: "/start?notice=invalid_route" };
   }
-  return { page: "start", profileId: null };
+  return { page: "redirect", path: "/start?notice=invalid_route" };
 }
 
 export function startPath(profileId?: string): string {

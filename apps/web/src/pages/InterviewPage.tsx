@@ -10,7 +10,7 @@ import { InterviewProgress } from "../components/interview/InterviewProgress";
 import { QuestionCard } from "../components/interview/QuestionCard";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewRoleText, interviewStatusText } from "../presentation";
-import { reportPath } from "../routing";
+import { reportPath, startPath } from "../routing";
 import {
   clearOperationId, loadOperationId, saveOperationId,
   clearRecoverableCommand, loadRecoverableCommand, saveRecoverableCommand,
@@ -64,15 +64,22 @@ export function InterviewPage({
       || next.current_question?.accepted_answer?.client_turn_id === current.clientTurnId
     ) ? null : current);
     const controlId = loadOperationId("interview-control", next.id);
-    // 失败回答的链尾恢复键优先于 localStorage（api.md §6）：跨浏览器、清缓存
-    // 后仍能恢复“重试分析”，不丢用户的已保存回答入口。
+    if (controlId && next.active_operation_id === controlId) {
+      setControlOperationId(controlId);
+    } else if (controlId) {
+      clearOperationId("interview-control", next.id);
+      setControlOperationId(null);
+    }
+    // 服务端回答恢复键/active_operation_id 是权威；本地键不能压过新快照。
     const recoverableOperation =
       next.current_question?.accepted_answer?.retry_operation_id
-      ?? next.active_operation_id
-      ?? loadOperationId("interview", next.id);
-    if (recoverableOperation && recoverableOperation !== controlId) {
+      ?? (next.active_operation_id !== controlId ? next.active_operation_id : null);
+    if (recoverableOperation) {
       saveOperationId("interview", next.id, recoverableOperation);
       setOperationId(recoverableOperation);
+    } else {
+      clearOperationId("interview", next.id);
+      setOperationId(null);
     }
   }, []);
 
@@ -111,7 +118,16 @@ export function InterviewPage({
     }
   }, [interviewId, navigate]);
 
-  const { operation, error: operationError } = useOperationMonitor(operationId, operationSettled);
+  const operationUnavailable = useCallback((nextError: ApiError) => {
+    clearOperationId("interview", interviewId);
+    setOperationId(null);
+    setError(nextError);
+  }, [interviewId]);
+  const { operation, error: operationError } = useOperationMonitor(
+    operationId,
+    operationSettled,
+    operationUnavailable,
+  );
 
   const controlSettled = useCallback(async (settled: OperationView) => {
     try {
@@ -126,13 +142,30 @@ export function InterviewPage({
       setControlError(nextError);
     }
   }, [interviewId, navigate]);
-  const { operation: monitoredControl, error: controlOperationError } = useOperationMonitor(controlOperationId, controlSettled);
+  const controlUnavailable = useCallback((nextError: ApiError) => {
+    clearOperationId("interview-control", interviewId);
+    setControlOperationId(null);
+    setControlError(nextError);
+  }, [interviewId]);
+  const { operation: monitoredControl, error: controlOperationError } = useOperationMonitor(
+    controlOperationId,
+    controlSettled,
+    controlUnavailable,
+  );
   const controlOperation = monitoredControl ?? (operation?.kind.startsWith("interview.control.") ? operation : null);
-  const controlActive = Boolean(controlOperationId) && (!monitoredControl || ["queued", "running"].includes(monitoredControl.status));
-  const answerOperationActive = Boolean(operationId) && (!operation || ["queued", "running"].includes(operation.status));
+  const controlFailure = controlOperation
+    && ["failed", "interrupted"].includes(controlOperation.status)
+    ? controlOperation
+    : null;
+  const controlActive = Boolean(controlOperationId)
+    && !controlOperationError
+    && (!monitoredControl || ["queued", "running"].includes(monitoredControl.status));
+  const answerOperationActive = Boolean(operationId)
+    && !operationError
+    && (!operation || ["queued", "running"].includes(operation.status));
   const controlBlocked = controlSubmitting || controlActive || Boolean(pendingControl)
     || Boolean(interview?.stop_requested)
-    || Boolean(controlOperation && ["failed", "interrupted"].includes(controlOperation.status));
+    || controlFailure?.error?.retryable === true;
 
   const executeControl = async (command: ControlCommand) => {
     if (!interview || controlSubmittingRef.current || submittingRef.current) return;
@@ -308,9 +341,7 @@ export function InterviewPage({
     && !submitting && !pendingSubmission && !controlBlocked && !answerOperationActive;
   const canEnd = ["active", "finishing", "finish_failed"].includes(interview.status)
     && !submitting && !pendingSubmission && !controlBlocked;
-  const controlFailed = controlOperation
-    && ["failed", "interrupted"].includes(controlOperation.status)
-    && controlOperation.error?.retryable !== false;
+  const controlFailed = controlFailure;
 
   return (
     <main className="page-container interview-page">
@@ -335,54 +366,68 @@ export function InterviewPage({
           {confirmAction ? (
             <Alert type="warn" title={confirmAction === "end" ? "确认提前结束面试？" : "确认跳过当前题？"}>
               {confirmAction === "end"
-                ? "提交后停止提问，未提交的回答不会保存；正在分析的已保存回答会等待处理安全结束，再生成现有结果报告。未测部分不会按零分计算，报告可能不完整。远端调用不保证立即取消或退费。"
+                ? "结束后不再出题；输入框里还没提交的回答不会保存。正在分析的回答会等处理完成，再基于已有结果生成报告。没问到的题按“未考察”记录，不会算零分，报告可能不完整。已经发出的模型请求不保证能立刻停止。"
                 : question?.kind === "main"
-                  ? "未提交的回答不会保存。跳过主问题后进入下一主问题，本题标记为已跳过而非零分；最后一题跳过后将整理报告。"
-                  : "未提交的追问回答不会保存。跳过追问后进入下一主问题，保留当前主问题已有回答和观察。"}
+                  ? "输入框里还没提交的回答不会保存。跳过本题后会进入下一道主问题；本题记为“已跳过”，不算零分。跳过最后一题就开始整理报告。"
+                  : "输入框里还没提交的回答不会保存。跳过追问后回到下一道主问题；本题主问题的已有回答和观察都会保留。"}
               <div className="interview-control-confirm">
                 <Button type="primary" loading={controlSubmitting} disabled={!serviceReady || (confirmAction === "skip" ? !canSkip : !canEnd)} onClick={submitControl}>
                   {confirmAction === "end" ? "确认结束并生成现有报告" : "确认跳过本题"}
                 </Button>
-                <Button disabled={controlSubmitting || Boolean(pendingControl)} onClick={() => setConfirmAction(null)}>继续作答，不提交操作</Button>
+                <Button disabled={controlSubmitting || Boolean(pendingControl)} onClick={() => setConfirmAction(null)}>继续作答，取消本操作</Button>
               </div>
             </Alert>
           ) : null}
           {pendingControl ? (
-            <Alert type="warn" title="控制请求尚未取得明确受理结果">
-              原操作、版本与请求标识已保留。请显式重试同一请求，不会重复跳题或生成第二个结束操作。
-              <Button disabled={!serviceReady || controlSubmitting || submitting} loading={controlSubmitting} onClick={() => void executeControl(pendingControl)}>使用原请求重试控制操作</Button>
+            <Alert type="warn" title="上次操作未确认完成">
+              这次“跳过 / 结束”操作已保留，点重试会续上原操作，不会重复跳题或生成第二份结束记录。
+              <Button disabled={!serviceReady || controlSubmitting || submitting} loading={controlSubmitting} onClick={() => void executeControl(pendingControl)}>重试上次操作</Button>
             </Alert>
           ) : null}
           {controlFailed && !pendingControl ? (
-            <Alert type="danger" title="面试控制操作失败">
-              失败状态与已保存回答保留；重试只恢复原控制操作，不重新提交回答。
-              <Button disabled={!serviceReady || controlSubmitting || submitting || controlActive} onClick={retryControl}>重试{controlOperation.kind.endsWith(".end") ? "结束面试" : "跳过本题"}</Button>
+            <Alert type="danger" title="跳过 / 结束操作失败">
+              <p>{controlFailed.error?.message ?? "操作没有完成；已保存的回答仍然保留。"}</p>
+              {controlFailed.error?.retryable === true ? (
+                <>
+                  <p>重试只恢复这次操作，不会重新提交你的回答。</p>
+                  <Button disabled={!serviceReady || controlSubmitting || submitting || controlActive} onClick={retryControl}>重试{controlFailed.kind.endsWith(".end") ? "结束面试" : "跳过本题"}</Button>
+                </>
+              ) : (
+                <>
+                  <p>{controlFailed.kind.endsWith(".skip")
+                    ? "这次跳过不能自动重试，你可以继续回答当前题。"
+                    : "这次结束不能自动重试；请返回资料页保留当前记录，重新检查服务后再打开本场面试。"}</p>
+                  {controlFailed.kind.endsWith(".end") ? (
+                    <Button type="secondary" onClick={() => navigate(startPath(interview.profile_id))}>返回资料页</Button>
+                  ) : null}
+                </>
+              )}
             </Alert>
           ) : null}
-          {interview.stop_requested ? <p className="muted">结束请求已受理，不再接受新回答。正在等待当前处理完成并整理报告。</p> : null}
+          {interview.stop_requested ? <p className="muted">结束请求已收到，不再接收新的回答；正在等当前处理完成并整理报告。</p> : null}
           <OperationStatus operation={controlOperation} label={controlOperation?.kind.endsWith(".skip") ? "跳过本题" : "结束面试"} />
         </section>
       ) : null}
       {interview.status === "ready" ? (
         <Alert type="warn" title="面试尚未开始">
-          请从“准备面试”页面调用开始接口；本页不会在缺失启动操作时生成第一题。
+          请回到“面试准备”页面点“开始模拟面试”；直接打开这个链接不会生成第一题。
         </Alert>
       ) : null}
       {interview.status === "prepare_failed" ? (
         <Alert type="danger" title="面试准备失败">
-          本场计划没有准备完成；页面不会生成题目或伪装为可开始状态。
+          本场面试计划没有生成成功；页面不会凭空出题，也不会假装可以开始。请回到“面试准备”页面重新生成计划。
         </Alert>
       ) : null}
       {interview.status === "finish_failed" ? (
         <Alert type="danger" title="报告整理失败">
-          提问已经结束，但评分报告没有成功落库。请保留当前失败状态并按原操作恢复。
+          提问已经结束，但评分报告没有保存成功。你的作答记录都还在，报告可沿上方“结束面试”的重试入口继续生成；重试不会重新提交回答。
         </Alert>
       ) : null}
       {isFinishing ? (
         <section className="surface-card completion-card">
           <p className="eyebrow">报告整理</p>
           <h2>提问已结束，报告整理中</h2>
-          <p>系统正在冻结本场评分结果；形成真实报告前不会显示完成入口。</p>
+          <p>正在汇总本场评分结果；报告真正生成前，这里不会提前显示“已完成”。</p>
         </section>
       ) : null}
       {isCompleted ? (
