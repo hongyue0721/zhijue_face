@@ -1356,25 +1356,36 @@ class InterviewService:
                 interview.revision += 1
                 interview.updated_at = utc_now_rfc3339()
 
-    def recover_interrupted_operations(self, operation_ids: list[str]) -> None:
-        if not operation_ids:
-            return
+    def recover_interrupted_operations(self, _operation_ids: list[str]) -> None:
+        # Scan persisted links, not only operations interrupted in this startup.
+        # A previous failure may have reached Operation.failed while its best-effort
+        # resource cleanup lost a SQLite write race; that terminal pointer must not
+        # block the interview forever after the next restart.
         with Session(self._engine) as session, session.begin():
-            for operation_id in operation_ids:
-                operation = session.get(Operation, operation_id)
-                if operation is None:
+            interviews = list(
+                session.scalars(
+                    select(Interview).where(Interview.active_operation_id.is_not(None))
+                )
+            )
+            for interview in interviews:
+                operation = session.get(Operation, interview.active_operation_id)
+                if operation is not None and operation.status in {
+                    "queued",
+                    "running",
+                }:
                     continue
-                answer = self._answer_for_operation(session, operation)
+                answer = (
+                    self._answer_for_operation(session, operation)
+                    if operation is not None
+                    else None
+                )
                 if answer is not None and answer.evaluation_status == "processing":
                     answer.evaluation_status = "failed"
-                interview = session.get(Interview, operation.resource_id)
-                if interview is None:
-                    continue
                 changed = False
                 if interview.status == "finishing" and interview.report_id is None:
                     interview.status = "finish_failed"
                     changed = True
-                if interview.active_operation_id == operation_id:
+                if interview.active_operation_id is not None:
                     interview.active_operation_id = None
                     changed = True
                 if changed:

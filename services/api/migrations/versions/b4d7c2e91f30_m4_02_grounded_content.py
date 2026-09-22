@@ -17,29 +17,66 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("report") as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "improvements_status",
-                sa.String(length=24),
-                nullable=False,
-                server_default="not_requested",
-            )
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    report_columns = {
+        column["name"]: column for column in inspector.get_columns("report")
+    }
+    report_foreign_keys = {
+        (
+            tuple(constraint["constrained_columns"]),
+            constraint["referred_table"],
+            tuple(constraint["referred_columns"]),
         )
-        batch_op.add_column(
-            sa.Column("active_operation_id", sa.String(length=128), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("improvements_operation_id", sa.String(length=128), nullable=True)
-        )
-        batch_op.create_foreign_key(
-            "fk_report_improvements_operation",
-            "operation",
-            ["improvements_operation_id"],
-            ["id"],
-        )
-        batch_op.alter_column("improvements_status", server_default=None)
+        for constraint in inspector.get_foreign_keys("report")
+    }
+    missing_columns = {
+        "improvements_status",
+        "active_operation_id",
+        "improvements_operation_id",
+    } - set(report_columns)
+    improvements_foreign_key_missing = (
+        ("improvements_operation_id",),
+        "operation",
+        ("id",),
+    ) not in report_foreign_keys
+    if missing_columns or improvements_foreign_key_missing:
+        with op.batch_alter_table("report") as batch_op:
+            if "improvements_status" in missing_columns:
+                batch_op.add_column(
+                    sa.Column(
+                        "improvements_status",
+                        sa.String(length=24),
+                        nullable=False,
+                        server_default="not_requested",
+                    )
+                )
+            if "active_operation_id" in missing_columns:
+                batch_op.add_column(
+                    sa.Column(
+                        "active_operation_id", sa.String(length=128), nullable=True
+                    )
+                )
+            if "improvements_operation_id" in missing_columns:
+                batch_op.add_column(
+                    sa.Column(
+                        "improvements_operation_id",
+                        sa.String(length=128),
+                        nullable=True,
+                    )
+                )
+            if improvements_foreign_key_missing:
+                batch_op.create_foreign_key(
+                    "fk_report_improvements_operation",
+                    "operation",
+                    ["improvements_operation_id"],
+                    ["id"],
+                )
+            if "improvements_status" in missing_columns:
+                batch_op.alter_column("improvements_status", server_default=None)
 
+    if "resume_draft" in sa.inspect(connection).get_table_names():
+        return
     op.create_table(
         "resume_draft",
         sa.Column("id", sa.String(length=128), nullable=False),

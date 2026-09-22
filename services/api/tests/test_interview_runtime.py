@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from zhijue.adapters.db.models import Answer, Assessment, Operation, Report
+from zhijue.adapters.db.models import Answer, Assessment, Interview, Operation, Report
 from zhijue.adapters.db.operations import OperationCommand, canon_scope
 from zhijue.api.app import AppConfig, create_app
 from zhijue.application.answer_workflow import AnalysisResult
@@ -902,3 +902,38 @@ def test_restart_marks_running_answer_interrupted_and_releases_interview(tmp_pat
         with Session(client.app.state.services.engine) as session:
             persisted = session.get(Operation, operation_id)
             assert persisted.last_event_seq == 1
+
+
+def test_restart_releases_stale_terminal_interview_operation(tmp_path):
+    """终态 Operation 的遗留指针不能让 ready/active 面试永久报 OPERATION_IN_PROGRESS。"""
+    config = _config(tmp_path)
+    app = create_app(config, knowledge=InMemoryKnowledge(), analyzer=ScriptedAnalyzer())
+    with TestClient(app) as client:
+        active = _prepare_active_interview(client)
+        with Session(client.app.state.services.engine) as session, session.begin():
+            operation = Operation(
+                id="operation_stale_terminal",
+                kind="interview.control.skip",
+                resource_type="interview",
+                resource_id=active["id"],
+                scope="local|POST|/stale-terminal",
+                idempotency_key="stale-terminal-key",
+                input_hash="0" * 64,
+                status=OperationStatus.FAILED,
+                error={
+                    "code": "INTERNAL_ERROR",
+                    "message": "合成失败",
+                    "retryable": True,
+                },
+            )
+            session.add(operation)
+            interview = session.get(Interview, active["id"])
+            interview.active_operation_id = operation.id
+
+    restarted = create_app(
+        config, knowledge=InMemoryKnowledge(), analyzer=ScriptedAnalyzer()
+    )
+    with TestClient(restarted) as client:
+        view = client.get(f"/api/v1/interviews/{active['id']}").json()["data"]
+        assert view["active_operation_id"] is None
+        assert view["status"] == "active"

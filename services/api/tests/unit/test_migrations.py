@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -361,3 +362,83 @@ def test_activation_backfill_requires_exact_success_receipt_and_is_reversible(tm
     command.upgrade(cfg, "head")
     with Session(engine) as session:
         assert session.get(ProfileSnapshotActivation, "snapshot_0").status == "ready"
+
+
+def test_unversioned_create_all_database_upgrades_without_data_loss(tmp_path):
+    """历史应用曾在运行时 create_all，迁移必须接管这种混合 Schema，而不是撞表。"""
+    db = tmp_path / "legacy-create-all.db"
+    cfg = _alembic_config(db)
+    command.upgrade(cfg, "18e3af0d1942")
+    engine = make_engine(f"sqlite:///{db}")
+    # 复现旧启动路径：既有表不会被 ALTER，新表会被当前 metadata 补出来。
+    Base.metadata.create_all(engine)
+    with Session(engine) as session, session.begin():
+        session.add(Profile(id="profile_legacy", display_name="保留资料"))
+        session.flush()
+        session.add(
+            ProfileSnapshot(
+                id="snapshot_legacy",
+                profile_id="profile_legacy",
+                revision=0,
+            )
+        )
+        session.flush()
+        session.add(
+            ProfileSnapshotActivation(
+                snapshot_id="snapshot_legacy",
+                status="pending",
+            )
+        )
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DELETE FROM alembic_version")
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    migrated = make_engine(f"sqlite:///{db}")
+    schema = inspect(migrated)
+    assert {column["name"] for column in schema.get_columns("answer")} >= {
+        "accepted_operation_id"
+    }
+    assert {column["name"] for column in schema.get_columns("report")} >= {
+        "improvements_status",
+        "active_operation_id",
+        "improvements_operation_id",
+    }
+    assert next(
+        column
+        for column in schema.get_columns("question")
+        if column["name"] == "seed_id"
+    )["nullable"]
+    assert next(
+        column
+        for column in schema.get_columns("decision")
+        if column["name"] == "target"
+    )["nullable"]
+    with Session(migrated) as session:
+        assert session.get(Profile, "profile_legacy").display_name == "保留资料"
+        assert (
+            session.get(ProfileSnapshotActivation, "snapshot_legacy").status
+            == "pending"
+        )
+    with migrated.connect() as connection:
+        revision = connection.exec_driver_sql(
+            "SELECT version_num FROM alembic_version"
+        ).scalar_one()
+    assert revision == "e62a9f8c10bd"
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    with migrated.connect() as connection:
+        diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+    assert diff == [], f"历史库迁移后仍有 Schema 漂移：{diff}"
+
+
+def test_unversioned_partial_schema_is_rejected(tmp_path):
+    """未知的半成品库必须拒绝启动，不能由迁移猜测并补成假成功。"""
+    db = tmp_path / "partial-unversioned.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE profile (id TEXT PRIMARY KEY)")
+
+    with pytest.raises(RuntimeError, match="无版本的部分业务 Schema"):
+        command.upgrade(_alembic_config(db), "head")

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from zhijue.api.app import AppConfig, create_app
+from zhijue.api.routes import _release_after_failure
 from zhijue.application.profiles import ActivationReceipt
 
 
@@ -453,6 +455,11 @@ def test_app_bootstraps_missing_runtime_directories(tmp_path):
     with TestClient(app) as client:
         assert client.get("/api/v1/health/live").status_code == 200
     assert (runtime_dir / "business.db").is_file()
+    with sqlite3.connect(runtime_dir / "business.db") as connection:
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
+    assert revision == ("e62a9f8c10bd",)
 
 
 def test_document_upload_accepts_202_and_imports_text(client):
@@ -809,3 +816,11 @@ def test_openapi_exposes_report_coaching_and_resume_contracts(client):
         "profile_snapshot_id",
     }
     assert exported == document
+
+
+def test_failed_operation_cleanup_cannot_replace_primary_failure():
+    def broken_cleanup(_operation_id: str) -> None:
+        raise sqlite3.OperationalError("synthetic cleanup lock")
+
+    # 调用方随后重新抛出原异常；cleanup helper 本身必须吞掉次生清理异常。
+    asyncio.run(_release_after_failure(broken_cleanup, "operation_primary_failure"))

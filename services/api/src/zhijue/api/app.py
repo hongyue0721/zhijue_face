@@ -25,7 +25,7 @@ from sqlalchemy import Engine
 
 from zhijue.adapters.db.documents import DocumentRepository
 from zhijue.adapters.db.engine import make_engine
-from zhijue.adapters.db.models import Base
+from zhijue.adapters.db.migrations import upgrade_database
 from zhijue.adapters.db.operations import OperationRepository
 from zhijue.adapters.db.profiles import ProfileRepository
 from zhijue.adapters.model import (
@@ -151,8 +151,8 @@ def build_services(
 ) -> Services:
     _configure_private_sdk_logging()
     config.ensure_directories()
-    engine = make_engine(config.database_url, wal=False)
-    Base.metadata.create_all(engine)
+    upgrade_database(config.database_url)
+    engine = make_engine(config.database_url, wal=True)
     document_repo = DocumentRepository(engine)
     profile_repo = ProfileRepository(engine)
     operation_repo = OperationRepository(engine)

@@ -7,6 +7,7 @@ Create Date: 2026-09-19
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "7f1b9c4d2a60"
@@ -17,13 +18,26 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Protect deterministic report generation from duplicate business writes."""
-    with op.batch_alter_table("assessment") as batch_op:
-        batch_op.create_unique_constraint(
-            "uq_assessment_interview_root",
-            ["interview_id", "root_question_id"],
-        )
-    with op.batch_alter_table("report") as batch_op:
-        batch_op.create_unique_constraint("uq_report_interview", ["interview_id"])
+    inspector = sa.inspect(op.get_bind())
+    assessment_uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("assessment")
+    }
+    if ("interview_id", "root_question_id") not in assessment_uniques:
+        with op.batch_alter_table("assessment") as batch_op:
+            batch_op.create_unique_constraint(
+                "uq_assessment_interview_root",
+                ["interview_id", "root_question_id"],
+            )
+
+    inspector = sa.inspect(op.get_bind())
+    report_uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("report")
+    }
+    if ("interview_id",) not in report_uniques:
+        with op.batch_alter_table("report") as batch_op:
+            batch_op.create_unique_constraint("uq_report_interview", ["interview_id"])
 
 
 def downgrade() -> None:

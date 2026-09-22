@@ -17,20 +17,37 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    activation = op.create_table(
-        "profile_snapshot_activation",
-        sa.Column("snapshot_id", sa.String(length=128), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("operation_id", sa.String(length=128), nullable=True),
-        sa.Column("receipt", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.String(length=32), nullable=False),
-        sa.Column("updated_at", sa.String(length=32), nullable=False),
-        sa.ForeignKeyConstraint(["snapshot_id"], ["profile_snapshot.id"]),
-        sa.ForeignKeyConstraint(["operation_id"], ["operation.id"]),
-        sa.PrimaryKeyConstraint("snapshot_id"),
-        sa.UniqueConstraint("operation_id"),
-    )
     connection = op.get_bind()
+    table_names = set(sa.inspect(connection).get_table_names())
+    if "profile_snapshot_activation" not in table_names:
+        activation = op.create_table(
+            "profile_snapshot_activation",
+            sa.Column("snapshot_id", sa.String(length=128), nullable=False),
+            sa.Column("status", sa.String(length=16), nullable=False),
+            sa.Column("operation_id", sa.String(length=128), nullable=True),
+            sa.Column("receipt", sa.JSON(), nullable=True),
+            sa.Column("created_at", sa.String(length=32), nullable=False),
+            sa.Column("updated_at", sa.String(length=32), nullable=False),
+            sa.ForeignKeyConstraint(["snapshot_id"], ["profile_snapshot.id"]),
+            sa.ForeignKeyConstraint(["operation_id"], ["operation.id"]),
+            sa.PrimaryKeyConstraint("snapshot_id"),
+            sa.UniqueConstraint("operation_id"),
+        )
+        existing_snapshot_ids: set[str] = set()
+    else:
+        activation = sa.table(
+            "profile_snapshot_activation",
+            sa.column("snapshot_id"),
+            sa.column("status"),
+            sa.column("operation_id"),
+            sa.column("receipt", sa.JSON()),
+            sa.column("created_at"),
+            sa.column("updated_at"),
+        )
+        existing_snapshot_ids = set(
+            connection.execute(sa.select(activation.c.snapshot_id)).scalars()
+        )
+
     snapshots = sa.table(
         "profile_snapshot",
         sa.column("id"),
@@ -65,6 +82,8 @@ def upgrade() -> None:
         ):
             proven[result["profile_snapshot_id"]] = operation
     for snapshot in connection.execute(sa.select(snapshots)).mappings():
+        if snapshot["id"] in existing_snapshot_ids:
+            continue
         operation = proven.get(snapshot["id"])
         result = operation["result"] if operation is not None else {}
         expected = {

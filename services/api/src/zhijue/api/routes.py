@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import platform
 from importlib.metadata import version
 from typing import Any
@@ -53,6 +54,7 @@ from zhijue.domain.ids import new_id
 from zhijue.domain.requisition import JDSourceType
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger("zhijue.routes")
 
 WORKSPACE_ID = "local"
 
@@ -75,6 +77,18 @@ def _require_idempotency_key(value: str | None) -> str:
             message="Idempotency-Key 长度必须为 8—128。",
         )
     return value
+
+
+async def _release_after_failure(release: Any, operation_id: str) -> None:
+    """Best-effort resource cleanup without replacing the operation's root failure."""
+    try:
+        await asyncio.to_thread(release, operation_id)
+    except Exception as cleanup_error:  # noqa: BLE001 - original error must survive.
+        logger.error(
+            "operation %s cleanup failed after primary failure: %s",
+            operation_id,
+            type(cleanup_error).__name__,
+        )
 
 
 def _claims(
@@ -719,7 +733,7 @@ def start_interview(
                     operation_id=accepted.operation.id,
                 )
             except Exception:
-                await asyncio.to_thread(
+                await _release_after_failure(
                     services.interviews.release_failed_operation,
                     accepted.operation.id,
                 )
@@ -778,7 +792,7 @@ def submit_answer(
                     operation_id=accepted.operation.id
                 )
             except Exception:
-                await asyncio.to_thread(
+                await _release_after_failure(
                     services.interviews.release_failed_operation,
                     accepted.operation.id,
                 )
@@ -836,7 +850,7 @@ def control_interview(
                     operation_id=accepted.operation.id,
                 )
             except Exception:
-                await asyncio.to_thread(
+                await _release_after_failure(
                     services.interviews.release_failed_operation,
                     accepted.operation.id,
                 )
@@ -899,7 +913,7 @@ def generate_report_improvements(
                     operation_id=accepted.operation.id
                 )
             except Exception:
-                await asyncio.to_thread(
+                await _release_after_failure(
                     services.content.release_failed_operation,
                     accepted.operation.id,
                 )
@@ -963,7 +977,7 @@ def create_resume_draft(
                     operation_id=accepted.operation.id
                 )
             except Exception:
-                await asyncio.to_thread(
+                await _release_after_failure(
                     services.content.release_failed_operation,
                     accepted.operation.id,
                 )
@@ -1073,7 +1087,7 @@ def retry_operation(
                     if content_operation
                     else services.interviews.release_failed_operation
                 )
-                await asyncio.to_thread(release, accepted.operation.id)
+                await _release_after_failure(release, accepted.operation.id)
                 raise
 
         background.add_task(

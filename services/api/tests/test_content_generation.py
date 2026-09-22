@@ -311,14 +311,18 @@ def test_failed_generation_preserves_recovery_key_until_success(tmp_path):
             json={"expected_revision": chain_tail_report["revision"]},
             headers={"Idempotency-Key": "recover-coach-0003"},
         ).json()["data"]
-        assert client.get(f"/api/v1/operations/{final['operation_id']}").json()["data"][
-            "status"
-        ] == "succeeded"
+        assert (
+            client.get(f"/api/v1/operations/{final['operation_id']}").json()["data"][
+                "status"
+            ]
+            == "succeeded"
+        )
         ready_report = client.get(
             f"/api/v1/interviews/{interview['id']}/report"
         ).json()["data"]
         assert ready_report["improvements_status"] == "ready"
         assert ready_report["active_operation_id"] is None
+
 
 def test_failed_resume_draft_preserves_recovery_key(tmp_path):
     """简历草稿 generation_failed 时同样保留失败链尾恢复键（api.md §6）。"""
@@ -331,7 +335,9 @@ def test_failed_resume_draft_preserves_recovery_key(tmp_path):
     )
     with TestClient(app) as client:
         interview, _report = _complete_after_one_answer(client)
-        profile = client.get(f"/api/v1/profiles/{interview['profile_id']}").json()["data"]
+        profile = client.get(f"/api/v1/profiles/{interview['profile_id']}").json()[
+            "data"
+        ]
         accepted = client.post(
             f"/api/v1/profiles/{interview['profile_id']}/resume-drafts",
             json={
@@ -341,15 +347,15 @@ def test_failed_resume_draft_preserves_recovery_key(tmp_path):
             },
             headers={"Idempotency-Key": "recover-resume-0001"},
         ).json()["data"]
-        draft = client.get(
-            f"/api/v1/resume-drafts/{accepted['resource_id']}"
-        ).json()["data"]
+        draft = client.get(f"/api/v1/resume-drafts/{accepted['resource_id']}").json()[
+            "data"
+        ]
         assert draft["status"] == "generation_failed"
         assert draft["active_operation_id"] == accepted["operation_id"]
         # 恢复键可 GET 且确为失败操作，前端据此显式重试。
-        op = client.get(
-            f"/api/v1/operations/{draft['active_operation_id']}"
-        ).json()["data"]
+        op = client.get(f"/api/v1/operations/{draft['active_operation_id']}").json()[
+            "data"
+        ]
         assert op["status"] == "failed"
 
 
