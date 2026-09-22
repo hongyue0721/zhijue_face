@@ -16,7 +16,6 @@ import { OperationStatus } from "../components/common/OperationStatus";
 import { InterviewPlan } from "../components/prepare/InterviewPlan";
 import { JDInput } from "../components/prepare/JDInput";
 import { JDSourceBadge } from "../components/prepare/JDSourceBadge";
-import { TechnicalDetails } from "../components/prepare/TechnicalDetails";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewPath, preparePath, startPath } from "../routing";
 import {
@@ -65,10 +64,9 @@ function JobSummary({ interview }: { interview: InterviewView }) {
   for (const requirement of interview.jd_requirements) counts[requirement.tier] += 1;
   for (const entry of interview.coverage_map) coverageCounts[entry.status] += 1;
   return (
-    <section className="surface-card job-summary" aria-labelledby="job-summary-title">
+    <section className="job-summary prepare-section" aria-labelledby="job-summary-title">
       <div className="job-summary-heading">
         <div>
-          <p className="eyebrow">岗位概览</p>
           <h2 id="job-summary-title">要求与资料覆盖</h2>
         </div>
         <JDSourceBadge source={interview.jd_source} />
@@ -314,7 +312,8 @@ export function PreparePage({
   };
 
   const startInterview = async () => {
-    if (!interview || requestInFlight.current || (!pendingStart && !profileReady)) return;
+    // 已有计划使用其冻结快照；是否就绪由 start 接口按绑定快照校验。
+    if (!interview || requestInFlight.current) return;
     const command: PendingStart = pendingStart ?? {
       kind: "prepare-start", idempotencyKey: newCommandKey("start"),
       input: { expected_revision: interview.revision },
@@ -343,7 +342,7 @@ export function PreparePage({
     }
   };
 
-  if (profile && !profileReady && !pendingPlan && !pendingStart) {
+  if (profile && !profileReady && !interviewId && !interview && !pendingPlan && !pendingStart) {
     return (
       <main className="page-container narrow-page">
         <Alert type="warn" title="资料还没有准备完成">
@@ -364,7 +363,6 @@ export function PreparePage({
       {interview ? (
         <header className="compact-page-heading prepare-ready-heading">
           <div>
-            <p className="eyebrow">面试准备</p>
             <h1>{interviewRoleText(interview)}</h1>
             <p>
               {interview.jd_requirements.length} 项岗位要求
@@ -372,24 +370,22 @@ export function PreparePage({
               {" · "}后续追问按回答动态决定
             </p>
           </div>
-          <div className="heading-actions">
-            <Tag>本场计划已准备</Tag>
-            <Button disabled={busy || Boolean(pendingPlan || pendingStart)} onClick={() => setEditing(true)}>修改岗位 / JD</Button>
+          {interview.status === "ready" ? (
             <Button
               type="primary"
               size="large"
               loading={busy && operation?.kind === "interview.start"}
-              disabled={!serviceReady || busy || editing || !profileReady || Boolean(pendingPlan || pendingStart) || interview.status !== "ready"}
+              disabled={!serviceReady || busy || Boolean(pendingPlan || pendingStart)}
               onClick={startInterview}
             >
               开始模拟面试
             </Button>
-          </div>
+          ) : null}
         </header>
       ) : (
         <div className="page-intro">
-          <h1>输入目标岗位</h1>
-          <p>填写真实岗位描述，或明确选择演示岗位配置后生成本场计划。</p>
+          <h1>准备这场面试</h1>
+
         </div>
       )}
       {planNotice ? <Alert type="warn" title="面试计划需要重新确认">{planNotice}</Alert> : null}
@@ -421,13 +417,12 @@ export function PreparePage({
         />
       ) : (
         <>
-          <div className="prepare-workspace">
-            <section className="surface-card prepare-job-context" aria-labelledby="prepare-job-title">
-              <div className="section-heading compact">
-                <p className="eyebrow">核对本场岗位</p>
+          <div className="prepare-workspace prepare-plan-review">
+            <details className="prepare-context-disclosure">
+              <summary>查看岗位原文与修改岗位</summary>
+              <section className="prepare-job-context" aria-labelledby="prepare-job-title">
                 <h2 id="prepare-job-title">{interviewRoleText(interview)}</h2>
                 <JDSourceBadge source={interview.jd_source} />
-              </div>
               {interview.jd_text !== null ? (
                 <p className="prepare-jd-original">{interview.jd_text}</p>
               ) : (
@@ -443,14 +438,14 @@ export function PreparePage({
                 </>
               )}
               <Button disabled={busy || Boolean(pendingStart)} onClick={() => setEditing(true)}>修改岗位并生成新计划</Button>
-            </section>
+              </section>
+            </details>
             <JobSummary interview={interview} />
             <InterviewPlan
               slots={interview.root_plan.slots}
               requirements={interview.jd_requirements}
             />
           </div>
-          <TechnicalDetails interview={interview} />
         </>
       )}
     </main>

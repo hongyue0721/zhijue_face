@@ -346,17 +346,15 @@ export function ReportPage({
       </nav>
       <header className="compact-page-heading report-heading">
         <div>
-          <p className="eyebrow">面试报告</p>
-          <h1>本场表现与事实依据</h1>
+
+          <h1>回看这一场，找到下一步</h1>
           <p>
             已回答 {report.coverage.answered_root_count}/{report.coverage.planned_root_count}
             {" · "}可评分 {report.coverage.scored_root_count}/{report.coverage.planned_root_count}
-            {limitations[0] ? ` · ${limitations[0]}` : ""}
           </p>
         </div>
         <div className="score-summary" aria-label="本场总分">
           <strong>{scoreText(report.overall_score, "未形成总分")}</strong>
-          <span>{report.completion === "complete" ? "全部题目已作答" : "部分题目未作答"}</span>
         </div>
       </header>
 
@@ -364,10 +362,9 @@ export function ReportPage({
       <OperationStatus operation={operation} label="回答优化" />
 
       <section className="report-workspace" aria-label="逐题报告">
-        <aside className="surface-card question-rail">
+        <aside className="question-rail report-question-navigation" aria-label="题目导航">
           <div className="question-rail-heading">
             <span>逐题查看</span>
-            <Tag>{report.coverage.scored_root_count} 题可评分</Tag>
           </div>
           <div className="question-rail-list" role="list">
             {report.root_assessments.map((assessment, index) => (
@@ -388,22 +385,22 @@ export function ReportPage({
                 <span className="question-rail-title" title={assessment.question_text}>
                   {assessment.question_text}
                 </span>
-                <small>
+                <span className="question-rail-score">
                   {assessment.score === null
                     ? rootAssessmentStatusText[assessment.status]
                     : scoreText(assessment.score, "本题未评分")}
-                </small>
+                </span>
               </button>
             ))}
           </div>
         </aside>
 
-        <section className="surface-card report-detail">
+        <section className="report-detail report-reading-pane">
           {selectedAssessment ? (
             <section className="report-question-context" aria-label="原题与回答">
-              <p className="eyebrow">第 {selectedIndex + 1} 题 · 原题</p>
+              <p className="eyebrow">第 {selectedIndex + 1} 题</p>
               <h2>{selectedAssessment.question_text}</h2>
-              <details className="report-original-answers" open key={selectedAssessment.root_question_id}>
+              {activeReportTab === "assessment" ? <details className="report-original-answers" open key={selectedAssessment.root_question_id}>
                 <summary>你的原回答（{selectedAssessment.answers.length} 次）</summary>
                 {selectedAssessment.answers.length ? selectedAssessment.answers.map((answer) => (
                   <article key={answer.answer_id}>
@@ -413,7 +410,7 @@ export function ReportPage({
                     <p>{answer.raw_text}</p>
                   </article>
                 )) : <p>本题没有提交回答，未回答不代表不会。</p>}
-              </details>
+              </details> : null}
             </section>
           ) : null}
           <div
@@ -458,8 +455,8 @@ export function ReportPage({
             >
               <div className="report-detail-heading">
                 <div>
-                  <p className="eyebrow">问题 {selectedIndex + 1}</p>
-                  <h2>{rootAssessmentStatusText[selectedAssessment.status]}</h2>
+                  <h2>评分依据</h2>
+                  <span className="assessment-state">{rootAssessmentStatusText[selectedAssessment.status]}</span>
                 </div>
                 <div className="assessment-score">
                   <strong>{scoreText(selectedAssessment.score, "未评分")}</strong>
@@ -524,15 +521,11 @@ export function ReportPage({
             >
               <div className="report-detail-heading">
                 <div>
-                  <p className="eyebrow">问题 {selectedIndex + 1}</p>
-                  <h2>基于原回答的表达优化</h2>
+                  <h2>{selectedImprovement ? "让表达更清楚" : "整理本场回答"}</h2>
                 </div>
                 <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
               </div>
-              <p className="panel-intro">
-                基于本场已保存的回答整理表达，不补造经历或数据；一次生成覆盖本场已回答题目。
-              </p>
-              {report.improvements_status === "not_requested" || pendingImprovements ? (
+              {report.improvements_status !== "ready" && (report.improvements_status === "not_requested" || pendingImprovements) ? (
                 <Button
                   type="primary"
                   loading={busy}
@@ -559,7 +552,7 @@ export function ReportPage({
               ) : null}
               {selectedImprovement ? (
                 <div className="selected-improvement">
-                  <div className="answer-comparison">
+                  <div className="answer-comparison answer-reading-comparison">
                     <div>
                       <h3>原回答</h3>
                       {selectedImprovement.original_answers.map((answer) => (
@@ -612,12 +605,11 @@ export function ReportPage({
         </section>
       </section>
 
-      <section className="surface-card report-next-step">
+      <section className="report-next-step report-footer">
         <div className="report-limitations">
-          <strong>{limitations[0] ?? "本场报告没有额外的注意事项"}</strong>
-          {limitations.length > 1 ? (
+          {limitations.length ? (
             <details className="compact-details">
-              <summary>查看全部 {limitations.length} 条注意事项</summary>
+              <summary>报告说明（{limitations.length}）</summary>
               <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
             </details>
           ) : null}

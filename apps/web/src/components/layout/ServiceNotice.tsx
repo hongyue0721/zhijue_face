@@ -19,17 +19,5 @@ export function ServiceNotice({ state, onRetry }: { state: ServiceState; onRetry
       </div>
     );
   }
-  if (state.runMode === "fixture" || state.runMode === "replay") {
-    // 负责人约束要求 fixture/replay 对用户明示；明示中文事实，不展示内部枚举值。
-    return (
-      <div className="global-notice">
-        <Alert type="info" title={state.runMode === "fixture" ? "演示数据模式" : "回放数据模式"}>
-          {state.runMode === "fixture"
-            ? "当前分析结果由本地演示数据产生，用于流程验证，不代表真实模型效果。"
-            : "当前分析结果来自预先录制的回放内容，用于流程验证，不代表真实模型效果。"}
-        </Alert>
-      </div>
-    );
-  }
   return null;
 }

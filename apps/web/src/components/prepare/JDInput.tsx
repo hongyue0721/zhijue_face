@@ -48,6 +48,7 @@ export function JDInput({
   const [unassigned, setUnassigned] = useState<string[]>(initial.unassigned);
   const [validation, setValidation] = useState<string | null>(null);
   const assembled = assembleJdText(sections);
+  const showCharacterCount = assembled.length >= JD_TEXT_MAX_LENGTH * 0.8;
 
   const setSection = (key: keyof JDSections) => (value: string) =>
     setSections((current) => ({ ...current, [key]: value }));
@@ -87,10 +88,10 @@ export function JDInput({
     label: string,
     placeholder: string,
   ) => (
-    <label className="field-label">
+    <label className={`field-label jd-field-${key}`}>
       <span className="field-label-row">
         <span>{label}</span>
-        <span className="field-hint">一行一条</span>
+
       </span>
       <Textarea
         modelValue={sections[key]}
@@ -104,15 +105,8 @@ export function JDInput({
   );
 
   return (
-    <section className="surface-card jd-input" aria-labelledby="jd-input-title">
-      <div className="section-heading compact">
-        <p className="eyebrow">岗位输入</p>
-        <h2 id="jd-input-title">填写岗位信息</h2>
-        <p>{regenerating
-          ? "修改只用于生成一份新计划；已开始的面试不受影响。点“生成”之前不会发送任何请求。"
-          : "岗位要求会单独保存，系统不会拿简历内容来冒充岗位要求。"}</p>
-        <p className="field-hint">按分区逐行填写岗位要求即可，保存时系统会自动整理分区标记；不要把加分项写成必备要求。</p>
-      </div>
+    <section className="jd-input continuous-form" aria-labelledby="jd-input-title">
+      <h2 id="jd-input-title" className="visually-hidden">目标岗位</h2>
       {unassigned.length > 0 ? (
         <div className="jd-unassigned" role="group" aria-label="未归类的岗位原文">
           <p className="jd-unassigned-heading">
@@ -147,48 +141,36 @@ export function JDInput({
           <Tag className="jd-unassigned-count">待处理 {unassigned.length} 行</Tag>
         </div>
       ) : null}
-      <label className="field-label">
-        岗位名称
-        <Input
-          modelValue={jobName}
-          onUpdateModelValue={setJobName}
-          placeholder="例如：嵌入式软件开发实习生"
-          maxlength={JD_SOURCE_NAME_MAX_LENGTH}
-          disabled={disabled || busy}
-        />
-      </label>
-      {sectionField(
-        "required",
-        "必要项（必备要求）",
-        "例如：熟悉 C 语言指针、结构体与位操作",
-      )}
-      {sectionField(
-        "preferred",
-        "加分项（优先条件）",
-        "例如：有 CAN、DMA 实际调试经历",
-      )}
-      {sectionField(
-        "responsibilities",
-        "岗位职责",
-        "例如：参与嵌入式固件模块开发与联调",
-      )}
-      <span className="character-count" aria-live="polite">
-        岗位内容共 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
-      </span>
+      <div className="jd-form-fields">
+        <label className="field-label jd-job-name">
+          岗位名称
+          <Input
+            modelValue={jobName}
+            onUpdateModelValue={setJobName}
+            placeholder="例如：嵌入式软件开发实习生"
+            maxlength={JD_SOURCE_NAME_MAX_LENGTH}
+            disabled={disabled || busy}
+          />
+        </label>
+        {sectionField(
+          "required",
+          "必要项（必备要求）",
+          "例如：熟悉 C 语言指针、结构体与位操作",
+        )}
+        <details className="jd-optional-fields" open={Boolean(initial.preferred || initial.responsibilities) || undefined}>
+          <summary>加分项与岗位职责（选填）</summary>
+          {sectionField("preferred", "加分项（优先条件）", "例如：有 CAN、DMA 实际调试经历")}
+          {sectionField("responsibilities", "岗位职责", "例如：参与嵌入式固件模块开发与联调")}
+        </details>
+      </div>
+      {showCharacterCount ? (
+        <span className="character-count" aria-live="polite">
+          岗位内容 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
+        </span>
+      ) : null}
       <div className="button-row split-actions">
         <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>
           {regenerating ? "确认修改并生成新计划" : "根据岗位生成面试计划"}
-        </Button>
-        <Button
-          type="secondary"
-          size="large"
-          disabled={disabled || busy}
-          onClick={() => {
-            setValidation(null);
-            onGenerate({});
-          }}
-        >
-          {regenerating ? "确认改用演示岗位生成新计划" : "使用演示岗位配置"}
         </Button>
         {onCancel ? <Button disabled={busy} onClick={onCancel}>取消修改，保留原计划</Button> : null}
       </div>

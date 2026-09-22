@@ -76,7 +76,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader currentStep={currentStep} runMode={service.status === "ready" ? service.runMode : undefined} dataMode={service.status === "ready" ? service.dataMode : undefined} />
+      <AppHeader currentStep={currentStep} />
       <ServiceNotice state={service} onRetry={checkService} />
       {invalidRoute ? (
         <div className="global-notice">

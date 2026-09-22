@@ -18,18 +18,8 @@ export function targetFromSliderKey(
   current: SliderAction,
   key: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End",
 ): SliderAction {
-  if (key === "Home") return "reject";
-  if (key === "End") return "accept";
-  if (key === "ArrowLeft" || key === "ArrowUp") {
-    if (current === "accept") return "neutral";
-    if (current === "neutral") return "reject";
-    return "reject";
-  }
-  if (key === "ArrowRight" || key === "ArrowDown") {
-    if (current === "reject") return "neutral";
-    if (current === "neutral") return "accept";
-    return "accept";
-  }
+  if (key === "Home" || key === "ArrowLeft" || key === "ArrowUp") return "accept";
+  if (key === "End" || key === "ArrowRight" || key === "ArrowDown") return "reject";
   return current;
 }
 

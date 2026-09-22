@@ -23,14 +23,13 @@ export function SegmentedSlider({
   const currentAction: SliderAction = sliderActionFromDecision(decision);
 
   const rejectRef = useRef<HTMLButtonElement>(null);
-  const neutralRef = useRef<HTMLButtonElement>(null);
   const acceptRef = useRef<HTMLButtonElement>(null);
 
   const select = (target: SliderAction, moveFocus = false) => {
     if (disabled) return;
     onDecision(decisionFromSliderTarget(claimId, target));
     if (!moveFocus) return;
-    const targetRef = target === "reject" ? rejectRef : target === "neutral" ? neutralRef : acceptRef;
+    const targetRef = target === "reject" ? rejectRef : acceptRef;
     requestAnimationFrame(() => targetRef.current?.focus());
   };
 
@@ -58,6 +57,17 @@ export function SegmentedSlider({
     >
       <div className="segmented-slider-thumb" aria-hidden="true" />
       <button
+        ref={acceptRef}
+        type="button"
+        role="radio"
+        aria-checked={currentAction === "accept"}
+        aria-label="采用该事实"
+        disabled={disabled}
+        tabIndex={currentAction !== "reject" && !disabled ? 0 : -1}
+        className={`slider-option slider-option--accept ${currentAction === "accept" ? "is-selected" : ""}`}
+        onClick={() => select(currentAction === "accept" ? "neutral" : "accept")}
+      >采用</button>
+      <button
         ref={rejectRef}
         type="button"
         role="radio"
@@ -67,35 +77,7 @@ export function SegmentedSlider({
         tabIndex={currentAction === "reject" && !disabled ? 0 : -1}
         className={`slider-option slider-option--reject ${currentAction === "reject" ? "is-selected" : ""}`}
         onClick={() => select(currentAction === "reject" ? "neutral" : "reject")}
-      >
-        不采用
-      </button>
-      <button
-        ref={neutralRef}
-        type="button"
-        role="radio"
-        aria-checked={currentAction === "neutral"}
-        aria-label="待定（未选择）"
-        disabled={disabled}
-        tabIndex={currentAction === "neutral" && !disabled ? 0 : -1}
-        className={`slider-option slider-option--neutral ${currentAction === "neutral" ? "is-selected" : ""}`}
-        onClick={() => select("neutral")}
-      >
-        待定
-      </button>
-      <button
-        ref={acceptRef}
-        type="button"
-        role="radio"
-        aria-checked={currentAction === "accept"}
-        aria-label="采用该事实"
-        disabled={disabled}
-        tabIndex={currentAction === "accept" && !disabled ? 0 : -1}
-        className={`slider-option slider-option--accept ${currentAction === "accept" ? "is-selected" : ""}`}
-        onClick={() => select(currentAction === "accept" ? "neutral" : "accept")}
-      >
-        采用
-      </button>
+      >不采用</button>
     </div>
   );
 }

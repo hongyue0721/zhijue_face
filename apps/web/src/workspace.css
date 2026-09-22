@@ -1,0 +1,181 @@
+/* Task-focused page layouts. Components retain their input/error styles in styles.css. */
+html, body { background: #fff; }
+.app-shell { min-height: 100dvh; }
+.app-header { background: #fff; }
+.app-shell .a-button { border-radius: 6px; }
+.app-shell .a-button--primary { background: var(--blue); border-color: var(--blue); }
+
+.header-inner { min-height: 72px; }
+.page-container { padding: 40px 0 64px; }
+.page-container h1 { font-size: clamp(26px, 3vw, 34px); }
+.page-container p { color: var(--ink); }
+.page-intro { margin-bottom: 32px; }
+.text-action, .app-shell .a-button.text-action {
+  border: 0; background: transparent; box-shadow: none; color: var(--blue);
+  font: inherit; cursor: pointer; padding: 8px 10px;
+}
+.text-action:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+
+/* Profile: upload → scan → review → ready. The viewport has one primary task. */
+.progressive-profile { max-width: 1060px; }
+.profile-stage-centered { min-height: calc(100dvh - 72px); display: flex; flex-direction: column; justify-content: center; }
+.profile-upload-center { width: min(520px, 100%); margin: auto; padding: 52px 36px 32px; text-align: center; border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: 0 10px 40px #17233c0a; }
+.profile-empty-tools { align-self: flex-end; position: absolute; right: 24px; top: 104px; }
+.profile-empty-tools .profile-tools { position: static; }
+.profile-continue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 12px 0 24px; }
+.profile-upload-center .upload-card { border: 0; box-shadow: none; padding: 0; background: transparent; }
+.profile-upload-center .upload-icon { width: 64px; height: 72px; background: transparent; border-radius: 4px; }
+.profile-upload-center h2 { font-size: 30px; margin: 24px 0; }
+.profile-upload-center .drop-zone { min-height: 0; padding: 0; margin: 24px 0 12px; border: 0; background: transparent; }
+.profile-upload-center .a-button--primary { min-width: 220px; }
+.upload-requirements { margin: 20px auto; text-align: left; width: fit-content; max-width: 100%; }
+.upload-requirements summary { cursor: pointer; }
+.upload-requirements p { max-width: 430px; margin: 12px 0; }
+.profile-review-heading { position: relative; text-align: center; padding: 12px 0 36px; }
+.profile-review-heading h1 { margin: 0; }
+.profile-tools { position: absolute; top: 22px; right: 0; text-align: right; z-index: 3; }
+.profile-tools summary { cursor: pointer; color: var(--blue); }
+.profile-tool-actions { display: grid; gap: 8px; background: white; border: 1px solid var(--line); padding: 12px; margin-top: 12px; }
+.progressive-profile .material-summary { width: 100%; border: 0; border-radius: 4px; background: #f5f7fa; padding: 12px 18px; margin-bottom: 28px; }
+.material-summary-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
+.material-summary-row strong { overflow-wrap: anywhere; }
+.material-summary-row > :last-child { margin-left: auto; }
+.profile-upload-center .material-summary { margin-top: 24px; text-align: left; }
+.fact-list-tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--line); }
+.fact-list-tabs > button { border: 0; border-bottom: 2px solid transparent; background: none; padding: 14px 2px; font: inherit; cursor: pointer; }
+.fact-list-tabs > button[aria-pressed="true"] { border-bottom-color: var(--blue); color: var(--blue); font-weight: 600; }
+.progressive-profile .facts-section { width: 100%; padding: 0; border: 0; background: transparent; }
+.progressive-profile .claim-list { display: block; }
+.progressive-profile .claim-card { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 22px 4px; box-shadow: none; }
+.claim-main-row { display: flex; align-items: center; gap: 24px; }
+.claim-content { flex: 1; min-width: 0; }
+.claim-text { margin: 0; font-size: 16px; }
+.claim-actions { flex: none; gap: 16px; }
+.claim-source-details { margin-top: 10px; font-size: 14px; }
+.claim-source-details summary { width: fit-content; cursor: pointer; }
+.claim-correction-preview { background: #f5f8fc; border: 0; border-left: 2px solid var(--blue); padding: 12px 16px; font-size: 16px; }
+.add-fact-action { margin-top: 14px; }
+.progressive-profile .fact-submit-bar { position: sticky; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 24px; border: 1px solid var(--line); border-radius: 6px; background: white; padding: 14px 20px; z-index: 2; }
+.profile-ready-state { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 48px 0; }
+.profile-ready-state h2 { margin: 8px 0; }
+.completion-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: white; background: var(--green); font-size: 26px; }
+.profile-activation-status { margin: 24px 0; }
+.inline-success { color: var(--green); }
+
+/* Two visible options; no thumb until the user makes a decision. */
+.segmented-slider { position: relative; display: inline-flex; flex: none; width: 174px; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 24px; background: #f4f6f9; }
+.slider-option { position: relative; z-index: 1; flex: 1; min-width: 0; border: 0; border-radius: 20px; background: transparent; color: var(--ink); padding: 8px; font: inherit; font-size: 14px; cursor: pointer; }
+.slider-option.is-selected { color: white; }
+.segmented-slider-thumb { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 8px) / 2); border-radius: 20px; background: var(--blue); pointer-events: none; transition: transform 180ms ease, opacity 180ms ease; }
+.segmented-slider--neutral .segmented-slider-thumb { opacity: 0; }
+.segmented-slider--accept .segmented-slider-thumb { transform: translateX(0); }
+.segmented-slider--reject .segmented-slider-thumb { transform: translateX(calc(100% + 2px)); background: #495466; }
+.segmented-slider--disabled { opacity: .5; }
+.segmented-slider--disabled button { cursor: not-allowed; }
+
+/* Web Animations API controls the scan; reduced-motion leaves a static icon. */
+.resume-scan { margin: auto; text-align: center; padding: 60px 0; }
+.resume-scan h1 { margin: 30px 0 0; }
+.resume-scan-graphic { position: relative; width: 116px; height: 116px; margin: auto; display: grid; place-items: center; }
+.resume-scan-ring { position: absolute; inset: 0; border: 2px solid #e0e8f4; border-top-color: var(--blue); border-right-color: var(--blue); border-radius: 50%; }
+.resume-scan-graphic svg { width: 40px; height: 48px; stroke: var(--navy); stroke-width: 2; }
+.resume-scan-line { position: absolute; width: 88px; height: 2px; background: #4d87dc; }
+
+/* Prepare: one continuous form, replaced by the resulting plan. */
+.prepare-page { max-width: 880px; }
+.prepare-navigation, .page-navigation { margin-bottom: 26px; }
+.prepare-page .continuous-form { border: 0; padding: 0; box-shadow: none; }
+.continuous-form .jd-form-fields { display: grid; grid-template-columns: 1fr; gap: 22px; }
+.continuous-form .field-label { font-size: 16px; }
+.prepare-page .prepare-workspace { display: block; height: auto; }
+.prepare-page .prepare-section, .prepare-page .job-summary, .prepare-page .interview-plan { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 24px 0; width: 100%; }
+.prepare-context-disclosure { border-block: 1px solid var(--line); padding: 18px 0; }
+.prepare-context-disclosure summary { cursor: pointer; }
+.prepare-job-context { padding-top: 20px; }
+.prepare-page .plan-grid { display: block; }
+.prepare-page .plan-card { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 20px 0; background: transparent; box-shadow: none; }
+.jd-optional-fields summary { cursor: pointer; color: var(--blue); margin-bottom: 18px; }
+.jd-optional-fields .field-label { margin-top: 20px; }
+.prepare-page .slot-list li { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 20px 0; }
+.prepare-page .slot-list strong { font-size: 16px; }
+.prepare-page .slot-list p { font-size: 14px; }
+.prepare-page .coverage-row { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.prepare-page .technical-details { margin-top: 24px; }
+
+@media (max-width: 640px) {
+  .prepare-ready-heading { align-items: stretch; flex-direction: column; }
+  .prepare-ready-heading > .a-button { width: 100%; }
+}
+
+/* Interview: one question, one answer, supporting context on demand. */
+.interview-page { max-width: 940px; }
+.interview-page .focused-interview { display: flex; flex-direction: column; gap: 22px; height: auto; }
+.interview-page .question-card, .interview-page .answer-composer { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 24px 0; position: static; height: auto; }
+.interview-page .question-card { border-top: 1px solid var(--line); }
+.question-card h2 { font-size: clamp(23px, 2.5vw, 30px); line-height: 1.5; margin: 16px 0; }
+.interview-secondary-menu { margin-bottom: 20px; }
+.interview-secondary-menu summary { cursor: pointer; width: fit-content; color: var(--blue); }
+.interview-control-actions { padding-top: 16px; }
+.interview-basis-details { border-top: 1px solid var(--line); padding: 16px 0; }
+.interview-basis-details summary { cursor: pointer; }
+.interview-basis-details .context-panel { position: static; background: transparent; box-shadow: none; border: 0; padding: 20px 0; }
+.interview-page .answer-composer textarea { min-height: 220px; }
+
+/* Report is a reading view, not a grid of score cards. */
+.report-workspace { grid-template-columns: 250px minmax(0, 1fr); align-items: start; gap: 36px; height: auto; }
+.report-question-navigation { border: 0; border-radius: 0; background: transparent; padding: 0 20px 0 0; border-right: 1px solid var(--line); overflow: visible; }
+.question-rail-list { display: grid; grid-template-columns: 1fr; }
+.question-rail-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; min-width: 0; border: 0; border-radius: 0; background: transparent; border-left: 3px solid transparent; padding: 18px 12px; }
+.question-rail-item.active { border-left-color: var(--blue); background: #eff5fd; }
+.question-rail-item > span:first-child { white-space: nowrap; }
+.question-rail-title { grid-column: 1 / -1; grid-row: 2; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 1.6; }
+.question-rail-score { grid-column: 2; grid-row: 1; white-space: nowrap; font-weight: 600; }
+.report-reading-pane { background: transparent; border: 0; border-radius: 0; padding: 0; overflow: visible; }
+.report-reading-pane .criterion-result { background: transparent; border: 0; border-radius: 0; border-top: 1px solid var(--line); padding: 22px 0; }
+.report-question-context { border: 0; padding: 0 0 24px; }
+.answer-reading-comparison { display: block; }
+.answer-reading-comparison > div { border: 0; border-radius: 0; background: transparent; padding: 20px 0; }
+.report-footer { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line); }
+.assessment-state { font-weight: 600; }
+.score-summary { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.report-limitations:empty { display: none; }
+
+/* Resume uses one paper surface; the audit margin remains unboxed. */
+.resume-workspace { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); align-items: start; gap: 40px; height: auto; }
+.resume-paper { padding: 44px; border: 1px solid var(--line); border-radius: 2px; box-shadow: 0 4px 24px #17233c08; overflow: visible; }
+.resume-source-panel { border: 0; border-radius: 0; background: transparent; padding: 0 0 0 24px; border-left: 1px solid var(--line); overflow: visible; }
+.resume-source-reading > section { margin-bottom: 28px; }
+.resume-source-reading p { font-size: 16px; }
+.resume-source-reading blockquote { margin: 12px 0; padding: 8px 0 8px 16px; border-left: 2px solid var(--line); }
+.source-count { color: var(--ink); font-size: 14px; font-weight: 600; }
+
+@media (max-width: 820px) {
+  .page-container { padding-top: 28px; }
+  .profile-stage-centered { min-height: calc(100dvh - 140px); }
+  .profile-review-heading { padding-bottom: 24px; text-align: left; }
+  .profile-tools { position: static; text-align: left; margin-top: 18px; }
+  .claim-main-row { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .claim-actions { width: 100%; justify-content: flex-end; }
+  .report-workspace, .resume-workspace { grid-template-columns: 1fr; gap: 24px; }
+  .report-question-navigation { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 18px; }
+  .question-rail-list { display: flex; overflow-x: auto; }
+  .question-rail-item { min-width: 170px; flex: 0 0 170px; }
+  .resume-source-panel { border-left: 0; padding: 24px 0; border-top: 1px solid var(--line); }
+  .resume-paper { padding: 24px; }
+}
+@media (max-width: 520px) {
+  .progressive-profile .fact-submit-bar { bottom: 0; padding: 12px; }
+  .fact-submit-bar .button-row { width: 100%; justify-content: flex-end; }
+  .profile-upload-center { padding: 36px 20px 24px; }
+  .claim-actions { gap: 8px; }
+  .segmented-slider { width: 164px; }
+  .header-right { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented-slider-thumb { transition: none; }
+}
+@media print {
+  .resume-workspace { display: block; }
+  .resume-paper { width: 100%; padding: 0; border: 0; box-shadow: none; }
+}

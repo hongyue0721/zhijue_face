@@ -1,5 +1,5 @@
 import { useState, type MouseEvent } from "react";
-import { Button, Tag } from "@any-design/anyui/react";
+import { Button } from "@any-design/anyui/react";
 import type { ClaimView } from "../../api";
 import { SegmentedSlider } from "./SegmentedSlider";
 import { FactModal } from "./FactModal";
@@ -38,19 +38,7 @@ export function ClaimConfirmList({
   };
 
   return (
-    <section className="surface-card facts-section" aria-labelledby="facts-title">
-      <div className="section-heading">
-        <div className="facts-heading-text">
-          <p className="eyebrow">资料事实核对</p>
-          <h2 id="facts-title">{confirmed ? "已确认的信息" : "需要你核对的信息"}</h2>
-        </div>
-        <p className="facts-subtext">
-          {confirmed
-            ? "这些是你确认过的本人自述，面试中仍会核实；可以随时再次更正。"
-            : "逐条选择采用、不采用或更正。选择会先暂存在页面上，选完后点下方“批量提交”一次性保存。"}
-        </p>
-      </div>
-
+    <section className="facts-section" aria-label={confirmed ? "已确认经历" : "经历核对"}>
       {claims.length === 0 ? (
         <p className="claims-empty-state">
           {confirmed
@@ -71,16 +59,6 @@ export function ClaimConfirmList({
               >
                 <div className="claim-main-row">
                   <div className="claim-content">
-                    <div className="claim-meta-tags">
-                      <Tag>{sourceLabel(claim)}</Tag>
-                      {isCorrected ? (
-                        <Tag className="tag-status-corrected">已暂存更正</Tag>
-                      ) : decision?.action === "accept" ? (
-                        <Tag className="tag-status-accept">已标记采用</Tag>
-                      ) : decision?.action === "reject" ? (
-                        <Tag className="tag-status-reject">已标记不采用</Tag>
-                      ) : null}
-                    </div>
                     <p className="claim-text">{claim.text}</p>
                   </div>
 
@@ -99,7 +77,8 @@ export function ClaimConfirmList({
 
                     <Button
                       size="small"
-                      type={isCorrected ? "primary" : "secondary"}
+                      type="secondary"
+                      className="text-action"
                       aria-label={isCorrected ? "重新编辑更正内容" : "更正该条事实描述"}
                       onClick={(event: MouseEvent<HTMLElement>) => {
                         const trigger = event.currentTarget;
@@ -114,7 +93,7 @@ export function ClaimConfirmList({
                       {isCorrected ? "重新更正" : "更正"}
                     </Button>
 
-                    {decision ? (
+                    {isCorrected ? (
                       <Button
                         size="small"
                         type="secondary"
@@ -136,8 +115,9 @@ export function ClaimConfirmList({
 
                 {claim.source_quotes.some((quote) => quote.exact_quote) ? (
                   <details className="claim-source-details">
-                    <summary>查看出处精准引文</summary>
+                    <summary>查看来源</summary>
                     <div className="source-quotes-body">
+                      <p>{sourceLabel(claim)}</p>
                       {claim.source_quotes.map((quote, index) =>
                         quote.exact_quote ? (
                           <div key={index} className="source-quote-item">

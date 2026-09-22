@@ -3,9 +3,9 @@ import type { OperationView } from "../../api";
 import { operationStatusText } from "../../presentation";
 
 export function OperationStatus({ operation, label }: { operation: OperationView | null; label: string }) {
-  if (!operation) return null;
+  if (!operation || operation.status === "succeeded") return null;
   const active = operation.status === "queued" || operation.status === "running";
-  const type = operation.status === "succeeded" ? "success" : active ? "info" : "danger";
+  const type = active ? "info" : "danger";
   return (
     <Alert type={type} title={`${label} · ${operationStatusText[operation.status]}`}>
       {active ? (

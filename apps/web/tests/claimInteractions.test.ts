@@ -15,22 +15,17 @@ describe("claimDecisions pure domain functions", () => {
     expect(sliderActionFromDecision({ claim_id: "c1", action: "correct", corrected_text: "txt" })).toBe("neutral");
   });
 
-  it("calculates key navigation transitions across discrete options", () => {
-    // From accept (rightmost)
-    expect(targetFromSliderKey("accept", "ArrowLeft")).toBe("neutral");
-    expect(targetFromSliderKey("accept", "ArrowRight")).toBe("accept");
-
-    // From neutral (middle)
-    expect(targetFromSliderKey("neutral", "ArrowLeft")).toBe("reject");
-    expect(targetFromSliderKey("neutral", "ArrowRight")).toBe("accept");
-
-    // From reject (leftmost)
-    expect(targetFromSliderKey("reject", "ArrowLeft")).toBe("reject");
-    expect(targetFromSliderKey("reject", "ArrowRight")).toBe("neutral");
-    expect(targetFromSliderKey("accept", "ArrowUp")).toBe("neutral");
-    expect(targetFromSliderKey("reject", "ArrowDown")).toBe("neutral");
-    expect(targetFromSliderKey("neutral", "Home")).toBe("reject");
-    expect(targetFromSliderKey("neutral", "End")).toBe("accept");
+  it("navigates only the two visible choices without adopting untouched facts", () => {
+    expect(sliderActionFromDecision(undefined)).toBe("neutral");
+    expect(decisionFromSliderTarget("c1", "neutral")).toBeNull();
+    for (const current of ["neutral", "accept", "reject"] as const) {
+      for (const key of ["Home", "ArrowLeft", "ArrowUp"] as const) {
+        expect(targetFromSliderKey(current, key)).toBe("accept");
+      }
+      for (const key of ["End", "ArrowRight", "ArrowDown"] as const) {
+        expect(targetFromSliderKey(current, key)).toBe("reject");
+      }
+    }
   });
 
   it("maps slider target to discrete ClaimDecision without mutating correct semantics", () => {

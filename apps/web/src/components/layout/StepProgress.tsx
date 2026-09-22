@@ -8,7 +8,7 @@ export function StepProgress({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
         const complete = number < current;
         const active = number === current;
         return (
-          <li key={label} className={complete ? "complete" : active ? "active" : undefined}>
+          <li key={label} aria-current={active ? "step" : undefined} className={complete ? "complete" : active ? "active" : undefined}>
             <span className="step-marker" aria-hidden="true">
               {complete ? "✓" : number}
             </span>

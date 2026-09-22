@@ -1,4 +1,4 @@
-import { Alert, Button, Tag } from "@any-design/anyui/react";
+import { Alert, Button } from "@any-design/anyui/react";
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
@@ -10,7 +10,7 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { resumeDraftStatusText, resumeTargetText } from "../presentation";
+import { resumeTargetText } from "../presentation";
 import { reportPath, startPath } from "../routing";
 import {
   clearOperationId,
@@ -216,21 +216,16 @@ export function ResumeDraftPage({
       </nav>
       <header className="compact-page-heading resume-heading no-print">
         <div>
-          <p className="eyebrow">简历草稿</p>
-          <h1>基于已确认事实的表达版本</h1>
-          {draft.status === "generating" || draft.status === "generation_failed" ? (
-            <p>这次没有生成出简历正文；你确认过的经历都还在资料页，不会丢失。</p>
-          ) : (
-            <p>
-              {resumeItems.length} 条正文
-              {" · "}{draft.source_claims.length} 项草稿引用资料
-              {" · "}待补充 {draft.missing_facts.length} 项
-              {" · "}注意 {draft.cautions.length} 项
-            </p>
-          )}
+
+          <h1>{draft.status === "accepted" ? "你的简历，已确认" : "把经历整理成简历"}</h1>
+          {draft.status === "generating" ? (
+            <p>正在整理你已确认的经历。</p>
+          ) : draft.status === "generation_failed" ? (
+            <p>简历尚未生成，请查看失败原因后重试。</p>
+          ) : null}
+
         </div>
         <div className="heading-actions">
-          <Tag>{resumeDraftStatusText[draft.status]}</Tag>
           {canRetry ? (
             <Button
               type="primary"
@@ -269,7 +264,7 @@ export function ResumeDraftPage({
 
       <section className="resume-workspace">
         <article
-          className={`surface-card resume-document print-document ${
+          className={`resume-document resume-paper print-document ${
             draft.status === "accepted" ? "print-document--accepted" : ""
           }`}
           aria-labelledby="resume-document-title"
@@ -302,44 +297,41 @@ export function ResumeDraftPage({
           )}
         </article>
 
-        <aside className="surface-card resume-audit-panel no-print" aria-labelledby="resume-audit-title">
+        <aside className="resume-audit-panel resume-source-panel no-print" aria-labelledby="resume-audit-title">
           <div className="report-detail-heading">
             <div>
-              <p className="eyebrow">来源核对</p>
-              <h2 id="resume-audit-title">这条正文从哪来、改了什么</h2>
+              <h2 id="resume-audit-title">来源核对</h2>
             </div>
-            <Tag>{selectedItem ? "已选择正文" : "暂无正文"}</Tag>
+            <span className="source-count">{selectedSources.length} 项来源</span>
           </div>
-          {selectedChange ? (
-            <div className="resume-change-review">
-              <div>
-                <h3>来源原文</h3>
-                <p>{selectedChange.before}</p>
-              </div>
-              <span className="rewrite-arrow" aria-hidden="true">→</span>
-              <div>
+          {selectedItem ? (
+            <div className="resume-source-reading">
+              <section className="resume-selected-copy">
                 <h3>简历表达</h3>
-                <p>{selectedChange.after}</p>
-              </div>
-              <div className="change-reason">
-                <h3>改写原因</h3>
-                <p>{selectedChange.reason}</p>
-              </div>
-              {selectedSources.length ? (
-                <div className="related-sources">
-                  <h3>关联的已确认资料</h3>
-                  <ul>
-                    {selectedSources.map((source) => (
-                      <li key={source.id}>{source.text}</li>
-                    ))}
-                  </ul>
-                </div>
+                <p>{selectedItem.text}</p>
+              </section>
+              <section className="related-sources">
+                <h3>已确认的来源</h3>
+                {selectedSources.length ? selectedSources.map((source) => (
+                  <blockquote key={source.id}>{source.text}</blockquote>
+                )) : <p>这条正文的来源暂未返回，请刷新后再核对。</p>}
+              </section>
+              {selectedChange ? (
+                <section className="resume-change-explanation">
+                  <h3>改写原因</h3>
+                  <p>{selectedChange.reason}</p>
+                  <details className="compact-details">
+                    <summary>查看改写前后</summary>
+                    <h4>原文</h4>
+                    <p>{selectedChange.before}</p>
+                    <h4>改写后</h4>
+                    <p>{selectedChange.after}</p>
+                  </details>
+                </section>
               ) : null}
             </div>
           ) : (
-            <p className="empty-state">
-              {selectedItem ? "这一条是直接采用的原文，没有改写差异。" : "点击左侧任意一条正文，查看它的来源。"}
-            </p>
+            <p className="empty-state">正文生成后，可逐条查看引用的资料。</p>
           )}
 
           {(draft.missing_facts.length || draft.cautions.length) ? (

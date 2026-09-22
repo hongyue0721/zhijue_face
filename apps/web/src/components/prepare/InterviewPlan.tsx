@@ -9,11 +9,10 @@ export function InterviewPlan({
   requirements: JDRequirementView[];
 }) {
   return (
-    <section className="plan-column" aria-labelledby="plan-title">
+    <section className="plan-column prepare-section" aria-labelledby="plan-title">
       <div className="section-heading compact">
-        <p className="eyebrow">本场验证计划</p>
         <h2 id="plan-title">五个主问题方向</h2>
-        <p>这里只列出验证方向；具体题目会在面试开始时现场生成。</p>
+
       </div>
       <ol className="slot-list">
         {slots.map((slot, index) => (

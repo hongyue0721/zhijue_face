@@ -1,15 +1,19 @@
 import { Button } from "@any-design/anyui/react";
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent, type Ref } from "react";
 
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 export function DocumentUpload({
   disabled,
   busy,
+  compact = false,
+  actionRef,
   onSelect,
 }: {
   disabled: boolean;
   busy: boolean;
+  compact?: boolean;
+  actionRef?: Ref<HTMLDivElement>;
   onSelect: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -35,9 +39,17 @@ export function DocumentUpload({
   };
 
   return (
-    <section className="surface-card upload-card" aria-labelledby="upload-title">
-      <div className="upload-icon" aria-hidden="true">PDF</div>
-      <h2 id="upload-title">上传简历 PDF</h2>
+    <section
+      className={`surface-card upload-card ${compact ? "upload-card--dialog" : ""}`}
+      aria-label={compact ? "选择要上传的 PDF 文件" : undefined}
+      aria-labelledby={compact ? undefined : "upload-title"}
+    >
+      {!compact ? (
+        <>
+          <div className="upload-icon" aria-hidden="true">PDF</div>
+          <h2 id="upload-title">上传你的简历</h2>
+        </>
+      ) : null}
       <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
         <input
           ref={inputRef}
@@ -51,20 +63,21 @@ export function DocumentUpload({
             accept(file);
           }}
         />
-        <span className="upload-guidance">拖入文件，或点击选择</span>
+
         <Button
+          ref={actionRef}
           type="primary"
           size="large"
           disabled={disabled || busy}
           loading={busy}
           onClick={() => inputRef.current?.click()}
         >
-          {busy ? "正在提交" : "选择 PDF 文件"}
+          {busy ? "正在提交" : "上传简历"}
         </Button>
       </div>
-      <p className="upload-limits">PDF · 最大 10 MiB · 最多 5 页</p>
+
       {validation ? <p className="field-error" role="alert">{validation}</p> : null}
-      <p className="privacy-note">文件只发送到本地业务服务处理；实时模式下，提取出的文字可能发送给已配置的模型服务。正文不会写入网址或浏览器存储。</p>
+
     </section>
   );
 }
