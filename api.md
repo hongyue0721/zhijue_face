@@ -4,6 +4,8 @@
 
 **实现状态（2026-09-20）**：M4-01 评分/报告后端已实现并测试；M4-02 回答优化、简历草稿与对应页面已实现。已实现资料链 `POST /profiles`、`GET /profiles/{id}`、`POST /profiles/{id}/facts`、`POST /profiles/{id}/confirm`、`POST /profiles/{id}/documents`、`GET /documents/{id}`、`GET /documents/{id}/blocks`、`POST /profiles/{id}/activate`、`DELETE /profiles/{id}`，规划、面试与报告链 `POST /interviews`、`GET /interviews/{id}`、`POST /interviews/{id}/start`、`POST /interviews/{id}/answers`、`POST /interviews/{id}/control`、`GET /interviews/{id}/report`、`POST /interviews/{id}/report/improvements`，简历链 `POST /profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}`、`POST /resume-drafts/{id}/accept`，以及 Operation/SSE/retry/health 与 `GET /runtime/info`。开始/回答链真实经过 openJiuwen Workflow；程序从已校验 Observation 和冻结 Rubric 生成 Assessment/Report。`DELETE /profiles/{id}` 先 tombstone（status=deleting，拒绝其余写入）再由 `profile.delete` Operation 后台清理：先删 Knowledge 索引（SDK delete_documents），再单事务级联删除档案/材料/事实/快照/会话/草稿与关联 Operation 与事件，只保留删除回执；索引删除失败时数据库不动，档案保持 deleting，可从 ProfileView 的 active_operation_id 恢复显式重试。
 
+**前端迁移状态（2026-09-22）**：正式准备页只提交用户明确填写的岗位名称与必要项/加分项/岗位职责，不再提供“使用演示岗位配置”入口。`POST /interviews` 省略 `jd_text/jd_source_name` 时使用 `SYNTHETIC_DEMO_JD` 的 HTTP 契约仍保留给显式 fixture、受控测试或直接 API 客户端；这不是正式页面的默认值。本轮没有修改 HTTP 路径、字段、错误码、SSE、数据库 Schema、迁移或 OpenAPI。
+
 ## 1. 全局约定
 
 Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_..."}}`。Content-Type 为 `application/json; charset=utf-8`，上传除外。所有网络 DTO 字段为 snake_case；时间 RFC3339 UTC；ID 为不透明字符串。
@@ -160,7 +162,7 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 | GET `/health/live` | 无 | 200 {status:"ok"} |
 | GET `/health/ready` | 无 | 200 ready 或 503 not_ready |
 
-retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
+retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。`GET /operations/{id}` 的 `error.retryable` 表示当前配置下是否仍可执行恢复动作：负责人显式提高 `MODEL_MAX_RETRIES` 后，既有 `interview.answer` 的 `UPSTREAM_FAILED / UPSTREAM_TIMEOUT` 可在新预算内重新开放，其他业务失败不会因此变成可重试。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
 
 资料确认/激活 operation retry 使用当前 Profile revision，并校验目标仍是最新快照；每个逻辑激活最多三次尝试，换 Idempotency-Key 不重新开启预算。恢复只作用于原代次 Knowledge，不重复确认事实。上传原始字节不持久化，`document.import` 失败不可通过通用 `/retry` 重放，error.retryable=false，页面明确提供重新选择并上传文件的恢复方式；网络受理结果不明确时，同一已选文件与原请求 body/Idempotency-Key 必须复用，不擅自新建一次模型调用。
 

@@ -529,3 +529,33 @@ P-EXTRACT 仅发 **1 次真实 HTTP**，Operation 从 `2026-09-20T10:25:49.51576
 | 浏览器数据/无障碍 | Drawer 两页、modal 名称/首焦点/ESC/焦点归还；FactModal 失败保字；重复 JD 单条处理；Report tab 键盘关联；坏 history 归一 | 同上 |
 
 最终命令：后端非 live **321 passed / 2 deselected / 96 warnings**；Ruff check/format **79 files**；Node 24.21.0 前端 **25/25 passed**、TypeScript 与 Vite build（116 modules）通过；规范 **47/47**；doctor **18 PASS / 0 WARN / 0 FAIL**；checksum **237/237 OK**；空白检查通过。真实模型/embedding 本轮 0 调用，usage/cost 为 null；移动端、缩放、生产模型质量及负责人独立验收 NOT_RUN。
+
+## 前端重构迁移闭环（2026-09-22）
+
+迁移包自身没有源码或测试，只包含一份 overlay 交接文档；本节结果来自目标仓库隔离分支上的实际实现与验证，不能回写成包内已完成声明。
+
+| 验证面 | 实际结果 | 证据 |
+|---|---|---|
+| 包完整性 | manifest 13/13 SHA-256 匹配；dry-run 为 1 个交接文件、0 删除；包基线是目标 HEAD 祖先 | 包 `FILE_MANIFEST.json`、`status.json`、`DELIVERY_SUMMARY.md` |
+| JD 解析 | 常见显式标题可解析；required/preferred 不串类；无标题自由文本不猜；code-point/UTF-16 offset 与 provenance 保真 | `services/api/tests/unit/test_planning.py` |
+| 前端契约 | revision、幂等、首终态、lost-response 原命令、null/0 展示守卫保持通过 | `apps/web/tests/contracts.test.ts` 等 25 项 |
+| 真实 HTTP fixture 纵切面 | PDF→候选事实→确认→用户 JD→五题/追问→报告→优化→简历确认/打印媒体完成 | `runtime/frontend-refactor-migration/verification.json` |
+| 丢响应与刷新 | 后端接受后丢响应不清本地选择；重试复用原命令；处理中刷新接回同一 operation 并 ready | 同上 |
+| modal 与长文本 | 首焦点/Tab 圈闭/ESC/关闭/遮罩/焦点归还通过；1,367 字无横向溢出且内部纵向滚动 | `02-upload-modal.png`、`11-long-text-dialog.png` |
+| null 与真 0 | 跳过题显示“未评分”；四个 level 0 根题和综合结果显示“0 分” | `15-null-vs-zero-report.png` |
+| 响应式 | 1440×900、1366×600、200% 缩放等效 683×384 均无横向溢出，关键动作可到达 | `12-14` 三张截图 |
+
+最终自动回归：后端非 live **323 passed / 2 deselected / 96 warnings**；Ruff **79 files**；锁定 Node 24.21.0 的前端 **25/25 passed**、TypeScript 与 Vite build（118 modules）通过。浏览器调用真实 FastAPI/SQLite/openJiuwen Workflow，但 Analyzer、Content Generator 与 Knowledge adapter 是显式 fixture；没有前端模拟成功响应。仅 lost-response 用 CDP 在真实后端接受命令后主动断开响应。生产模型/Knowledge、真实材料、费用/延迟和负责人独立验收均 NOT_RUN。
+
+规范校验 **47/47 passed**；doctor **18 PASS / 0 WARN / 0 FAIL**；完整性清单 **241/241 OK**；`git diff --check` 无空白错误。证据服务已停止，临时 fixture 脚本与 SQLite 已删除；ignored 截图和 `verification.json` 保留。
+
+## UI-59 前端渐进式交互验收
+
+- 已完成资料、准备、面试、复盘、简历五页渐进式布局；上传单卡片居中，识别仅在真实等待期间播放 JS 动画，支持 reduced-motion。二选滑块初始不选中，更正独立；提交栏仅有选择时出现，成功状态和已完成生成按钮收起。保留部分事实已确认时的继续入口，以及空/失败资料的管理和删除入口。
+- 前端测试 25/25、TypeScript 和 Vite build（118 modules）通过。本轮不改后端；§58 后端结果是历史证据，不冒充重跑。
+- 真实 HTTP + 隔离 SQLite/openJiuwen + synthetic fixture 完成上传、确认、五题/一次追问、报告、优化、简历确认与打印门禁；Knowledge/回答失败经刷新和显式重试恢复。1366/375 五页无页面横向溢出；扫描动画普通模式 2 个、reduced-motion 0 个。证据 runtime/ui-59/verification.json 与 responsive-results.json。发现报告导航挤压后改为编号/分数一行、题目另行。
+- 后续页复验：作答页不再出现“等待作答”、重复“主问题”或低字数计数；面试完成页只保留报告主动作；复盘总分无卡片边框且限制折叠；已确认简历只保留打印主动作。1280px 实页均无横向溢出。
+- 指定 5199 准备页只读复验：“开始模拟面试”在 ready 计划标题右侧首屏可见（按钮 top 199.8px / bottom 251.8px），未点击、未改变该场面试状态；前端 25/25 与构建通过。
+- 5204/8040 是界面验收 fixture，未调用外部模型。负责人上传材料被模拟抽取结果来源校验拒绝：不能据此认定材料有问题；未读取或重处理私人材料、未绕过来源校验。任意真实 PDF 的生产抽取不在本次 fixture 证据范围。真实模型质量、生产 Knowledge 和负责人最终验收 NOT_RUN；状态 IMPLEMENTED，非 ACCEPTED。
+- 负责人在 5199 live 第 4 题遇到单次 `UPSTREAM_FAILED` 后，原回答完整保留但旧的一次尝试配置隐藏了恢复动作。回归覆盖“历史错误写入 `retryable=false`、当前受限预算提高、GET 重新开放、POST 复用同一 Answer”；浏览器只读复验显示唯一“回答分析没有完成”提示与“重试分析”按钮。未代替负责人点击，新增真实模型调用为 0。
+- 本次收尾：后端非 live 全量 **326 passed / 2 deselected / 96 warnings**；Ruff check/format **80 files**；前端 **25/25**、TypeScript 与 Vite build（118 modules）；规范 **47/47**。live 检查仅 GET readiness/Operation 与页面只读渲染，不触发分析。

@@ -1148,3 +1148,57 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 | `git diff HEAD~3..HEAD --check` | 仅交接文档 Markdown 硬换行双空格（与既有 handoff 一致），无错误空白 |
 
 移动端/缩放、生产模型质量/延迟/费用与负责人独立验收均 NOT_RUN。SDK、provider/model、Prompt、Seed/Rubric/Policy 未改；本轮没有真实模型调用。状态为 IMPLEMENTED，不写 ACCEPTED；下一唯一建议是负责人用当前 live 页面独立复验“重新生成计划 → 开始面试”，确认体验后再决定是否 ACCEPTED。
+
+## 58. 2026-09-22｜前端重构迁移包接入与浏览器闭环（IMPLEMENTED）
+
+### 包审计、分支与冲突
+
+- 随附包 `/home/hongyue/Downloads/ZhiJue_frontend_refactor` 的 `FILE_MANIFEST.json` 共 13 项，SHA-256 全部匹配；`status.json` 与 `DELIVERY_SUMMARY.md` 明确记录源码文件 0、测试 0、浏览器验收 0。`overlay/` 实际只有 `docs/handoffs/frontend-redesign-migration.md`，没有 `deletions.json`、源码、测试或 evidence；因此不能把包描述成“已完成的前端实现”。
+- 包基线 `85d4b1f5630be12af798f0aad3da3052baec91dc` 是目标 HEAD `f09feb4840db68cbee2f35e1f85efc70dd598dc7` 的祖先。施工在隔离分支 `migration/frontend-refactor-package-20260922` 进行；dry-run 只报告合并 1 个文件、删除 0 个文件。交接文件按包原 SHA 原样落入，未覆盖目标库较新的 §57 实现；没有文本冲突或待解决冲突。
+- 因包没有源码，本轮代码不是“从 overlay 覆盖”，而是先审计当前实现，再按负责人要求补齐独立上传 modal、真实等待骨架、正式 JD 入口和显式标题解析。现有 Operation、revision、幂等、lost-202、刷新恢复、报告与简历链保持单一实现，没有创建平行兼容层。
+
+### 实现与契约
+
+- Start 的上传/重传/未知响应重试统一进入 `UploadModal`；`DocumentUpload` 只负责文件选择与真实状态展示。共享 `ModalDialog` 为上传与事实弹卡提供原生 modal、可访问名称、首焦点、Tab 圈闭、ESC/遮罩/关闭、焦点归还和卸载清理。处理中只在真实 queued/running 状态旁显示三行中性骨架，无假百分比。
+- 正式 Prepare 页面删除“使用演示岗位配置”入口，只提交用户填写的岗位名称、必要项、加分项和岗位职责。后端省略 JD 时的 `SYNTHETIC_DEMO_JD` 契约仍只供显式 fixture/直接 API 客户端，不伪装正式页面默认值；HTTP/OpenAPI/数据库/迁移均未变化。
+- `requisition.py` 只把明确标题后的内容解析为 requirement，补齐“任职要求/岗位要求/职位要求/基本要求/资格要求/任职资格/任职条件/基本条件/优先条件/加分条件/岗位职责/工作职责/职位职责/主要职责”等常见标题；无标题自由文本继续不猜测、不升级为要求。回归同时锁定 required/preferred 分类、原始 `source_type/source_name/raw_text`、Unicode code-point span 与含 emoji 的 UTF-16 offset。
+
+### 浏览器与自动验证
+
+- 浏览器通过 Vite `127.0.0.1:5202` 向真实 FastAPI `127.0.0.1:8030` 发 HTTP，使用独立 SQLite、真实应用服务与 openJiuwen Workflow；外部模型、付费接口和生产 Knowledge 未调用。边界明确为 `run_mode=fixture / data_mode=synthetic`，Analyzer、Content Generator 和 Knowledge adapter 为显式 fixture，不形成生产模型质量结论。
+- 合成 PDF 完成上传、候选事实、采用/更正/确认与资料 ready；用户 JD 完成五题、一次有限追问、报告、回答优化、简历草稿、确认和打印媒体。CDP 只在 lost-response 场景于后端已接受确认命令后丢弃响应：本地选择未消失，显式重试仍使用原命令；另一次在 Knowledge 延迟期间刷新，页面从同一 `operation_id` 恢复并最终 ready。
+- modal 实测 `aria-modal/labelledby`、首焦点、七次 Tab 循环均留在 dialog，ESC、关闭按钮和遮罩均关闭并归还触发焦点；1,367 字更正文无横向溢出、textarea 纵向滚动。第二场真实 HTTP fixture 面试跳过 1 题、其余 4 题产生真实 level 0：报告将跳过题显示“未评分”，可评分题与综合分显示“0 分”，未把 null 当 0。
+- 资料页实测 1440×900、1366×600 和 1366×768 在 200% 缩放下的 683×384 等效 CSS 视口，均无横向溢出且关键动作可滚动到达。ignored 证据为 `runtime/frontend-refactor-migration/verification.json` 与 9 张 synthetic 截图。
+
+| 命令 | 结果 |
+|---|---|
+| `cd services/api && .venv/bin/python -m pytest tests -q -m 'not integration_live'` | exit 0；**323 passed / 2 deselected / 96 warnings** |
+| `cd services/api && .venv/bin/ruff check src tests smoke migrations && .venv/bin/ruff format --check src tests smoke migrations` | exit 0；All checks passed；79 files |
+| `cd apps/web && pnpm --config.use-node-version=24.21.0 test && pnpm --config.use-node-version=24.21.0 build` | exit 0；**25/25 passed**；TypeScript 通过；Vite **118 modules transformed** |
+| `services/api/.venv/bin/python tools/validate_spec.py` | exit 0；**47/47 passed** |
+| `services/api/.venv/bin/python scripts/doctor.py --json` | exit 0；**18 PASS / 0 WARN / 0 FAIL** |
+| `sha256sum -c CHECKSUMS.sha256` | exit 0；**241/241 OK** |
+| `git diff --check` | exit 0；无空白错误 |
+
+### 状态与边界
+
+- 已同步 `api.md`、UX/UI Contract、测试记录、CHANGELOG、交接和完整性清单；没有修改 OpenAPI、HTTP 字段、SSE、业务枚举、依赖、数据库或迁移。包内原交接保持原字节；本轮另写实际迁移交接。
+- 原生系统打印对话框在 headless Chromium 中不可观察；已验证 accepted 门禁、打印动作存在及 print media 隐藏页头/解除 overflow。生产模型、真实简历、真实 JD、生产 Knowledge、费用/延迟和负责人独立验收均 NOT_RUN；外部模型调用 0，usage/cost 为 null。
+- 当前状态 `IMPLEMENTED`，不写 `ACCEPTED`。唯一下一任务：负责人在隔离 live 配置中使用确认 JD 与 Demo Resume v1 独立复验同一纵切面，再决定是否进入验收。
+
+## 59. 2026-09-22｜前端渐进式交互重构（IMPLEMENTED）
+
+- 任务 UI-59；依赖 §58 当前工作区实现。负责人审查五页设计图后授权实施：减少卡片，按钮按阶段出现/完成后收起；事实滑块仅采用/不采用、更正独立；上传前居中入口，识别中原位 JS 动画；移除装饰性灰色说明小字。
+- 未选择事实保留内存中性状态，不显示第三个滑块选项、不默认采用、不自动提交。必要错误、删除确认与事实来源仍保留；按负责人后续明确要求，移除页头模式徽章、fixture 提示条和文件要求说明，API 模式事实不变。
+- 修改范围：apps/web、相关 UX/UI 契约/测试记录/交接/完整性清单。API 无变化；不改后端、数据库、模型、题库。
+- 原有未提交改动已保留；施工前源码/测试/相关文档快照位于仓库外 ../output/frontend-refactor/pre-refactor-worktree.tar.gz。仅作为人工比对回退来源，不覆盖原工作区修改。
+- 验收计划：前端测试与构建、隔离 fixture 浏览器五页与按钮时序、键盘滑块/弹窗、窄屏与低动效、规范和完整性检查。真实模型与生产资料 NOT_RUN。
+
+- 已完成资料、准备、面试、复盘、简历五页渐进式布局；上传单卡片居中，识别仅在真实等待期间播放 JS 动画，支持 reduced-motion。二选滑块初始不选中，更正独立；提交栏仅有选择时出现，成功状态和已完成生成按钮收起。保留部分事实已确认时的继续入口，以及空/失败资料的管理和删除入口。
+- 前端测试 25/25、TypeScript 和 Vite build（118 modules）通过。本轮不改后端；§58 后端结果是历史证据，不冒充重跑。
+- 真实 HTTP + 隔离 SQLite/openJiuwen + synthetic fixture 完成上传、确认、五题/一次追问、报告、优化、简历确认与打印门禁；Knowledge/回答失败经刷新和显式重试恢复。1366/375 五页无页面横向溢出；扫描动画普通模式 2 个、reduced-motion 0 个。证据 runtime/ui-59/verification.json 与 responsive-results.json。发现报告导航挤压后改为编号/分数一行、题目另行。
+- 后续页面继续收敛：准备页移除计划就绪标签和用户无须看到的 Planner/Seed 技术入口；面试页移除等待作答、主问题类型和低字数计数等重复状态；复盘总分改为无卡片文本，限制说明折叠；简历页移除页头上下文胶囊和草稿状态标签。字符计数只在达到上限 80% 后出现，失败、处理中、来源与确认门禁仍按真实状态显示。
+- 负责人在 5199 实页发现“开始模拟面试”落在五题长列表末尾，首屏看不到。已将该唯一主动作移至计划标题右侧，只在计划 ready 时出现；开始后路由进入面试并自然消失，移动端改为标题下方全宽按钮。对指定 Profile/Interview 只读复验按钮首屏可见，未代替负责人启动面试。
+- 负责人第 4 题的回答已完整持久化；失败的是 `operation_1889b2b365a92f3b5ff5` 的回答分析（`UPSTREAM_FAILED`，attempts=1），不是回答提交。现场配置仍保留此前验收用的单次总尝试，导致错误被记录为不可重试，界面又重复展示两张失败卡。现已把 ignored、0600 live 配置恢复为 `MODEL_MAX_RETRIES=2`，Operation GET 与 retry 统一按当前受限预算重判既有回答的安全上游失败；页面只保留一张“回答分析没有完成”，并显示“重试分析”。该动作复用原 Answer，只建 parent-linked Operation，总尝试硬上限仍为三次。
+- 8004 live API 以原 SQLite、Knowledge 和私密配置重启 ready；只读接口确认旧 Operation 的 `error.retryable=true`，5199 原面试链接确认按钮出现且重复通用失败卡消失。未点击按钮、未再次发送回答、外部模型调用新增 0 次。后端非 live 全量 **326 passed / 2 deselected / 96 warnings**，面试运行时与策略专项 16 passed，前端 25/25 与 118 modules build、Ruff 80 files、规范 47/47、doctor 18 PASS / 0 WARN / 0 FAIL、完整性 245/245 与空白检查通过。
+- 5204/8040 是界面验收 fixture，未调用外部模型。负责人上传材料被模拟抽取结果来源校验拒绝：不能据此认定材料有问题；未读取或重处理私人材料、未绕过来源校验。任意真实 PDF 的生产抽取不在本次 fixture 证据范围。真实模型质量、生产 Knowledge 和负责人最终验收 NOT_RUN；状态 IMPLEMENTED，非 ACCEPTED。

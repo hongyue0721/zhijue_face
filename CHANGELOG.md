@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-22｜五页渐进式交互重构（IMPLEMENTED）
+
+- 已完成资料、准备、面试、复盘、简历五页渐进式布局；上传单卡片居中，识别仅在真实等待期间播放 JS 动画，支持 reduced-motion。二选滑块初始不选中，更正独立；提交栏仅有选择时出现，成功状态和已完成生成按钮收起。保留部分事实已确认时的继续入口，以及空/失败资料的管理和删除入口。
+- 前端测试 25/25、TypeScript 和 Vite build（118 modules）通过。本轮不改后端；§58 后端结果是历史证据，不冒充重跑。
+- 真实 HTTP + 隔离 SQLite/openJiuwen + synthetic fixture 完成上传、确认、五题/一次追问、报告、优化、简历确认与打印门禁；Knowledge/回答失败经刷新和显式重试恢复。1366/375 五页无页面横向溢出；扫描动画普通模式 2 个、reduced-motion 0 个。证据 runtime/ui-59/verification.json 与 responsive-results.json。发现报告导航挤压后改为编号/分数一行、题目另行。
+- 继续精简准备、面试、复盘与简历：去除可由页面状态直接判断的就绪/等待/草稿标签、内部技术入口和重复题型文案；总分不再单独装卡，报告限制默认折叠，字符计数接近上限才出现。真实失败、处理中、来源核对、确认和打印门禁保持不变。
+- 修复准备页下一步动作埋在五题列表末尾的问题：“开始模拟面试”在计划 ready 后直接出现在标题右侧，移动端为标题下方全宽按钮；不再重复保留列表底部按钮。
+- 修复已保存回答分析失败后的死路：回答卡只显示一处真实失败状态，并在服务端当前预算允许时提供“重试分析”。`GET Operation.error.retryable` 按当前受限预算重新判定；负责人把 live 总尝试从 1 次恢复到最多 3 次后，既有 `UPSTREAM_FAILED / UPSTREAM_TIMEOUT` 回答也能续原链恢复，不重复提交文本、不创建第二份 Answer。其他失败与预算耗尽仍不开放按钮。
+- 5204/8040 是界面验收 fixture，未调用外部模型。负责人上传材料被模拟抽取结果来源校验拒绝：不能据此认定材料有问题；未读取或重处理私人材料、未绕过来源校验。任意真实 PDF 的生产抽取不在本次 fixture 证据范围。真实模型质量、生产 Knowledge 和负责人最终验收 NOT_RUN；状态 IMPLEMENTED，非 ACCEPTED。
+
+## Unreleased — 2026-09-22｜前端重构迁移包接入与浏览器闭环（IMPLEMENTED）
+
+- 审计随附包并验证 13/13 manifest SHA-256：包只含一份 overlay 交接文档，源码/测试/浏览器证据均为 0；在 `migration/frontend-refactor-package-20260922` 隔离分支按包基线祖先关系手工合入，不覆盖目标库较新的 §57 工作。
+- Start 上传/重传改为独立原生 modal，统一首焦点、Tab 圈闭、ESC/遮罩/关闭、焦点归还和卸载清理；真实 queued/running 状态旁增加三行中性骨架，无假进度。正式 Prepare 删除演示 JD 按钮，只提交用户岗位分区；受控 `SYNTHETIC_DEMO_JD` API 契约仍保留给 fixture/直接客户端。
+- JD 规则解析补齐常见显式标题，同时保持无标题自由文本不猜、required/preferred 不串类、source span/provenance 与 UTF-16 offset 保真；新增行为回归。
+- 真实 FastAPI/SQLite/openJiuwen Workflow + 显式 synthetic fixture 浏览器完成 PDF、事实确认、用户 JD、五题/追问、报告优化、简历确认/打印媒体；后端接受后丢响应与处理中刷新均从原命令/同一 Operation 恢复。另验证 1,367 字、null/真 0、1440×900、低高度和 200% 缩放等效视口。
+- 后端非 live **323 passed / 2 deselected / 96 warnings**；Ruff 79 files；Node 24.21.0 前端 **25/25 passed**、TypeScript、Vite build（118 modules）。HTTP/OpenAPI/数据库/迁移/依赖无变化；生产模型/Knowledge、真实材料和负责人独立验收 NOT_RUN。
+
 ## Unreleased — 2026-09-21｜全链路恢复、历史库迁移与可访问性整改（IMPLEMENTED）
 
 - 全面审查后先在 `process.md §57` 冻结 15 项发现与修复顺序，再按 P0→P2 实施。根因级修复 live `create_all` 无版本混合 Schema：应用启动改为仓储打开前自动执行 Alembic；完整初始历史库可无损接管，部分未知 Schema 明确拒绝；真实库备份后迁到 `e62a9f8c10bd`，原行数不变。真实 start 写入 5 题（3 条 fallback `seed_id=null`）并进入主问题 1/5。
