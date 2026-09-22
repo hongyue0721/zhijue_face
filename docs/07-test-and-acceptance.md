@@ -559,3 +559,22 @@ P-EXTRACT 仅发 **1 次真实 HTTP**，Operation 从 `2026-09-20T10:25:49.51576
 - 5204/8040 是界面验收 fixture，未调用外部模型。负责人上传材料被模拟抽取结果来源校验拒绝：不能据此认定材料有问题；未读取或重处理私人材料、未绕过来源校验。任意真实 PDF 的生产抽取不在本次 fixture 证据范围。真实模型质量、生产 Knowledge 和负责人最终验收 NOT_RUN；状态 IMPLEMENTED，非 ACCEPTED。
 - 负责人在 5199 live 第 4 题遇到单次 `UPSTREAM_FAILED` 后，原回答完整保留但旧的一次尝试配置隐藏了恢复动作。回归覆盖“历史错误写入 `retryable=false`、当前受限预算提高、GET 重新开放、POST 复用同一 Answer”；浏览器只读复验显示唯一“回答分析没有完成”提示与“重试分析”按钮。未代替负责人点击，新增真实模型调用为 0。
 - 本次收尾：后端非 live 全量 **326 passed / 2 deselected / 96 warnings**；Ruff check/format **80 files**；前端 **25/25**、TypeScript 与 Vite build（118 modules）；规范 **47/47**。live 检查仅 GET readiness/Operation 与页面只读渲染，不触发分析。
+
+## T33 openEuler 容器兼容性冒烟（2026-09-22）
+
+本节只验收 openEuler 24.03 LTS-SP2 x86_64 **容器用户空间**。容器共享宿主 Linux 内核，不能替代统信 UOS、麒麟、鸿蒙或国产 CPU 原生验收。
+
+| 验证面 | 实际结果 |
+|---|---|
+| 镜像身份 | 官方 `openeuler/openeuler:24.03-lts-sp2`；摘要 `sha256:990f5a8528dc3375a358629bcb5500351f433a49922dca3588bcf32ecc5b7022` |
+| 工具链 | Python 3.11.6、uv 0.12.10、Node v24.21.0、pnpm 10.34.5 |
+| 锁定依赖 | `uv sync --locked --no-dev` 成功；openJiuwen 0.1.18 锁定 commit 构建成功；pnpm frozen lock 安装 133 项 |
+| 数据库与 API | Alembic 从 base 升到 `e62a9f8c10bd`；FastAPI 启动；直连 readiness `status=ok` |
+| 前端与代理 | Vite 从前端工作目录启动；代理 readiness 与后端一致；`/start` 返回并完成浏览器渲染 |
+| 页面行为 | Chromium 显示上传/手工填写入口；提交一条 synthetic 手工经历后生成 Profile，页面显示待确认事实 1 条 |
+| 数据与外部调用 | `fixture / synthetic`；临时 SQLite；真实资料、密钥、模型和 embedding 调用均未发生，usage/cost 为 null |
+| 清理 | 容器、临时镜像、基础镜像、数据/缓存卷和仓库外构建目录均删除；仓库验证前后保持干净 |
+
+失败尝试如实保留：宿主 Docker bridge veth 不可用，最终使用 host network；PyPI/GitHub 下载曾超时，缓存与 Git HTTP/1.1 后成功；验证脚本曾因只读前端目录和错误 cwd 失败，修正脚本后未改业务源码即通过。详细命令、版本、边界与结论见 `process.md §60` 和 `docs/handoffs/2026-09-22-openeuler-container-smoke.md`。
+
+T33 当前结论是 **openEuler container VERIFIED / 统信 UOS原生环境 NOT_RUN**。只有在明确的目标 UOS 版本、CPU 架构和交付形态上重新运行，才能更新为统信 UOS 验证。

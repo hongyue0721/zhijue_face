@@ -1,7 +1,7 @@
 # process｜工程事实、进度和交接
 
 **规范版本：1.0.0**  
-**记录日期：2026-09-20**
+**记录日期：2026-09-22**
 **仓库发布：公开 `main` 已推送至 `https://github.com/hongyue0721/zhijue_face`；本地 `master` 仅作发布前回退点，未推送**
 **当前阶段：M4 / IMPLEMENTED（M4-01 VERIFIED；M4-02 功能、五页 Product Polish 与生产 Content Generator synthetic live 已完成；负责人独立验收待做）**
 **当前交付：M0 本地技术验证 + M1 业务资料链 + M2 approved Seed/计划 + M3 回答 Workflow/有限 Policy/可靠性 + M4 确定性评分、受约束回答优化、简历草稿、五页首屏与生产内容模型单样本 live。**
@@ -23,7 +23,7 @@
 | 题库技术审核 | VERIFIED（首批六条） | 六条 Level 1/Level 2 均 passed，负责人明确全部批准；版本 0.2.1，统一记录 `docs/reviews/review_m2_01_level2_owner_20260919.md`。只覆盖首批六条，未扩到 24 条 |
 | 本仓库版本落盘 | VERIFIED（公开发布） | GitHub `hongyue0721/zhijue_face` 为 PUBLIC、默认分支 `main`、远端仅该分支；远端 main 已包含公开发布基线与 M3-03 后续提交，本地 `master` 未推送 |
 | P0 业务集成/LLM/浏览器测试 | PARTIAL | 真实 FastAPI/SQLite/openJiuwen Workflow + fixture Analyzer/Generator 的五页纵切面和两轮 UI 验收通过；生产 Answer Analyzer、生产 Content Generator 的 synthetic 单样本均通过真实 Workflow/语义校验。真实模型五题浏览器整场、429/timeout、跨代理 SSE 组合与负责人独立验收仍 NOT_RUN |
-| 学校窗口、额外上传项、国产 OS 口径 | 待负责人确认 | 不以此前聊天推断替代正式通知 |
+| 学校窗口、额外上传项、国产 OS 口径 | PARTIAL：openEuler 24.03 LTS-SP2 x86_64 容器用户空间冒烟通过；指定系统口径仍待确认 | 证据见 §60；容器共享宿主内核，不等于统信 UOS、麒麟、鸿蒙或国产 CPU 原生验收 |
 
 ## 2. 任务板
 
@@ -48,6 +48,7 @@
 | M4-01 | M3-03 + M3-01 | VERIFIED | 冻结 Rubric 确定性评分、Assessment/Report 唯一持久化、自然完成与 skip/end 控制、失败恢复、OpenAPI/前端类型和 fixture 五题烟测均通过 |
 | M4-02 | M4-01 | IMPLEMENTED | 受事实约束回答优化/简历草稿、Operation/retry、迁移/API、五页 Product Polish 已通过 fixture；生产 `deepseek-flash` coaching/resume synthetic live 经 Prompt 根因修复后均通过原 Schema 与事实校验。负责人独立验收仍待做 |
 | M4-02-DESKTOP | M4-02 实现与本轮审查 | IMPLEMENTED | 快照代次门禁/恢复、两入口、批量核对、更正、岗位修改、skip/end、报告上下文与桌面浅色布局已通过后端回归及真实浏览器 fixture；负责人独立验收 NOT_RUN |
+| OS-SMOKE | M4-02 | VERIFIED（openEuler 容器范围） | 官方 openEuler 24.03 LTS-SP2 用户空间内完成锁定依赖安装、迁移、前后端启动、健康检查及一条 synthetic 资料写入；统信 UOS 原生环境 NOT_RUN |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
@@ -62,7 +63,7 @@
 |---|---|---|---|
 | O01 | 确认校内截止和系统上传字段 | 未提供 | 不能承诺报名资格/必交物 |
 | O02 | 确认真实团队与指导教师 | 未提供 | 正式报名门槛 |
-| O03 | 确认国产 OS 软件组适配口径 | 未提供 | 提交前合规与环境验收 |
+| O03 | 确认国产 OS 软件组适配口径 | **部分技术验证**：openEuler 24.03 LTS-SP2 x86_64 容器冒烟通过；赛事指定系统、统信 UOS 原生环境、国产 CPU 与材料形式仍未提供 | 不能把 openEuler 容器结果改写为统信 UOS/麒麟/鸿蒙适配完成；提交前仍需按正式口径在目标系统复验 |
 | O04 | 配置实际文本模型与开销上限 | **已授权**：负责人明确说明自有 Key 可无限授权；M3 Answer Analyzer 与 M4 Content Generator 均完成 synthetic live。施工中该私密文件曾被错误读取到会话工具输出，负责人明确选择继续当前 Key；Key 未进入 Git、证据或文档，但仍建议尽快轮换 | 费用上限不再阻塞受控验证；未知 provider 价格仍保持 null，不因授权无限就伪造成本或取消程序三次硬上限 |
 | O05 | 确认合成数据/真实资料许可 | 默认合成 | 不擅自用真实简历 |
 | O06 | 完成六条 Seed 的 Level 2 负责人结论 | **已完成**：六条全部 passed / approved，记录 `review_m2_01_level2_owner_20260919` | M3-01 的 Seed 审核前置已解除；批准只覆盖六条 |
@@ -1202,3 +1203,41 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 负责人第 4 题的回答已完整持久化；失败的是 `operation_1889b2b365a92f3b5ff5` 的回答分析（`UPSTREAM_FAILED`，attempts=1），不是回答提交。现场配置仍保留此前验收用的单次总尝试，导致错误被记录为不可重试，界面又重复展示两张失败卡。现已把 ignored、0600 live 配置恢复为 `MODEL_MAX_RETRIES=2`，Operation GET 与 retry 统一按当前受限预算重判既有回答的安全上游失败；页面只保留一张“回答分析没有完成”，并显示“重试分析”。该动作复用原 Answer，只建 parent-linked Operation，总尝试硬上限仍为三次。
 - 8004 live API 以原 SQLite、Knowledge 和私密配置重启 ready；只读接口确认旧 Operation 的 `error.retryable=true`，5199 原面试链接确认按钮出现且重复通用失败卡消失。未点击按钮、未再次发送回答、外部模型调用新增 0 次。后端非 live 全量 **326 passed / 2 deselected / 96 warnings**，面试运行时与策略专项 16 passed，前端 25/25 与 118 modules build、Ruff 80 files、规范 47/47、doctor 18 PASS / 0 WARN / 0 FAIL、完整性 245/245 与空白检查通过。
 - 5204/8040 是界面验收 fixture，未调用外部模型。负责人上传材料被模拟抽取结果来源校验拒绝：不能据此认定材料有问题；未读取或重处理私人材料、未绕过来源校验。任意真实 PDF 的生产抽取不在本次 fixture 证据范围。真实模型质量、生产 Knowledge 和负责人最终验收 NOT_RUN；状态 IMPLEMENTED，非 ACCEPTED。
+
+## 60. 2026-09-22｜openEuler 容器兼容性冒烟（VERIFIED，容器范围）
+
+### 任务与边界
+
+- 负责人要求用容器模拟国产操作系统并检查项目能否启动。本轮选择 openEuler 官方 `24.03-lts-sp2` x86_64 镜像，拉取摘要为 `sha256:990f5a8528dc3375a358629bcb5500351f433a49922dca3588bcf32ecc5b7022`。
+- 验证对象是 openEuler 用户空间；容器继续共享工作站 Linux 内核。它不是统信 UOS、麒麟、鸿蒙桌面或国产 CPU 原生环境，不能据此写“统信 OS 验证完成”。
+- 仓库以只读卷挂载；SQLite、Python venv、uv/pnpm 缓存全部使用临时容器卷。运行模式为 `fixture / synthetic`，没有读取私密模型配置、真实简历或密钥，没有调用外部模型与 embedding。
+
+### 实际环境与启动结果
+
+| 项目 | 实测结果 |
+|---|---|
+| 宿主容器运行时 | Docker client 29.8.1 / server 29.7.2，linux/amd64 |
+| 容器 OS | openEuler 24.03 LTS-SP2，x86_64 |
+| 工具链 | Python 3.11.6、uv 0.12.10、Node v24.21.0、pnpm 10.34.5 |
+| 后端依赖 | `uv sync --locked --no-dev` 解析 194 项；最终检查 175 个运行包，openJiuwen 0.1.18 从锁定 commit `72c49851...` 构建成功 |
+| 前端依赖 | `pnpm install --frozen-lockfile` 安装 133 项 |
+| 数据库 | 应用启动自动执行五段 Alembic upgrade 到 `e62a9f8c10bd`；SQLite 正常打开 |
+| 后端 | FastAPI 在容器内启动；直连 readiness 返回 `status=ok / run_mode=fixture / data_mode=synthetic / database=sqlite` |
+| 前端 | Vite 从项目前端工作目录启动；`/api` 代理 readiness 与后端直连结果一致 |
+| 浏览器 | Chromium 打开 `/start`，标题为“职觉 · 面试准备工作台”；上传和手工填写入口可见 |
+| 业务冒烟 | 在页面提交一条明确 synthetic 的手工经历，URL 获得新 `profile`，页面显示 `待确认 1 / 已确认 0`，证明 React → Vite proxy → FastAPI → SQLite 写入链可用 |
+
+`GET /api/v1/runtime/info` 实际返回 Python 3.11.6、openJiuwen 0.1.18、pymilvus 2.6.7、seed bank `1c6716b90449d375`。fixture 下 `knowledge=absent / model=absent` 是本轮显式边界，不是 live Knowledge 或模型验证失败。
+
+### 失败尝试与修正
+
+- 工作站 Docker bridge 创建 veth 返回 `operation not supported`，因此验证容器改用 host network，并使用隔离高位端口；这是当前宿主 Docker 网络限制，不是应用或 openEuler 用户空间不兼容。
+- 首轮 PyPI 下载 `alembic` 超时；第二轮 GitHub HTTP/2 拉取锁定 openJiuwen commit 中断。后续使用持久缓存、降低并发并强制 Git HTTP/1.1，完整锁定依赖安装成功；不能把网络失败写成系统兼容失败。
+- 临时验证脚本最初把仓库只读挂载目录作为 pnpm 工作区，得到 `EROFS`；改为复制前端构建输入到容器可写目录。随后 Vite 因脚本未切换工作目录而监控 `/proc` 并耗尽 Node heap；从真实 `apps/web` 工作目录启动原项目配置后，服务约 7 秒 ready。两项都是验证脚本缺陷，未修改项目代码规避。
+- 一次后端端口已占用，换用隔离端口后成功；没有停止或覆盖负责人已有业务数据。
+
+### 结论与清理
+
+- `OS-SMOKE` 在“openEuler 24.03 LTS-SP2 x86_64 容器用户空间”范围内记为 `VERIFIED`：锁定依赖、数据库迁移、API、前端、代理和最小 synthetic 写入均实际通过。
+- 统信 UOS、麒麟、鸿蒙、国产 CPU、完整桌面/打印、live Knowledge、真实模型和正式比赛指定环境均 `NOT_RUN`。若赛事明确要求统信 UOS，必须在对应 UOS 版本和架构上重新执行同一启动与纵切面，不得复用本节标题替代。
+- 验证完成后已停止容器，并删除临时容器镜像、openEuler 基础镜像、数据卷、缓存卷和仓库外构建目录。`git status --short --branch` 为干净 `main...origin/main`；本轮验证阶段没有修改业务代码、API、OpenAPI、Schema、迁移、依赖或运行配置。

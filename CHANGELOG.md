@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-22｜openEuler 容器兼容性冒烟（VERIFIED，容器范围）
+
+- 使用官方 openEuler 24.03 LTS-SP2 x86_64 镜像，在容器内重新安装锁定 Python/Node 依赖，openJiuwen 锁定 commit、五段 Alembic migration、FastAPI、Vite 与 `/api` 代理均成功启动。
+- Chromium 实际打开 `/start`，并通过页面提交一条 synthetic 手工经历；页面得到 Profile 并显示 1 条待确认事实。直连与代理 readiness 均为 `status=ok / fixture / synthetic / sqlite`。
+- 本轮只证明 openEuler 容器用户空间兼容；容器共享宿主 Linux 内核。统信 UOS、麒麟、鸿蒙、国产 CPU、完整桌面和 live 模型/Knowledge 均 NOT_RUN，禁止改写为“统信 OS 验证完成”。
+- 初始 PyPI/GitHub 下载中断、宿主 bridge veth 不可用、临时脚本只读目录/工作目录错误均已分型；最终使用持久缓存、Git HTTP/1.1、host network 与正确前端 cwd 后通过。验证完成后删除全部临时容器、镜像、卷和构建目录；业务代码、API、数据库 Schema、迁移及依赖声明无变化。
+
 ## Unreleased — 2026-09-22｜五页渐进式交互重构（IMPLEMENTED）
 
 - 已完成资料、准备、面试、复盘、简历五页渐进式布局；上传单卡片居中，识别仅在真实等待期间播放 JS 动画，支持 reduced-motion。二选滑块初始不选中，更正独立；提交栏仅有选择时出现，成功状态和已完成生成按钮收起。保留部分事实已确认时的继续入口，以及空/失败资料的管理和删除入口。
