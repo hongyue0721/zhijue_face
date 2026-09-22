@@ -21,7 +21,6 @@ export function DecisionPanel({
   const directionTitle = isClarification ? "澄清方向" : "追问方向";
   return (
     <aside className="context-panel decision-panel" aria-labelledby="decision-title">
-      <p className="eyebrow">本题分析</p>
       <h2 id="decision-title">{reasonTitle}</h2>
       {decision ? (
         <dl className="context-list decision-list">

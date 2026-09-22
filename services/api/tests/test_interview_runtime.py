@@ -36,9 +36,10 @@ class InMemoryKnowledge:
 class ScriptedAnalyzer:
     """Fixture analyzer; orchestration remains the installed openJiuwen Workflow."""
 
-    def __init__(self, *modes: str) -> None:
+    def __init__(self, *modes: str, max_total_attempts: int = 3) -> None:
         self._modes = deque(modes or ("adequate",))
         self.calls: list[dict[str, object]] = []
+        self.max_total_attempts = max_total_attempts
 
     async def analyze(self, **inputs) -> AnalysisResult:
         self.calls.append(inputs)
@@ -389,6 +390,17 @@ def test_failed_analysis_preserves_answer_and_retry_reuses_it(tmp_path):
             # 失败链尾即首次受理操作（尚无 retry）：跨刷新恢复键（api.md §6）。
             "retry_operation_id": original["operation_id"],
         }
+
+        # Simulate a failure recorded while a one-attempt deployment policy was
+        # active.  After the owner raises the bounded budget, GET and POST must
+        # use the current policy so the saved answer is recoverable.
+        with Session(client.app.state.services.engine) as session, session.begin():
+            failed_operation = session.get(Operation, original["operation_id"])
+            failed_operation.error = {**failed_operation.error, "retryable": False}
+        refreshed = client.get(f"/api/v1/operations/{original['operation_id']}").json()[
+            "data"
+        ]
+        assert refreshed["error"]["retryable"] is True
 
         retried = client.post(
             f"/api/v1/operations/{original['operation_id']}/retry",

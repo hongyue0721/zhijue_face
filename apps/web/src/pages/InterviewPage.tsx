@@ -1,4 +1,4 @@
-import { Alert, Button, Tag } from "@any-design/anyui/react";
+import { Alert, Button } from "@any-design/anyui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, newCommandKey, requestRetryReason, type InterviewView, type OperationView } from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
@@ -9,7 +9,7 @@ import { EvidencePanel } from "../components/interview/EvidencePanel";
 import { InterviewProgress } from "../components/interview/InterviewProgress";
 import { QuestionCard } from "../components/interview/QuestionCard";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { interviewRoleText, interviewStatusText } from "../presentation";
+import { interviewRoleText } from "../presentation";
 import { reportPath, startPath } from "../routing";
 import {
   clearOperationId, loadOperationId, saveOperationId,
@@ -315,17 +315,6 @@ export function InterviewPage({
   const isCompleted = !question && interview.status === "completed";
   // 计划就绪前的“无当前题”是还没开始，不是问完；进度条必须区分这两种真相。
   const interviewStarted = ["active", "finishing", "finish_failed", "completed"].includes(interview.status);
-  const failedLifecycle = ["prepare_failed", "finish_failed"].includes(interview.status);
-  const lifecycleText = interview.status === "active"
-    ? acceptedAnswer ? "回答已保存" : "等待作答"
-    : interviewStatusText[interview.status];
-  const lifecycleTone = failedLifecycle
-    ? "danger"
-    : isFinishing
-      ? "warn"
-      : isCompleted || acceptedAnswer
-        ? "success"
-        : "primary";
   // 与 Report/ResumeDraft 同构：重试 affordance 必须等服务端确认该操作
   // 可重试（error.retryable）才出现；恢复键跨浏览器后，预算耗尽的失败
   // 回答不能亮出只会吃 409 的假按钮。
@@ -347,22 +336,21 @@ export function InterviewPage({
     <main className="page-container interview-page">
       <header className="compact-page-heading interview-heading">
         <div>
-          <p className="eyebrow">模拟面试</p>
           <h1>{interviewRoleText(interview)}</h1>
           <InterviewProgress total={total} question={question} started={interviewStarted} />
         </div>
-        <Tag className={`status-tag--${lifecycleTone}`}>
-          {lifecycleText}
-        </Tag>
       </header>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       <ErrorNotice error={controlError ?? controlOperationError} onReload={() => void reload()} />
       {interviewStarted && !isCompleted ? (
         <section className="interview-controls" aria-label="面试进程控制">
-          <div className="interview-control-actions">
-            <Button disabled={!serviceReady || !canSkip} onClick={() => setConfirmAction("skip")}>跳过本题</Button>
-            <Button disabled={!serviceReady || !canEnd} onClick={() => setConfirmAction("end")}>提前结束面试</Button>
-          </div>
+          <details className="interview-secondary-menu">
+            <summary>面试操作</summary>
+            <div className="interview-control-actions">
+              <Button disabled={!serviceReady || !canSkip} onClick={() => setConfirmAction("skip")}>跳过本题</Button>
+              <Button disabled={!serviceReady || !canEnd} onClick={() => setConfirmAction("end")}>提前结束面试</Button>
+            </div>
+          </details>
           {confirmAction ? (
             <Alert type="warn" title={confirmAction === "end" ? "确认提前结束面试？" : "确认跳过当前题？"}>
               {confirmAction === "end"
@@ -424,17 +412,14 @@ export function InterviewPage({
         </Alert>
       ) : null}
       {isFinishing ? (
-        <section className="surface-card completion-card">
-          <p className="eyebrow">报告整理</p>
+        <section className="completion-card interview-completion">
           <h2>提问已结束，报告整理中</h2>
           <p>正在汇总本场评分结果；报告真正生成前，这里不会提前显示“已完成”。</p>
         </section>
       ) : null}
       {isCompleted ? (
-        <section className="surface-card completion-card">
-          <p className="eyebrow">面试完成</p>
+        <section className="completion-card interview-completion">
           <h2>本场报告已经形成</h2>
-          <p>可以继续查看逐题评分依据，并按需生成回答优化。</p>
           {interview.report_id ? (
             <Button type="primary" onClick={() => navigate(reportPath(interview.id))}>
               查看面试报告
@@ -444,7 +429,7 @@ export function InterviewPage({
       ) : null}
 
       {question ? (
-        <div className="interview-grid">
+        <div className="interview-grid focused-interview">
           <div className="interview-main-column">
             <QuestionCard question={question} />
             <AnswerComposer
@@ -460,13 +445,19 @@ export function InterviewPage({
               onResetRetry={() => setPendingSubmission(null)}
               onRetryAnalysis={retryAnalysis}
             />
-            {!operation?.kind.startsWith("interview.control.") ? <OperationStatus operation={operation} label="回答分析" /> : null}
+            {operation && ["queued", "running"].includes(operation.status)
+              && !operation.kind.startsWith("interview.control.")
+              ? <OperationStatus operation={operation} label="回答分析" />
+              : null}
           </div>
-          {question.kind === "main" ? (
-            <EvidencePanel interview={interview} question={question} />
-          ) : (
-            <DecisionPanel interview={interview} question={question} />
-          )}
+          <details className="interview-basis-details" key={question.id}>
+            <summary>{question.kind === "main" ? "为什么问这一题" : "为什么继续追问或澄清"}</summary>
+            {question.kind === "main" ? (
+              <EvidencePanel interview={interview} question={question} />
+            ) : (
+              <DecisionPanel interview={interview} question={question} />
+            )}
+          </details>
         </div>
       ) : null}
     </main>

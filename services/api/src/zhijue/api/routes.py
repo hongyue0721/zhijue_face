@@ -330,6 +330,11 @@ def get_operation(operation_id: str, request: Request) -> dict[str, Any]:
         raise ApiError(
             status_code=404, code="RESOURCE_NOT_FOUND", message="操作不存在。"
         )
+    error = dict(operation.error) if operation.error is not None else None
+    if error is not None and operation.kind.startswith("interview."):
+        # retryable 是客户端此刻能否执行恢复动作，不只是失败发生当时的快照。
+        # 预算被负责人显式提高后，既有回答的安全上游失败应立即重新开放入口。
+        error["retryable"] = services.interviews.can_retry_operation(operation)
     return envelope(
         {
             "id": operation.id,
@@ -340,7 +345,7 @@ def get_operation(operation_id: str, request: Request) -> dict[str, Any]:
             "parent_operation_id": operation.parent_operation_id,
             "attempts": operation.attempts,
             "result": operation.result,
-            "error": operation.error,
+            "error": error,
             "last_event_seq": operation.last_event_seq,
             "created_at": operation.created_at,
             "updated_at": operation.updated_at,

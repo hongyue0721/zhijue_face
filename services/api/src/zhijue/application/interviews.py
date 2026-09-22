@@ -56,6 +56,11 @@ from zhijue.domain.planning import InterviewSlot, SlotReason
 from zhijue.domain.questions import instantiate_root_questions
 from zhijue.domain.requisition import CoverageStatus, JDSourceType
 
+# 这些失败都发生在回答已经持久化之后，重新运行只会消费同一份回答。
+# 历史 Operation 可能是在更小的模型预算下失败并写入 retryable=false；
+# 当负责人随后明确提高预算时，应按当前策略重新判断，而不是永久锁死恢复入口。
+_RECOVERABLE_ANSWER_FAILURE_CODES = frozenset({"UPSTREAM_FAILED", "UPSTREAM_TIMEOUT"})
+
 
 class InterviewPreparationFailed(DomainError):
     """面试准备失败；HTTP/operation 层据此落 failed，不产生 ready 假象。"""
@@ -1231,6 +1236,32 @@ class InterviewService:
                 capacity_available=capacity_available,
             )
 
+    def can_retry_operation(self, operation: Operation) -> bool:
+        """Return current actionability, including a deliberately raised budget.
+
+        Operation.error records the decision made when the failure happened.  The
+        read/retry boundary must additionally honor the *current* bounded policy so
+        an earlier one-attempt run can be recovered after the configured budget is
+        raised, without making unrelated business failures retryable.
+        """
+        if operation.status not in {"failed", "interrupted"}:
+            return False
+        if operation.kind == "interview.answer":
+            max_attempts = self._model_attempt_limit
+        elif operation.kind in {"interview.control.skip", "interview.control.end"}:
+            max_attempts = 3
+        else:
+            return False
+        if operation.attempts >= max_attempts:
+            return False
+        error = operation.error or {}
+        if bool(error.get("retryable")):
+            return True
+        return (
+            operation.kind == "interview.answer"
+            and str(error.get("code")) in _RECOVERABLE_ANSWER_FAILURE_CODES
+        )
+
     def _accept_retry_once(
         self,
         operation_id: str,
@@ -1297,7 +1328,7 @@ class InterviewService:
                     "面试已有进行中的操作。",
                     code="OPERATION_IN_PROGRESS",
                 )
-            if not bool((original.error or {}).get("retryable")):
+            if not self.can_retry_operation(original):
                 raise InvalidStateError("原操作不可重试。")
             try:
                 operation = self._operations.retry_in_session(

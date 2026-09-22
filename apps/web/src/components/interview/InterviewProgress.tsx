@@ -15,7 +15,7 @@ export function InterviewProgress({
   if (!question && !started) {
     return (
       <div className="interview-progress">
-        <div className="progress-copy"><strong>尚未开始 · 0 / {total}</strong><span>共 {total} 个主问题</span></div>
+        <div className="progress-copy"><strong>尚未开始 · 0 / {total}</strong></div>
         <div className="progress-dots" aria-label="面试尚未开始">
           {Array.from({ length: total }, (_, index) => <span key={index} />)}
         </div>
@@ -33,7 +33,7 @@ export function InterviewProgress({
         : `本场提问完成 · ${total} / ${total}`;
   return (
     <div className="interview-progress">
-      <div className="progress-copy"><strong>{label}</strong><span>共 {total} 个主问题</span></div>
+      <div className="progress-copy"><strong>{label}</strong></div>
       <div className="progress-dots" aria-label={label}>
         {Array.from({ length: total }, (_, index) => (
           <span
