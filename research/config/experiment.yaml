@@ -1,0 +1,43 @@
+schema_version: experiment_config_1.0.0
+dataset_version: cef-1.0.0
+splits_hash: 84a89c3f31da1057e01b02f65398f293e0bdaa2fa366e1ad0a3840f36917a783
+split: pilot
+methods:
+- vanilla
+- prompt_constraint
+- rag_context
+- evidence_bound
+model:
+  provider: intern-ai-discovery
+  model: kimi-k2.6
+  temperature: 0
+  reasoning_effort: low
+  max_tokens: 32768
+  timeout_seconds: 300
+  stream_stall_seconds: 30
+  generation_attempts: 1
+retrieval:
+  top_k: 6
+  query_template_version: rq_1.0
+  embed_mode: fixture
+  embed_env_file: ~/.config/zhijue-research/siliconflow-embedding.env
+prompt_versions:
+  vanilla: p1.0
+  prompt_constraint: p1.0
+  rag_context: p1.0
+  evidence_bound: p1.0
+evaluator_version: cef_eval_1.0.0
+seed: 20260924
+allow_paid_calls: false
+model_env_file: ~/.config/zhijue-research/discovery-model.env
+price_per_million_input: 6.5
+price_per_million_output: 27.0
+prompt_hashes:
+  evidence_bound:
+    p1.0: 820196bcf65e7be9530387ed890e6321a8870bbc2d2c6d5a770c77fb33e67b66
+  prompt_constraint:
+    p1.0: e52209f1c498311c116c92cabd515b83b06f0ab0415cf7daf0596410eb95a6e9
+  rag_context:
+    p1.0: bc3f336d4076e57d466f9acbf30c80befe09db43d777bd80bce5067891cfbbb9
+  vanilla:
+    p1.0: 14684d2c9d1dcd33e50ebba601c23061b62ebd6c695fb50e6cb12f2d9e6e3202

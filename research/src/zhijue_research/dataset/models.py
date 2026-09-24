@@ -10,11 +10,18 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
-# evaluator-only 字段名；loader 会断言它们不出现在 GeneratorCaseView 的任何层级。
+_FACT_ID = re.compile(r"^F[0-9]{2,}$")
+_CONTEXT_ID = re.compile(r"^(self|proj_[0-9a-z_]+|course_[0-9a-z_]+|work_[0-9a-z_]+)$")
+POLARITIES = frozenset({"positive", "negative", "uncertain"})
+
+# evaluator-only 字段名；泄漏守卫按这些键扫描最终模型输入。
+# 只登记真值/标签专用键：`notes` 在别处是合法字段名，不列入避免误报。
 EVALUATOR_ONLY_KEYS = (
     "expected_evidence_fact_ids",
     "allowed_context_ids",
@@ -22,7 +29,8 @@ EVALUATOR_ONLY_KEYS = (
     "answer_style_rating",
     "trap_claims",
     "ground_truth",
-    "notes",
+    "verbatim",
+    "provenance",
 )
 
 
@@ -39,6 +47,25 @@ class CandidateFact:
     provenance_kind: str
     provenance_locator: str
     verbatim: str
+
+    def __post_init__(self) -> None:
+        """字段类型与取值必须成立：真值模型不接受"看起来差不多"的值。
+
+        否则一个位置参数写错的 fixture 会静默变成 confirmed=True，
+        把未确认事实索引进 KB，实验结论直接被污染。
+        """
+
+        if not _FACT_ID.fullmatch(self.fact_id):
+            raise ValueError(f"fact_id 非法：{self.fact_id!r}")
+        if not _CONTEXT_ID.fullmatch(self.context_id):
+            raise ValueError(f"context_id 非法：{self.context_id!r}")
+        if self.polarity not in POLARITIES:
+            raise ValueError(f"polarity 必须是 {POLARITIES}，得到 {self.polarity!r}")
+        if not isinstance(self.confirmed, bool):
+            # 非 bool 是类型错误，不是取值错误：位置参数写错时必须立刻暴露。
+            raise TypeError(f"confirmed 必须是 bool，得到 {self.confirmed!r}")
+        if not self.value.strip():
+            raise ValueError("fact value 不能为空")
 
     def source_id_for(self, *, candidate_id: str) -> str:
         """RAG 事实级索引的稳定 ID：`candidate_x:F03`。"""
