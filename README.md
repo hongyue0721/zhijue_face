@@ -39,6 +39,26 @@
 - OCR、跨场次训练记忆属于 P1。P0 必须识别扫描 PDF 并提供粘贴文本的降级路径，不能把降级说成 OCR 已实现。
 - 不做招聘录用判断、岗位爬虫、联网全知问答、语音、多人 Agent 协商、复杂概率能力模型、完整简历编辑平台。
 
+
+## 研究分支：Candidate Evidence Fidelity（不在 Demo 交付面内）
+
+当前工作分支 `research/candidate-evidence-fidelity-v1`（基线 `d91023a`）是论文《面向大语言模型
+面试回答优化的证据约束生成方法研究》的实验平台，**不是** Demo 的一部分，研究代码不得回写 `main`。
+
+- 真源指针：`research/README.md`（可跑命令）、`research/DESIGN.md`（方法定义与防污染边界）、
+  `process.md` §61-§66（逐阶段施工事实）、`docs/handoffs/2026-09-24-research-r2-r5.md`（本轮交接）。
+- 状态口径：R0-R5 `VERIFIED`，各自只覆盖本节登记的范围；**正式实验 `NOT_RUN`**，
+  需要负责人批准费用与数据规模并冻结 dev/test split 之后才启动。
+- 运行模式：`run_mode=fixture / data_mode=synthetic`。唯一真实外部调用是 embedding 单点探测
+  （`scripts/live_embedding_probe.py`，需显式 `--i-accept-embedding-cost`）；本轮未调用对话模型。
+- 对 Demo 的影响面：只有 `process.md` §62 登记的模型 seam 重构、`adapters/knowledge.py` 一个
+  默认 `None` 的 `embed_model` 注入位、`domain/grounded_content.py` 三个口径常量别名。
+  HTTP 字段、错误码、SSE 事件、OpenAPI、数据库 Schema、迁移、前端与依赖声明均未改动。
+- 指标边界：scripted 驱动产出的事实性与 recall 数值是 harness 自检，不是模型表现；
+  live embedding 的 recall 来自单 candidate × 4 case，样本量不支持任何检索质量结论。
+
+本节不改变上文 Demo 边界的任何一条；两条线的下一任务分列见文末。
+
 ## 和前期讨论的明确调整
 
 | 前期想法 | 本版决定 | 原因 |
@@ -93,6 +113,9 @@
 | `templates/` | 任务、变更、审核、验收与交接模板 |
 | `ai-prompts/` | 首次开工、续接和独立验收指令 |
 | `validation-report.md` | 当前规范资产静态检查结果；不是业务运行或 Level 2 技术审核的替代品 |
+| `research/README.md` | 研究分支的可跑命令与硬边界；只覆盖论文实验平台，不是 Demo 运行手册 |
+| `research/DESIGN.md` | 四方法定义、防污染措施、阶段验收口径（研究设计唯一真源） |
+| `research/contracts/`、`research/data/`、`research/splits/` | 研究侧契约、synthetic 数据集与 split 成员清单；不是产品数据 |
 
 ## 规范术语
 
@@ -100,4 +123,4 @@ MUST＝必须执行；SHOULD＝默认执行，偏离要记录原因；MAY＝可�
 
 `PLANNED / IN_PROGRESS / BLOCKED / IMPLEMENTED / VERIFIED / ACCEPTED` 是六种不同状态。写出了代码只能叫 IMPLEMENTED，必须有测试记录才叫 VERIFIED，负责人确认后才叫 ACCEPTED。
 
-文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划、M3 回答链、M4-01 确定性评分，以及 M4-02 回答优化/简历草稿 Workflow、API 与生产模型 live smoke；`apps/web` 已实现资料导入确认、岗位准备、五题模拟面试、报告和简历草稿五页。当前唯一下一任务为负责人独立验收，不自动启动题库扩展。
+文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划、M3 回答链、M4-01 确定性评分，以及 M4-02 回答优化/简历草稿 Workflow、API 与生产模型 live smoke；`apps/web` 已实现资料导入确认、岗位准备、五题模拟面试、报告和简历草稿五页。两条线的下一任务分列：**Demo 线**唯一任务是负责人独立验收，不自动启动题库扩展；**研究分支线** R0-R5 已 VERIFIED，正式实验等负责人批准费用与数据规模并冻结 dev/test split 之后再启动，批准前不扩数据、不跑付费调用。
