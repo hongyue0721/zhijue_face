@@ -321,7 +321,12 @@ def test_model_env_rejects_permissions_broader_than_0600(tmp_path, mode):
         {"api_key": "   "},
         {"api_base": "http://model.example"},
         {"api_base": "https://user:secret@model.example"},
-        {"api_base": "https://model.example/v1"},
+        {"api_base": "https://model.example/v1?region=1"},
+        {"api_base": "https://model.example/v1#frag"},
+        {"api_base": "https://model.example/v1/../etc"},
+        {"api_base": "https://model.example//v1"},
+        {"api_base": "https://model.example/v%201"},
+        {"api_base": "https://model.example/" + "a" * 300},
         {"model_timeout": 0},
         {"model_timeout": float("inf")},
         {"model_reasoning_effort": "medium"},
@@ -333,6 +338,48 @@ def test_model_env_rejects_permissions_broader_than_0600(tmp_path, mode):
 def test_model_settings_reject_unsafe_or_unbounded_values(overrides):
     with pytest.raises(ValidationError):
         model_settings(**overrides)
+
+
+@pytest.mark.parametrize(
+    "api_base",
+    ["https://model.example", "https://model.example:8443", "https://model.example/v1"],
+)
+def test_model_settings_accept_origin_or_plain_path_prefix(api_base):
+    assert model_settings(api_base=api_base).api_base == api_base
+
+
+def test_path_prefixed_base_resolves_to_provider_route():
+    """有些网关只在 /v1/chat/completions 上服务；前缀必须原样进入请求 URL。"""
+
+    captured: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            content=sse_body('{"observations":[],"evidence":[],"uncertainties":[]}'),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async def go():
+        settings = model_settings(api_base="https://model.example/v1")
+        with httpx.MockTransport(handler) as transport:
+            analyzer = OpenAICompatibleAnswerAnalyzer(
+                settings, client=httpx.AsyncClient(transport=transport)
+            )
+            return await analyzer.analyze(
+                observation_id="o_1",
+                answer_id="a_1",
+                question_id="q_1",
+                root_question_id="r_1",
+                question_text="question",
+                answer_text="answer",
+                rubric_snapshot={},
+                reference_material=None,
+            )
+
+    asyncio.run(go())
+    assert str(captured[0].url) == "https://model.example/v1/chat/completions"
 
 
 def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():

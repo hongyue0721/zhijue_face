@@ -80,6 +80,9 @@ class AnalysisResult:
     output_tokens: int | None = None
     total_tokens: int | None = None
     cost: float | None = None
+    # provider 报告的终止原因；缺失只能是 None，不得由实现方猜测。
+    # 不进 usage()（生产持久化按固定四键断言），仅供恢复与实验诊断使用。
+    finish_reason: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, str):
@@ -97,6 +100,8 @@ class AnalysisResult:
             or self.cost < 0
         ):
             raise ValueError("cost must be a finite non-negative number or null")
+        if self.finish_reason is not None and not isinstance(self.finish_reason, str):
+            raise TypeError("finish_reason must be a string or null")
 
     def usage(self) -> dict[str, int | float | None]:
         return {

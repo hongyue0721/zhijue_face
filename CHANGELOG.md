@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-24｜研究分支 R1：统一模型 transport、只读观察者与结构化校验分类（VERIFIED，本地 + live 链路）
+
+- 把 chat/completions 的 HTTP/SSE transport 从 `OpenAICompatibleAnswerAnalyzer` 提为唯一公共组件
+  `OpenAICompatibleChatTransport`；Analyzer 与 Content Generator 都改为持有它，不再跨对象访问
+  `_post_once/_parse_response/_client` 私有实现。请求语义逐字节保持：键顺序
+  `model, temperature, reasoning_effort, response_format, messages, stream, stream_options`、
+  `temperature=0`、SSE + `include_usage`、`trust_env=False`、不跟重定向、块间静默预算、
+  `reasoning_content` 丢弃、缺 `[DONE]` 或空内容判失败、retry 仍由父链 Operation 显式发起。
+- 等价性用改前抓取的 wire 基线证明（`tests/fixtures/chat_transport_baseline.json` 含 URL、header
+  名集、请求体原始字节与解析结果及 reasoning_effort/retries 变体），回归测试逐字段比对；
+  默认请求体不得出现 `max_tokens`，显式传入时才新增该键。
+- `AnalysisResult` 新增可选 `finish_reason`：provider 未给时保持 null，不猜 `stop`；不进 `usage()`，
+  因此生产持久化与 `_checked_output` 的固定四键断言不变。
+- `grounded_content` 23 条校验失败消息新增机器可读 `code`（查表，消息文本一字未改）；
+  `content_workflow` 的 SemanticValidation 节点改为可注入 Strategy（默认实现判定顺序与基线一致），
+  并新增只读 `ContentWorkflowObserver` 四事件。生产折叠行为不变：对外仍只有
+  `generated content failed contract validation`，观察者只能在异常被模糊化之前拿到分类。
+- 观察者异常与尝试改写 payload 均不影响业务结果；`observer=None`/`validator=None` 即原生产路径。
+- `ModelSettings.api_base` 允许一段受控路径前缀（每段以字母数字开头，仅 `. _ ~ -`，仍强制 HTTPS，
+  禁止凭据/查询/片段/空段/点段/百分号编码/超长）；`api.md` 与 `config/environment.env.example`
+  同步该值域，前端不得据此拼接地址。
+- 后端非 live **363 passed / 2 deselected**，唯一失败与基线同源：`tests/test_doctor.py` 要求本机
+  私密 `.env.local`（环境缺失，未用占位密钥伪造）。Ruff 与格式检查通过；前端未改动，
+  仍 **25/25**、TypeScript、Vite 118 modules。真实链路 live 冒烟通过：真 openJiuwen Workflow +
+  重构后 transport + kimi-k2.6，`coach_answers` 52.329s / 591→5066 token，`compose_resume`
+  23.081s / 469→2217 token，2 次 HTTP、0 自动重试，provider 未回价格故 cost 仍为 null。
+- 新增 `scripts/build_checksums.py`，按 doctor 口径重建 `CHECKSUMS.sha256`（261 条一致）。
+- HTTP 字段、错误码、SSE 事件、OpenAPI、数据库 Schema、迁移与依赖声明无变化。
+
 ## Unreleased — 2026-09-24｜研究分支 R0：Candidate Evidence Fidelity 设计与契约（IMPLEMENTED）
 
 - 新建研究分支 `research/candidate-evidence-fidelity-v1`（基线 `d91023a`），只研究

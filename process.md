@@ -1318,3 +1318,71 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 
 Phase R1：实施 B1–B6 业务 seam，并要求现有 324 条非 live 后端测试全绿、
 `observer=None` 与基线逐字段等价的回归测试通过。
+
+## 62. 2026-09-24｜研究分支 R1：统一模型 transport、只读观察者与结构化校验分类（VERIFIED，本地+live 链路）
+
+### 修改文件与原因
+
+- 新增 `services/api/src/zhijue/adapters/chat_transport.py`：把 chat/completions 的
+  HTTP/SSE transport 从 `OpenAICompatibleAnswerAnalyzer` 提成唯一公共组件
+  `OpenAICompatibleChatTransport`（messages/model/temperature/reasoning_effort/
+  response_format/max_tokens/timeout/SSE/usage）。原因：Content Generator 此前通过
+  `self._transport._client/_post_once/_parse_response` 私有属性复用，研究 runner 需要同一实现。
+- `services/api/src/zhijue/adapters/model.py`：Analyzer 与 Generator 改为持有 transport，
+  各自只负责 messages（prompt 与 untrusted-data JSON）；删除复制的 `_post_once`/`_collect_stream`/
+  `_parse_response`；`ModelSettings.api_base` 改为允许一段受控路径前缀。
+- `services/api/src/zhijue/application/answer_workflow.py`：`AnalysisResult` 增加可选
+  `finish_reason`（不进 `usage()`，生产持久化按固定四键断言不变）。
+- `services/api/src/zhijue/domain/grounded_content.py`：新增 `VALIDATION_CODES` 查表与
+  `GroundedContentValidationError.code`；23 条固定英文消息文本逐字未改。
+- `services/api/src/zhijue/application/content_workflow.py`：新增 `ContentWorkflowObserver`
+  （4 事件 frozen dataclass）、`ContentValidator` Strategy 端口与默认
+  `GroundingContentValidator`（判定顺序与 d91023a 一致）；`build_grounded_content_workflow`
+  与 `run_grounded_content_workflow` 增加默认 `None` 的 `validator`/`observer`。
+- 测试：新增 `services/api/tests/fixtures/chat_transport_baseline.json`（改前 wire 抓取，
+  含 URL/header 名集/请求体原始字节与键顺序/解析结果/参数变体）、
+  `tests/test_chat_transport_regression.py`、`tests/unit/test_content_workflow_observer.py`；
+  扩展 `tests/unit/test_grounded_content.py`（AST 全覆盖分类表 + 各失败路径 code）、
+  `tests/unit/test_answer_workflow.py`（`/v1` 前缀接受、路径遍历/查询/片段/双斜杠/百分号/超长仍拒）。
+- 文档：`config/environment.env.example` 写明 API_BASE 受控前缀规则；`api.md` 补
+  `runtime/info.api_origin` 值可含前缀、仍禁凭据/查询/片段且不参与前端拼 URL。
+
+### 实际命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `PYTHONPATH=src .venv/bin/python -m pytest tests -q -m 'not integration_live'` | **363 passed / 1 failed / 2 deselected**；唯一失败是基线同源的 `tests/test_doctor.py`（要求本机私密 `.env.local`，环境缺失，非回归） |
+| `.venv/bin/ruff check src tests smoke migrations` / `ruff format --check` | All checks passed；83 files already formatted |
+| `cd apps/web && pnpm --config.use-node-version=24.21.0 test` / `build` | **25/25 passed**；TypeScript 通过；Vite 118 modules（前端零改动，用于证明未受影响） |
+| `PYTHONPATH=src .venv/bin/python smoke/content_model.py --env-file <0600 私密文件> --output ../runtime/r1-live/content-model.json` | `M4-02 content live smoke passed`；`evidence_sha256=01523d632c3fdca044075b1be0ee0724be42f67e0fe20330702fb6fce5953cc4`；总 75.42s，2 次真实 HTTP、0 自动重试 |
+
+live 证据（真实 openJiuwen Workflow + 重构后 transport + `https://discovery-api.intern-ai.org.cn/v1` + `kimi-k2.6`，synthetic 输入）：
+`coach_answers` 52.329s、usage 591/5066/5657；`compose_resume` 23.081s、usage 469/2217/2686；
+provider 未回价格，`cost` 全为 null（目录价推导约 $0.20，非账单）。证据文件在 Git 忽略的 `runtime/`。
+
+### 等价性与行为边界
+
+- 默认请求体键顺序仍为 `model, temperature, reasoning_effort, response_format, messages,
+  stream, stream_options`；回归测试对 URL、header 名集、Accept、鉴权形态、请求体原始字节
+  与解析结果逐项等于基线；`reasoning_effort`/`max_retries` 变体同样比对。
+- `observer=None` 与 `validator=None` 即生产路径：校验失败对外仍只有
+  `generated content failed contract validation`，`process_coaching` 仍折叠为同一 UpstreamError；
+  观察者抛异常与尝试改写 payload 均不影响业务结果（有针对性测试）。
+- `finish_reason` 只在响应真的给出时非 null；缺失保持 null，不猜 `stop`。
+- 生产默认不下发 `max_tokens`（显式传入才会出现该键），避免悄悄改变生成长度预算。
+
+### API / 迁移 / 依赖变化
+
+- HTTP 字段、错误码、SSE 事件、OpenAPI、数据库 Schema、迁移、依赖声明：**无变化**。
+- 配置语义变化：`API_BASE` 允许受控路径前缀（值域放宽，校验仍 HTTPS-only 且禁凭据/查询/片段）。
+
+### 未完成与风险
+
+- `finish_reason` 的 live 观测尚未采集（现有 smoke 不记录该字段），留待 R2/R3 研究 trace 取证。
+- 真实模型并发上限、长场次五题批量延迟与费用仍 `NOT_MEASURED`。
+- 负责人独立验收 `NOT_RUN`；本节 VERIFIED 只覆盖本地回归与本轮已实际运行的 live 链路。
+
+### 唯一下一任务
+
+Phase R2：research harness（dataset loader 可见性投影、四方法 Strategy、runner、trace writer、
+scripted model driver），全部离线零费用。

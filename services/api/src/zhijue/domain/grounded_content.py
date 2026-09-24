@@ -57,8 +57,53 @@ _CONTACT_DATA = re.compile(
 )
 
 
+# 机器可读校验分类（研究/恢复诊断用）。键是下面各 raise 站点使用的固定英文消息，
+# 因此消息文本与分类只有一处真源：新增失败分支必须同时登记到这里，
+# tests/unit/test_grounded_content.py 会用 AST 扫全部 raise 字面量并断言覆盖率 100%。
+# 生产 API 不返回这些 code；异常 message 逐字节保持不变。
+VALIDATION_CODES: dict[str, str] = {
+    "generated content must be one object": "SCHEMA_INVALID",
+    "generated content failed its JSON Schema": "SCHEMA_INVALID",
+    "claim extraction referenced an unknown source block": "UNKNOWN_SOURCE",
+    "claim extraction quote is not verbatim": "INVALID_SOURCE_QUOTE",
+    "claim extraction may not rewrite source text": "CLAIM_REWRITE_FORBIDDEN",
+    "claim extraction may not persist contact data": "CONTACT_DATA_REJECTED",
+    "claim extraction returned a duplicate candidate": "DUPLICATE_CANDIDATE",
+    "generated content introduced an unbound numeric fact": "UNBOUND_NUMERIC_FACT",
+    "generated content introduced an unbound high-risk assertion": (
+        "UNBOUND_HIGH_RISK_ASSERTION"
+    ),
+    "generated content introduced an unbound technical token": (
+        "UNBOUND_TECHNICAL_TOKEN"
+    ),
+    "coaching result changed report_id": "REPORT_ID_MISMATCH",
+    "duplicate coaching root question": "DUPLICATE_ROOT",
+    "coaching referenced an unknown root": "UNKNOWN_ROOT",
+    "coaching answer quote is not verbatim": "INVALID_ANSWER_QUOTE",
+    "coaching referenced a claim outside the snapshot": "CLAIM_OUTSIDE_SNAPSHOT",
+    "coaching segments do not reproduce rewritten_answer": "SEGMENT_MISMATCH",
+    "coaching claim summary does not match segment references": "CLAIM_SUMMARY_MISMATCH",
+    "coaching result did not cover every answered root": "COVERAGE_MISMATCH",
+    "resume result changed draft_id": "DRAFT_ID_MISMATCH",
+    "duplicate resume section": "DUPLICATE_SECTION",
+    "duplicate resume item": "DUPLICATE_ITEM",
+    "resume content contains a placeholder": "PLACEHOLDER_CONTENT",
+    "resume referenced a claim outside the snapshot": "CLAIM_OUTSIDE_SNAPSHOT",
+}
+
+UNCLASSIFIED_VALIDATION_CODE = "UNCLASSIFIED_GROUNDED_CONTENT_FAILURE"
+
+
 class GroundedContentValidationError(ValueError):
-    """Generated candidate violates a deterministic grounding invariant."""
+    """Generated candidate violates a deterministic grounding invariant.
+
+    ``code`` 是按消息文本查表得到的稳定分类；缺失时明确落到
+    ``UNCLASSIFIED_GROUNDED_CONTENT_FAILURE``，不猜。
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.code: str = VALIDATION_CODES.get(message, UNCLASSIFIED_VALIDATION_CODE)
 
 
 def _contracts_root() -> Path:
