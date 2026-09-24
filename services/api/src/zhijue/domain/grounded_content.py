@@ -15,12 +15,15 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-_NUMERIC_FACT = re.compile(r"(?<![A-Za-z0-9_])\d+(?:[.,]\d+)*(?:\s*%)?")
+# 数字事实口径：研究侧确定性 evaluator 复用同一份（唯一真源，禁止另写一套正则）。
+NUMERIC_FACT_PATTERN = re.compile(r"(?<![A-Za-z0-9_])\d+(?:[.,]\d+)*(?:\s*%)?")
+_NUMERIC_FACT = NUMERIC_FACT_PATTERN
 _PLACEHOLDER = re.compile(
     r"(?:\bTBD\b|\bTODO\b|\bXXX\b|待补充|待确认|请填写|<[^>]+>|\{\{[^}]+\}\})",
     re.IGNORECASE,
 )
-_HIGH_RISK_ASSERTIONS = (
+# 高风险断言口径同样对外公开：研究的职责上充检测器必须与 validator 同一词表。
+HIGH_RISK_ASSERTIONS = (
     "主导",
     "负责",
     "牵头",
@@ -50,7 +53,9 @@ _HIGH_RISK_ASSERTIONS = (
     "developed",
     "built",
 )
-_TECHNICAL_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_+./#-]*")
+_HIGH_RISK_ASSERTIONS = HIGH_RISK_ASSERTIONS
+TECHNICAL_TOKEN_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_+./#-]*")
+_TECHNICAL_TOKEN = TECHNICAL_TOKEN_PATTERN
 _CONTACT_DATA = re.compile(
     r"(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|https?://|www\.|(?<!\d)1[3-9]\d{9}(?!\d))",
     re.IGNORECASE,

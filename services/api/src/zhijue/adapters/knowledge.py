@@ -190,12 +190,23 @@ class OpenJiuwenKnowledgeGateway:
     """
 
     def __init__(
-        self, *, settings: KnowledgeSettings, milvus_uri: Path, top_k: int = 4
+        self,
+        *,
+        settings: KnowledgeSettings,
+        milvus_uri: Path,
+        top_k: int = 4,
+        embed_model: Any | None = None,
     ) -> None:
+        """`embed_model=None` 保持生产行为：按私密配置构造 openJiuwen OpenAIEmbedding。
+
+        研究 harness 允许注入另一份 openJiuwen `Embedding` 实现（例如 fixture 模式），
+        但 KB/index/retrieval 仍是同一套官方组件，不自建向量检索替身。
+        """
+
         self._settings = settings
         self._milvus_uri = milvus_uri
         self._top_k = top_k
-        self._embedding = build_embedding(settings)
+        self._embedding = embed_model if embed_model is not None else build_embedding(settings)
         self._bases: dict[str, SimpleKnowledgeBase] = {}
         self._logical_calls = 0
 
