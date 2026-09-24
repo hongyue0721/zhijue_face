@@ -1,0 +1,6 @@
+# 研究产物永不入库：trace、隔离 Milvus 文件、日志、临时导出。
+runtime/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/

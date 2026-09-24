@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhijue.research/contracts/research-trace/1.0.0",
+  "title": "Candidate Evidence Fidelity Research Trace",
+  "description": "一行一个 case × method × model 的独立记录（JSONL）。取不到的数据必须为 null，禁止估造。禁止包含 API key、Authorization、dotenv 内容、reasoning_content、ground truth、trap claims、evaluator 标签。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "experiment_key",
+    "case_id",
+    "candidate_id",
+    "domain",
+    "split",
+    "method_id",
+    "task",
+    "provider",
+    "model",
+    "model_fingerprint",
+    "config_fingerprint",
+    "dataset_version",
+    "prompt_version",
+    "prompt_hash",
+    "input_hash",
+    "evidence_input_hash",
+    "retrieval",
+    "raw_output",
+    "normalized_output",
+    "validation",
+    "latency_ms",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cost",
+    "cost_basis",
+    "attempts",
+    "observer_failures",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "run_id": { "type": "string", "pattern": "^r_[0-9a-f]{16}$" },
+    "experiment_key": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "case_id": { "type": "string", "pattern": "^case_[0-9a-zA-Z_-]{2,}$" },
+    "candidate_id": { "type": "string", "pattern": "^candidate_[0-9a-z_]{2,}$" },
+    "domain": { "enum": ["embedded_software"] },
+    "split": { "enum": ["pilot", "dev", "test"] },
+    "method_id": { "enum": ["vanilla", "prompt_constraint", "rag_context", "evidence_bound"] },
+    "task": { "enum": ["answer_only", "answer_with_evidence", "evidence_bound"] },
+    "provider": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "model": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "model_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "config_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "dataset_version": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "prompt_version": { "type": "string", "pattern": "^p[0-9]+\\.[0-9]+$" },
+    "prompt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "input_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "evidence_input_hash": {
+      "type": ["string", "null"],
+      "pattern": "^([0-9a-f]{64})?$",
+      "description": "null 表示该方法不使用检索证据（M0/M1）。"
+    },
+    "retrieval": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["config", "query", "query_hash", "top_k", "hits"],
+      "properties": {
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["query_template_version", "embed_mode", "kb_backend"],
+          "properties": {
+            "query_template_version": { "type": "string", "pattern": "^rq_[0-9.]+$" },
+            "embed_mode": { "enum": ["live", "fixture"] },
+            "kb_backend": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        },
+        "query": { "type": "string", "minLength": 1, "maxLength": 12000 },
+        "query_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "top_k": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "hits": {
+          "type": "array",
+          "maxItems": 50,
+          "description": "有序命中全集；错误归因依赖它区分 Retrieval Failure 与 Generation Failure。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rank", "source_id", "fact_id", "generation", "chunk_id", "score", "text_hash"],
+            "properties": {
+              "rank": { "type": "integer", "minimum": 1, "maximum": 50 },
+              "source_id": { "type": "string", "pattern": "^candidate_[0-9a-z_]{2,}:F[0-9]{2,}$" },
+              "fact_id": { "type": "string", "pattern": "^F[0-9]{2,}$" },
+              "generation": { "type": ["string", "null"], "maxLength": 80 },
+              "chunk_id": { "type": ["string", "null"], "maxLength": 120 },
+              "score": { "type": ["number", "null"] },
+              "text_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        },
+        "expected_evidence_fact_ids": {
+          "type": ["array", "null"],
+          "description": "仅在离线聚合阶段由 Evaluator 视图 join，不进入生成路径；生成阶段写 null。",
+          "items": { "type": "string", "pattern": "^F[0-9]{2,}$" }
+        },
+        "recall_at_k": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "raw_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "finish_reason", "truncated", "parse_status"],
+      "description": "模型原文必须保留，即使随后被 validator 拒绝。",
+      "properties": {
+        "content": { "type": ["string", "null"], "maxLength": 200000 },
+        "finish_reason": {
+          "type": ["string", "null"],
+          "enum": ["stop", "length", "content_filter", "tool_calls", null, "unknown"],
+          "description": "provider 未返回时 null；不可用 estimations 代替。"
+        },
+        "truncated": { "type": ["boolean", "null"] },
+        "parse_status": { "enum": ["parsed", "invalid_json", "transport_error", "empty", "not_attempted"] }
+      }
+    },
+    "normalized_output": {
+      "type": ["object", "array", "null"],
+      "description": "方法后处理产物；解析或校验失败时为 null。"
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["performed", "status", "reasons", "accepted"],
+      "properties": {
+        "performed": { "type": "boolean" },
+        "status": { "enum": ["passed", "failed", "not_performed", "not_attempted"] },
+        "reasons": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "enum": [
+              "SCHEMA_INVALID",
+              "REPORT_ID_MISMATCH",
+              "DUPLICATE_ROOT",
+              "UNKNOWN_ROOT",
+              "INVALID_ANSWER_QUOTE",
+              "CLAIM_OUTSIDE_SNAPSHOT",
+              "UNKNOWN_SOURCE",
+              "UNBOUND_NUMERIC_FACT",
+              "UNBOUND_HIGH_RISK_ASSERTION",
+              "UNBOUND_TECHNICAL_TOKEN",
+              "SEGMENT_MISMATCH",
+              "CLAIM_SUMMARY_MISMATCH",
+              "COVERAGE_MISMATCH",
+              "TRANSPORT_ERROR",
+              "TIMEOUT"
+            ]
+          },
+          "description": "validator 是 fail-fast，因此这里最多一个来自 validator 的 code；多标签事实漂移判定来自离线确定性 evaluator，另存聚合文件，不与本字段混算。"
+        },
+        "accepted": { "type": "boolean" }
+      }
+    },
+    "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "input_tokens": { "type": ["integer", "null"], "minimum": 0 },
+    "output_tokens": { "type": ["integer", "null"], "minimum": 0 },
+    "total_tokens": { "type": ["integer", "null"], "minimum": 0 },
+    "cost": { "type": ["number", "null"], "minimum": 0 },
+    "cost_basis": {
+      "enum": ["provider", "catalog_price", "not_measured", "no_cost"],
+      "description": "provider=响应自带；catalog_price=目录价推导且必须同时给单价；未知一律 not_measured，费用写 null。"
+    },
+    "price_per_million_input": { "type": ["number", "null"], "minimum": 0 },
+    "price_per_million_output": { "type": ["number", "null"], "minimum": 0 },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "该 cell 实际模型调用次数。默认必须等于配置的 generation_attempts（1）；validator 拒绝不得增加。"
+    },
+    "observer_failures": { "type": "integer", "minimum": 0 },
+    "created_at": { "type": "string", "minLength": 10, "maxLength": 40 },
+    "model_driver": {
+      "enum": ["live", "scripted", "fixture"],
+      "description": "scripted/fixture 的 trace 禁止被描述成真实模型结果。"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "method_id": { "enum": ["rag_context", "evidence_bound"] } } },
+      "then": { "properties": { "retrieval": { "type": "object" }, "evidence_input_hash": { "type": "string" } } }
+    },
+    {
+      "if": { "properties": { "method_id": { "enum": ["vanilla", "prompt_constraint"] } } },
+      "then": { "properties": { "retrieval": { "type": "null" }, "evidence_input_hash": { "type": "null" } } }
+    }
+  ]
+}

@@ -1241,3 +1241,80 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - `OS-SMOKE` 在“openEuler 24.03 LTS-SP2 x86_64 容器用户空间”范围内记为 `VERIFIED`：锁定依赖、数据库迁移、API、前端、代理和最小 synthetic 写入均实际通过。
 - 统信 UOS、麒麟、鸿蒙、国产 CPU、完整桌面/打印、live Knowledge、真实模型和正式比赛指定环境均 `NOT_RUN`。若赛事明确要求统信 UOS，必须在对应 UOS 版本和架构上重新执行同一启动与纵切面，不得复用本节标题替代。
 - 验证完成后已停止容器，并删除临时容器镜像、openEuler 基础镜像、数据卷、缓存卷和仓库外构建目录。`git status --short --branch` 为干净 `main...origin/main`；本轮验证阶段没有修改业务代码、API、OpenAPI、Schema、迁移、依赖或运行配置。
+
+## 61. 2026-09-24｜研究分支 R0：Candidate Evidence Fidelity 设计与契约（IMPLEMENTED）
+
+### 任务与边界
+
+- 分支 `research/candidate-evidence-fidelity-v1`，基线 `d91023a`，不写回比赛 Demo `main`。
+- 研究对象仅为 `coach_answers` 回答优化的候选人事实一致性；不改出题算法、Policy、评分、
+  Seed Bank、OCR、用户体系、openJiuwen、前端、OpenAPI、业务迁移与 `business.db`。
+- 负责人追加决策：模型走 `https://discovery-api.intern-ai.org.cn` + `kimi-k2.6`；embedding 走
+  `https://api.siliconflow.cn/v1` + `Qwen/Qwen3-VL-Embedding-8B`；API_BASE 由实现方补 `/v1`
+  路径（即放宽为受控路径前缀，不新增独立前缀变量）；演示简历按**虚构合成材料**登记；
+  `reasoning_effort` 冻结 `low`、显式下发 `max_tokens`、trace 记录 `finish_reason`。
+
+### 本机环境事实
+
+- `uv sync --locked` 首次解析到 Python 3.13.15，与 `config/versions.lock.json` measured 3.11.16
+  不一致；已 `uv sync --locked --python 3.11.16` 重建 `.venv`（939M）。
+- `pnpm --config.use-node-version=24.21.0 install --frozen-lockfile` 成功；全局 Node 为 v26.9.0，
+  已把 pnpm 托管的 24.21.0 链接到 `toolchain/node24` 并写 `toolchain/VERSIONS.txt`（均 Git 忽略）。
+- 后端非 live 基线：**324 passed / 2 failed / 2 deselected**。两条失败均为
+  `tests/test_doctor.py` 要求仓库根存在本机私密 `.env.local`，属环境缺失，不是代码回归；
+  本轮拒绝用占位密钥伪造该文件。`scripts/doctor.py`：**13 PASS / 2 WARN / 0 FAIL**
+  （WARN：`.env.local` 不存在、`runtime/` 不存在）。
+- 前端：**25/25 passed**、TypeScript 通过、Vite build 118 modules；`CHECKSUMS.sha256` 246/246。
+- 发现工具缺陷：`tools/validate_spec.py` 会覆写被跟踪的 `validation-report.md`（记录运行时
+  Python 与文件计数）。本轮运行后已 `git checkout --` 还原，研究流程不再随手调用它。
+
+### 网关实测证据（synthetic 输入，不入 Git）
+
+- discovery 网关仅暴露 `/v1/chat/completions`（`/chat/completions` 实测 404）；
+  `/v1/embeddings`、`/embeddings`、`/api/v1/embeddings` 全 404，模型目录 10 个模型无 embedding。
+- SSE + `stream_options.include_usage` 与现有 `_collect_stream` 兼容：末尾 usage chunk 的
+  `choices: []`、`[DONE]` 正常，`reasoning_content` delta 被现有实现丢弃（实测一次调用 4602 个）。
+- `reasoning_effort` 被真实校验（非法值 400）；`none` 会把思维链漏进 `content`（实测），
+  `low` 干净；`max_tokens` 生效，过小导致 `content: null`。
+- 真实形状单 root 调用：56.4s、首 content token 52.9s、usage 545/5046/5591；无价格字段。
+  目录价 in $6.5/M、out $27/M（推导，非账单）。6 并发小请求全部 200，wall 1.0s。
+- siliconflow embedding 经 openJiuwen `OpenAIEmbedding` 实测：`dimension=4096`、
+  `embed_documents(10)` 0.48s、`embed_query` 0.66s。
+- 演示简历 PDF：1 页、215,743 字节、pypdf 直抽 1655 字符（文本型非扫描）、1 张内嵌图片、
+  sha256 前缀 `7bf9d1b9`；原件与正文不入 Git。
+
+### 修改文件
+
+- 新增 `research/README.md`（边界与运行入口）、`research/DESIGN.md`（当前能力/缺失能力/
+  改造边界/架构/契约/防污染/阶段验收，设计唯一真源）、
+  `research/contracts/{candidate-ground-truth,interview-case,research-trace}.schema.json`、
+  `research/.gitignore`（显式排除 `runtime/`）。
+- `process.md`、`CHANGELOG.md` 本条目。业务代码零改动。
+
+### 实际命令与结果
+
+- `services/api/.venv/bin/python -c "Draft202012Validator.check_schema(...)"` → 三份 schema 全部
+  `check_schema` 通过（required 8 / 6 / 31）。
+- `git check-ignore -v research/runtime/` → 命中 `.gitignore:5:runtime/`；新增
+  `research/.gitignore` 使研究边界不依赖 Demo 规则。
+- 本轮外部模型调用 12 次（连通性/参数语义/延迟探测，全部 synthetic 输入）；embedding 调用
+  3 次。费用按目录价推导约 $0.15，provider 未回账单项，计费字段仍记 null。
+
+### API 与迁移变化
+
+- 无。OpenAPI、HTTP 字段、SSE 事件、业务枚举、数据库与迁移均未改。
+- R1 计划变更（尚未实施）：`ModelSettings.api_base` 允许受控路径前缀、抽出
+  `OpenAICompatibleChatTransport`、`GroundedContentValidationError` 携带机器可读 `code`、
+  `run_grounded_content_workflow` 接受 `observer=None`、`AnalysisResult` 增加可选
+  `finish_reason`；`api.md` 与 `config/environment.env.example` 须先于实现同步。
+
+### 未解决问题
+
+- `research/runtime/` 与私密 env 仅存在本机 `~/.config/zhijue-research/`（0600）；
+  正式实验预算、并发上限与真实数据规模未测（NOT_MEASURED）。
+- 演示简历 → ground truth 的人工转录尚未开始，需 R5 前完成并保留逐字 provenance。
+
+### 唯一下一任务
+
+Phase R1：实施 B1–B6 业务 seam，并要求现有 324 条非 live 后端测试全绿、
+`observer=None` 与基线逐字段等价的回归测试通过。

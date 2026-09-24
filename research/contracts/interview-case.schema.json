@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhijue.research/contracts/interview-case/1.0.0",
+  "title": "Interview Case",
+  "description": "一个 case = 一道面试题 + 候选人原始回答。generator_visible 与 evaluator_only 两个区块在加载时物理投影分离；evaluator_only 禁止进入模型输入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "candidate_id", "split", "generator_visible", "evaluator_only"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "case_id": { "type": "string", "pattern": "^case_[0-9a-zA-Z_-]{2,}$" },
+    "candidate_id": { "type": "string", "pattern": "^candidate_[0-9a-z_]{2,}$" },
+    "split": { "enum": ["pilot", "dev", "test"] },
+    "generator_visible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "raw_answer", "retrieval_query_spec"],
+      "properties": {
+        "question": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wording", "competency_tags", "source_seed_id"],
+          "properties": {
+            "wording": { "type": "string", "minLength": 1, "maxLength": 2000 },
+            "competency_tags": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1, "maxLength": 60 }
+            },
+            "source_seed_id": { "type": ["string", "null"], "maxLength": 80 }
+          }
+        },
+        "raw_answer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "turns"],
+          "properties": {
+            "text": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "turns": {
+              "type": "array",
+              "minItems": 1,
+              "description": "主答 + 至多一次追问的按序轮次；answer_id 是引文回查的键。",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["answer_id", "kind", "text"],
+                "properties": {
+                  "answer_id": { "type": "string", "pattern": "^ans_[0-9a-zA-Z_-]{2,}$" },
+                  "kind": { "enum": ["main", "follow_up", "clarification"] },
+                  "text": { "type": "string", "minLength": 1, "maxLength": 8000 },
+                  "prompt_wording": { "type": ["string", "null"], "maxLength": 2000 }
+                }
+              }
+            }
+          }
+        },
+        "retrieval_query_spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "template_version"],
+          "properties": {
+            "mode": { "const": "question_plus_answer" },
+            "template_version": { "type": "string", "pattern": "^rq_[0-9.]+$" }
+          }
+        },
+        "target_role": { "type": ["string", "null"], "maxLength": 200 }
+      }
+    },
+    "evaluator_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "禁止进入 Prompt / RAG / method；泄漏测试按整个区块的键名与值做出口扫描。",
+      "required": ["expected_evidence_fact_ids", "allowed_context_ids", "injected_drift", "answer_style_rating"],
+      "properties": {
+        "expected_evidence_fact_ids": {
+          "type": "array",
+          "maxItems": 60,
+          "description": "检索召回率与 Retrieval Failure 归因的依据。",
+          "items": { "type": "string", "pattern": "^F[0-9]{2,}$" }
+        },
+        "allowed_context_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[a-z][0-9a-z_]{1,40}$" }
+        },
+        "injected_drift": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "probe"],
+            "properties": {
+              "label": {
+                "enum": [
+                  "TECHNOLOGY_INJECTION",
+                  "METRIC_FABRICATION",
+                  "RESPONSIBILITY_INFLATION",
+                  "OUTCOME_INFLATION",
+                  "CAUSAL_FABRICATION",
+                  "CROSS_PROJECT_LEAKAGE",
+                  "TEMPORAL_DRIFT",
+                  "EVIDENCE_MISATTRIBUTION"
+                ]
+              },
+              "probe": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "value"],
+                "properties": {
+                  "kind": {
+                    "enum": ["raw_answer_contains", "raw_answer_absent", "trap_claim_available", "context_absent"]
+                  },
+                  "value": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                  "fact_id": { "type": ["string", "null"], "pattern": "^(F[0-9]{2,})?$" },
+                  "trap_id": { "type": ["string", "null"], "pattern": "^(T[0-9]{2,})?$" }
+                }
+              },
+              "note": { "type": ["string", "null"], "maxLength": 500 }
+            }
+          }
+        },
+        "answer_style_rating": {
+          "type": ["string", "null"],
+          "enum": ["weak", "medium", "strong", null],
+          "description": "只用于分层统计，不进 Prompt。"
+        },
+        "notes": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    }
+  }
+}

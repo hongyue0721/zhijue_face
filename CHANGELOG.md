@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-24｜研究分支 R0：Candidate Evidence Fidelity 设计与契约（IMPLEMENTED）
+
+- 新建研究分支 `research/candidate-evidence-fidelity-v1`（基线 `d91023a`），只研究
+  `coach_answers` 的候选人事实一致性：M0 vanilla / M1 prompt_constraint / M2 rag_context /
+  M3 evidence_bound 四方法共用同一 transport、同一采样参数、每 cell 一次生成。比赛 Demo 的
+  出题、Policy、评分、Seed Bank、前端、OpenAPI 与业务数据库均不在改造范围。
+- 产出 `research/DESIGN.md`（逐行核对 `content_generation`、`content_workflow`、
+  `grounded_content`、`adapters/knowledge`、`adapters/model` 后的"当前能力/缺失能力/改造边界"）、
+  `research/README.md` 与三份契约：candidate ground truth、interview case（generator_visible 与
+  evaluator_only 物理分区）、research trace（31 必填字段，缺失一律 null）。
+- 本机基线记录：`.venv` 需显式 `--python 3.11.16` 才与版本锁一致；后端非 live 324 passed /
+  2 failed（两条为 `tests/test_doctor.py` 依赖本机私密 `.env.local`，环境缺失非回归，未用占位
+  密钥伪造）；前端 25/25、TypeScript、Vite 118 modules；doctor 13 PASS / 2 WARN / 0 FAIL。
+- 网关实测：discovery 端点仅 `/v1/chat/completions`（无 embedding 路由），SSE/usage 与现有
+  `_collect_stream` 兼容，`reasoning_effort` 被真实校验且 `none` 会把思维链漏进 `content`，
+  单 root 真实形状调用 56.4s / 545 输入 / 5046 输出 token；siliconflow embedding 经 openJiuwen
+  `OpenAIEmbedding` 实测维度 4096。费用按目录价推导，provider 未回账单，计费字段保持 null。
+- 发现 `tools/validate_spec.py` 会覆写被跟踪的 `validation-report.md`，本轮已还原该文件。
+- R0 业务代码零改动；R1 计划的 API_BASE 受控路径前缀、transport 抽取、validator 机器可读
+  code、可选 observer 与 `finish_reason` 均**尚未实施**。
+
 ## Unreleased — 2026-09-22｜openEuler 容器兼容性冒烟（VERIFIED，容器范围）
 
 - 使用官方 openEuler 24.03 LTS-SP2 x86_64 镜像，在容器内重新安装锁定 Python/Node 依赖，openJiuwen 锁定 commit、五段 Alembic migration、FastAPI、Vite 与 `/api` 代理均成功启动。

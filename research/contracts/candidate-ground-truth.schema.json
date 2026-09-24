@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhijue.research/contracts/candidate-ground-truth/1.0.0",
+  "title": "Candidate Ground Truth",
+  "description": "候选人事实唯一真值。禁止进入模型 Prompt、禁止进入 RAG 索引、禁止被任何 tested method 访问；只有 Dataset 与 Evaluator 可见。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "domain",
+    "data_status",
+    "authored_by",
+    "facts",
+    "trap_claims",
+    "derived_materials"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "candidate_id": { "type": "string", "pattern": "^candidate_[0-9a-z_]{2,}$" },
+    "domain": { "enum": ["embedded_software"] },
+    "data_status": {
+      "enum": ["synthetic", "synthetic_transcribed_from_demo_document"],
+      "description": "synthetic=先写真值再生成材料；synthetic_transcribed_from_demo_document=负责人提供的既有演示文档经人工逐字转录，不得伪装成先验真值。"
+    },
+    "authored_by": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "authored_at": { "type": ["string", "null"], "maxLength": 40 },
+    "source_documents": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["doc_id", "kind", "fingerprint_sha256", "path_policy"],
+        "properties": {
+          "doc_id": { "type": "string", "pattern": "^doc_[0-9a-z_]{2,}$" },
+          "kind": { "enum": ["resume_pdf", "resume_md", "project_notes", "profile_notes", "other"] },
+          "fingerprint_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "path_policy": {
+            "const": "local_only_never_committed",
+            "description": "原件路径与正文一律不入 Git、不入公开证据；只保留指纹。"
+          },
+          "byte_size": { "type": ["integer", "null"], "minimum": 0 },
+          "extracted_characters": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/fact" }
+    },
+    "trap_claims": {
+      "type": "array",
+      "maxItems": 60,
+      "description": "故意写错的近邻声明，只供 Evaluator 判定漂移；禁止进入生成阶段与 RAG 索引。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trap_id", "predicate", "value", "expected_labels", "basis_fact_ids"],
+        "properties": {
+          "trap_id": { "type": "string", "pattern": "^T[0-9]{2,}$" },
+          "predicate": { "$ref": "#/$defs/predicate" },
+          "value": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "expected_labels": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/drift_label" }
+          },
+          "basis_fact_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^F[0-9]{2,}$" }
+          },
+          "context_id": { "type": "string", "pattern": "^[a-z][0-9a-z_]{1,40}$" },
+          "notes": { "type": ["string", "null"], "maxLength": 500 }
+        }
+      }
+    },
+    "derived_materials": {
+      "type": "array",
+      "minItems": 1,
+      "description": "自然语言材料与真值的生成关系；先有 GT 后有材料，禁止反推。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact", "status", "generated_from_fact_ids"],
+        "properties": {
+          "artifact": { "type": "string", "pattern": "^[A-Za-z0-9_./-]{1,120}\\.(md|txt|pdf)$" },
+          "status": {
+            "enum": [
+              "generated_from_ground_truth",
+              "transcribed_from_existing_document",
+              "human_authored_before_document"
+            ]
+          },
+          "generated_from_fact_ids": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^F[0-9]{2,}$" }
+          },
+          "generator_version": { "type": ["string", "null"], "maxLength": 60 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "predicate": {
+      "enum": [
+        "used_technology",
+        "responsibility",
+        "outcome",
+        "metric",
+        "project_time",
+        "learning_status",
+        "tool_used",
+        "team_size",
+        "personal_scope",
+        "other"
+      ]
+    },
+    "drift_label": {
+      "enum": [
+        "TECHNOLOGY_INJECTION",
+        "METRIC_FABRICATION",
+        "RESPONSIBILITY_INFLATION",
+        "OUTCOME_INFLATION",
+        "CAUSAL_FABRICATION",
+        "CROSS_PROJECT_LEAKAGE",
+        "TEMPORAL_DRIFT",
+        "EVIDENCE_MISATTRIBUTION"
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "context_id", "predicate", "value", "polarity", "confirmed", "provenance"],
+      "properties": {
+        "fact_id": { "type": "string", "pattern": "^F[0-9]{2,}$" },
+        "context_id": {
+          "type": "string",
+          "pattern": "^(self|proj_[0-9a-z_]+|course_[0-9a-z_]+|work_[0-9a-z_]+)$",
+          "description": "项目/上下文归属；跨项目泄漏检测依赖它，因此不允许缺省。"
+        },
+        "predicate": { "$ref": "#/$defs/predicate" },
+        "value": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "polarity": { "enum": ["positive", "negative", "uncertain"] },
+        "confirmed": {
+          "type": "boolean",
+          "description": "只有 confirmed=true 的事实才可进入 private_kb 与 RAG 索引。"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "locator", "verbatim"],
+          "properties": {
+            "kind": {
+              "enum": ["owner_statement", "resume_document", "project_note", "profile_note", "dataset_authored"]
+            },
+            "locator": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "verbatim": { "type": "string", "minLength": 1, "maxLength": 2000 },
+            "verbatim_sha256": { "type": ["string", "null"], "pattern": "^([0-9a-f]{64})?$" },
+            "doc_id": { "type": ["string", "null"], "pattern": "^(doc_[0-9a-z_]{2,})?$" }
+          }
+        },
+        "notes": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    }
+  }
+}
