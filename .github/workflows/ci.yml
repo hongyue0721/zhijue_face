@@ -1,4 +1,5 @@
-# M0-04 CI 骨架：仓库尚未推送到远端，本工作流为 NOT_RUN。
+# M0-04 CI 骨架：仓库已在 origin（main 与 research 分支），但本工作流的实际运行结果仍
+# NOT_VERIFIED——触发面只有 main push 与 PR，research 分支推送不会跑，且本轮未核验 Actions 记录。
 # 设计约束：默认不花模型费用——不调用任何 embedding/LLM 端点，不跑
 # integration_live（该标记的用例必须显式提供私密 env 文件才会执行）。
 name: ci

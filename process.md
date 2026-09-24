@@ -1621,9 +1621,16 @@ Phase R5：3 个 synthetic candidate 数据 + 全链路 scripted dry run + 泄�
 - `CHANGELOG.md`：R2-R5 条目；`research/DESIGN.md` 阶段表改为实测状态；`research/README.md`
   补齐本轮真实跑过的命令形态（含 `PYTHONPATH`，旧写法 `python -m zhijue_research.cli` 会
   `ModuleNotFoundError`）。
-- `CHECKSUMS.sha256`：按 doctor 口径重建（329 条一致）；`tools/validate_spec.py` 仍 47/47。
+- `CHECKSUMS.sha256`：按 doctor 口径重建（330 条一致，含新增 handoff）；`tools/validate_spec.py`
+  仍 47/47；`scripts/doctor.py` 14 pass / 1 warn / 0 fail。
 - `docs/handoffs/2026-09-24-research-r2-r5.md`：本轮交接（含退出码、证据路径、null 计费字段、
   待负责人决定项与回滚方式）。
+- `.github/workflows/ci.yml` 首行旧注释写"仓库尚未推送到远端，本工作流为 NOT_RUN"，与现状不符：
+  仓库已在 origin（`main` 与 `research/candidate-evidence-fidelity-v1`）。改为如实写明触发面只有
+  `main` push 与 PR、research 分支推送不触发、且本轮未核验 Actions 运行记录，故工作流结果仍是
+  `NOT_VERIFIED`，不写成"CI 已通过"。
+- 远端状态：`research/candidate-evidence-fidelity-v1` 已推送并建立跟踪；`origin/main` 仍停在
+  `d91023a`，研究代码未合入比赛 Demo 主线。
 
 ### 未完成与风险
 
