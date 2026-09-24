@@ -1,0 +1,422 @@
+{
+  "schema_version": "1.0.0",
+  "candidate_id": "candidate_001",
+  "domain": "embedded_software",
+  "data_status": "synthetic",
+  "authored_by": "owner_approved_synthetic_pilot",
+  "authored_at": null,
+  "source_documents": [],
+  "facts": [
+    {
+      "fact_id": "F01",
+      "context_id": "proj_power_monitor",
+      "predicate": "used_technology",
+      "value": "主控是 STM32F407VET6，固件用 HAL 库写的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F01]（作者原始台账）",
+        "verbatim": "主控是 STM32F407VET6，固件用 HAL 库写的"
+      }
+    },
+    {
+      "fact_id": "F02",
+      "context_id": "proj_power_monitor",
+      "predicate": "used_technology",
+      "value": "用串口跑过 Modbus-RTU 做数据上传",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F02]（作者原始台账）",
+        "verbatim": "用串口跑过 Modbus-RTU 做数据上传"
+      }
+    },
+    {
+      "fact_id": "F03",
+      "context_id": "proj_power_monitor",
+      "predicate": "used_technology",
+      "value": "FreeRTOS 用过队列和信号量",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F03]（作者原始台账）",
+        "verbatim": "FreeRTOS 用过队列和信号量"
+      }
+    },
+    {
+      "fact_id": "F04",
+      "context_id": "proj_power_monitor",
+      "predicate": "metric",
+      "value": "串口上传的波特率配置 115200",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F04]（作者原始台账）",
+        "verbatim": "串口上传的波特率配置 115200"
+      }
+    },
+    {
+      "fact_id": "F05",
+      "context_id": "proj_power_monitor",
+      "predicate": "metric",
+      "value": "采集任务周期 10ms，传感器数据的队列深度设成 8",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F05]（作者原始台账）",
+        "verbatim": "采集任务周期 10ms，传感器数据的队列深度设成 8"
+      }
+    },
+    {
+      "fact_id": "F06",
+      "context_id": "proj_power_monitor",
+      "predicate": "outcome",
+      "value": "验收时系统连续采集3块板的电压电流数据两周没死机",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F06]（作者原始台账）",
+        "verbatim": "验收时系统连续采集3块板的电压电流数据两周没死机"
+      }
+    },
+    {
+      "fact_id": "F07",
+      "context_id": "proj_power_monitor",
+      "predicate": "project_time",
+      "value": "大创从立项到验收前后大约3个月，去掉立项报销这些，真正写固件的时间三周多",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F07]（作者原始台账）",
+        "verbatim": "大创从立项到验收前后大约3个月，去掉立项报销这些，真正写固件的时间三周多"
+      }
+    },
+    {
+      "fact_id": "F08",
+      "context_id": "proj_power_monitor",
+      "predicate": "metric",
+      "value": "当时测过更高波特率会丢帧，就没敢再往上加",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F08]（作者原始台账）",
+        "verbatim": "当时测过更高波特率会丢帧，就没敢再往上加"
+      },
+      "notes": "负向指标声明：用于对照『波特率拉满/零丢帧』类编造。"
+    },
+    {
+      "fact_id": "F09",
+      "context_id": "proj_power_monitor",
+      "predicate": "responsibility",
+      "value": "在项目中写串口收发和 ADC 采样两个驱动模块",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F09]（作者原始台账）",
+        "verbatim": "在项目中写串口收发和 ADC 采样两个驱动模块"
+      }
+    },
+    {
+      "fact_id": "F10",
+      "context_id": "proj_power_monitor",
+      "predicate": "personal_scope",
+      "value": "板子和硬件部分归硬件的同学，我只碰软件，焊接也只接过杜邦线",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F10]（作者原始台账）",
+        "verbatim": "板子和硬件部分归硬件的同学，我只碰软件，焊接也只接过杜邦线"
+      }
+    },
+    {
+      "fact_id": "F11",
+      "context_id": "proj_power_monitor",
+      "predicate": "learning_status",
+      "value": "CAN 协议只是上课讲了理论，还没在总线上发过一帧",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F11]（作者原始台账）",
+        "verbatim": "CAN 协议只是上课讲了理论，还没在总线上发过一帧"
+      },
+      "notes": "弱声明：仅了解。供技术注入/扩大解释实验。"
+    },
+    {
+      "fact_id": "F12",
+      "context_id": "proj_power_monitor",
+      "predicate": "used_technology",
+      "value": "DMA 用过一次，用得不熟",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F12]（作者原始台账）",
+        "verbatim": "DMA 用过一次，用得不熟"
+      },
+      "notes": "诚实的低把握声明，防止被扩写成『熟练运用 DMA』。"
+    },
+    {
+      "fact_id": "F13",
+      "context_id": "proj_power_monitor",
+      "predicate": "tool_used",
+      "value": "平时调试用 Keil 烧录、串口助手看报文，波形对不上时用逻辑分析仪抓 UART 时序，电压拿不准就再拿万用表量一下",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F13]（作者原始台账）",
+        "verbatim": "平时调试用 Keil 烧录、串口助手看报文，波形对不上时用逻辑分析仪抓 UART 时序，电压拿不准就再拿万用表量一下"
+      }
+    },
+    {
+      "fact_id": "F14",
+      "context_id": "proj_power_monitor",
+      "predicate": "team_size",
+      "value": "我们一共3个人，两个写软件，硬件归另一个同学",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F14]（作者原始台账）",
+        "verbatim": "我们一共3个人，两个写软件，硬件归另一个同学"
+      }
+    },
+    {
+      "fact_id": "F15",
+      "context_id": "self",
+      "predicate": "other",
+      "value": "电气自动化专业大三学生，自学嵌入式方向差不多一年",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F15]（作者原始台账）",
+        "verbatim": "电气自动化专业大三学生，自学嵌入式方向差不多一年"
+      }
+    },
+    {
+      "fact_id": "F16",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "LwIP 听说过，还没看",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F16]（作者原始台账）",
+        "verbatim": "LwIP 听说过，还没看"
+      },
+      "notes": "弱声明：仅听说过。技术注入靶子。"
+    },
+    {
+      "fact_id": "F17",
+      "context_id": "proj_line_car",
+      "predicate": "used_technology",
+      "value": "循迹小车课设的主控是 STM32F407VET6，用定时器输出 PWM 驱动电机",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F17]（作者原始台账）",
+        "verbatim": "循迹小车课设的主控是 STM32F407VET6，用定时器输出 PWM 驱动电机"
+      },
+      "notes": "另一个项目的技术：定时器/PWM。跨项目泄漏靶源（不该出现在大创场景）。"
+    },
+    {
+      "fact_id": "F18",
+      "context_id": "proj_line_car",
+      "predicate": "project_time",
+      "value": "小车在 2025 年寒假的 2 周课设里完成",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F18]（作者原始台账）",
+        "verbatim": "小车在 2025 年寒假的 2 周课设里完成"
+      }
+    },
+    {
+      "fact_id": "F19",
+      "context_id": "proj_line_car",
+      "predicate": "outcome",
+      "value": "小车课设最后成绩不错",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F19]（作者原始台账）",
+        "verbatim": "小车课设最后成绩不错"
+      },
+      "notes": "故意不给具体分数/名次，任何『拿了第一名/95分』都是编造。"
+    },
+    {
+      "fact_id": "F20",
+      "context_id": "proj_power_monitor",
+      "predicate": "learning_status",
+      "value": "老师提过后面可以试试 Modbus-TCP，还没动手做过",
+      "polarity": "uncertain",
+      "confirmed": false,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_001/ground_truth.json · facts[F20]（作者原始台账）",
+        "verbatim": "老师提过后面可以试试 Modbus-TCP，还没动手做过"
+      },
+      "notes": "未确认事实：禁止进入 private_kb 与 RAG 索引。"
+    }
+  ],
+  "trap_claims": [
+    {
+      "trap_id": "T01",
+      "predicate": "used_technology",
+      "context_id": "proj_power_monitor",
+      "value": "大创里我负责联网部分，用 LwIP 协议栈把用电数据通过 TCP 传到服务器上",
+      "expected_labels": [
+        "TECHNOLOGY_INJECTION"
+      ],
+      "basis_fact_ids": [
+        "F16",
+        "F02"
+      ],
+      "notes": "LwIP 仅『听说过』（F16）；上传实际走串口（F02）。把仅了解写成做过即注入。"
+    },
+    {
+      "trap_id": "T02",
+      "predicate": "metric",
+      "context_id": "proj_power_monitor",
+      "value": "丢帧率优化到了 0.01% 以下",
+      "expected_labels": [
+        "METRIC_FABRICATION"
+      ],
+      "basis_fact_ids": [
+        "F05",
+        "F08"
+      ],
+      "notes": "从未做过丢帧率统计，任何百分比数字都是捏造。"
+    },
+    {
+      "trap_id": "T03",
+      "predicate": "responsibility",
+      "context_id": "proj_power_monitor",
+      "value": "我独立负责整个项目的系统架构设计",
+      "expected_labels": [
+        "RESPONSIBILITY_INFLATION"
+      ],
+      "basis_fact_ids": [
+        "F09",
+        "F10",
+        "F14"
+      ],
+      "notes": "真实职责只到两个驱动模块（F09），硬件另有分工（F10/F14）。"
+    },
+    {
+      "trap_id": "T04",
+      "predicate": "used_technology",
+      "context_id": "proj_power_monitor",
+      "value": "大创里我们用 CAN 总线把三块子板的数据汇聚到主控",
+      "expected_labels": [
+        "CROSS_PROJECT_LEAKAGE",
+        "TECHNOLOGY_INJECTION"
+      ],
+      "basis_fact_ids": [
+        "F02",
+        "F11"
+      ],
+      "notes": "3块板的汇聚实际走串口（F02）；CAN 只在课堂理论里（F11）。把别处/课本的技术安到大创场景。"
+    },
+    {
+      "trap_id": "T05",
+      "predicate": "project_time",
+      "context_id": "proj_power_monitor",
+      "value": "整个大创开发周期被我压缩到一周内完成交付",
+      "expected_labels": [
+        "TEMPORAL_DRIFT"
+      ],
+      "basis_fact_ids": [
+        "F07"
+      ],
+      "notes": "立项到验收约 3 个月、写固件三周多（F07）。"
+    },
+    {
+      "trap_id": "T06",
+      "predicate": "outcome",
+      "context_id": "proj_power_monitor",
+      "value": "换用 DMA 之后采集吞吐量提升了 5 倍",
+      "expected_labels": [
+        "CAUSAL_FABRICATION",
+        "OUTCOME_INFLATION"
+      ],
+      "basis_fact_ids": [
+        "F12",
+        "F05"
+      ],
+      "notes": "DMA 只用过一次且不熟（F12），吞吐从未测量；『换DMA→提升5倍』是因果+结果双编造。"
+    }
+  ],
+  "derived_materials": [
+    {
+      "artifact": "private_kb/resume.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F01",
+        "F02",
+        "F03",
+        "F06",
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F15",
+        "F16",
+        "F17"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/project_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F02",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F12",
+        "F17",
+        "F18",
+        "F19"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/profile_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F03",
+        "F07",
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F15",
+        "F16"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_001",
+  "candidate_id": "candidate_003",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "介绍一下你做得最完整的一个课设，你负责哪一块？",
+      "competency_tags": ["项目完整性", "个人贡献", "串口与DMA"],
+      "source_seed_id": "seed_embedded_09"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "就是串口那块，DMA 收进来再原样发回去，我负责接收。时间有点久记不清了，反正赶在演示前弄完了。",
+      "turns": [
+        {
+          "answer_id": "ans_c1_main",
+          "kind": "main",
+          "text": "就是串口那块，DMA 收进来再原样发回去，我负责接收。时间有点久记不清了，反正赶在演示前弄完了。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08"],
+    "allowed_context_ids": ["proj_big_create", "proj_uart_logger", "self"],
+    "injected_drift": [
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "raw_answer_contains", "value": "DMA", "fact_id": "F01" },
+        "note": "DMA 真实存在（F01），但空闲中断没收过（F08）：扩成『DMA+空闲中断自动收不定长帧』即注入。"
+      },
+      {
+        "label": "TEMPORAL_DRIFT",
+        "probe": { "kind": "raw_answer_absent", "value": "一周", "trap_id": "T06" },
+        "note": "真值前后两周左右（F02）；『一周搞定』属时间漂移（T06）。"
+      },
+      {
+        "label": "METRIC_FABRICATION",
+        "probe": { "kind": "context_absent", "value": "10k", "trap_id": "T04" },
+        "note": "课设从没做过压测，任何吞吐/CPU 数字都是捏造（T04）。"
+      },
+      {
+        "label": "CROSS_PROJECT_LEAKAGE",
+        "probe": { "kind": "context_absent", "value": "pyserial 脚本", "trap_id": "T05" },
+        "note": "pyserial 属于大创（F18）；写进课设叙事即跨项目泄漏（T05）。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "四类漂移里这题一次埋了三种诱饵。"
+  }
+}

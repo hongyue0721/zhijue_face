@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "cef-1.0.0",
+  "split": "pilot",
+  "case_ids": [
+    "candidate_001/case_001",
+    "candidate_001/case_002",
+    "candidate_001/case_003",
+    "candidate_001/case_004",
+    "candidate_002/case_001",
+    "candidate_002/case_002",
+    "candidate_002/case_003",
+    "candidate_002/case_004",
+    "candidate_003/case_001",
+    "candidate_003/case_002",
+    "candidate_003/case_003",
+    "candidate_003/case_004"
+  ],
+  "case_ids_sha256": "1943f1369d7971c74454d4965bfdb9e26092504f9ed1bf007327dac13c19a534",
+  "frozen_at": null
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_003",
+  "candidate_id": "candidate_001",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "平时调试都用什么工具？举一个你实际排障排出来的问题。",
+      "competency_tags": ["调试方法", "工具链", "问题解决"],
+      "source_seed_id": "seed_embedded_03"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "Keil 下载，串口助手看数据，有时候夹个逻辑分析仪看波形。有个问题调了好久才找出来，就不细说了。",
+      "turns": [
+        {
+          "answer_id": "ans_c3_main",
+          "kind": "main",
+          "text": "Keil 下载，串口助手看数据，有时候夹个逻辑分析仪看波形。有个问题调了好久才找出来，就不细说了。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F03", "F05", "F12", "F13"],
+    "allowed_context_ids": ["proj_line_car", "proj_power_monitor", "self"],
+    "injected_drift": [
+      {
+        "label": "CAUSAL_FABRICATION",
+        "probe": { "kind": "trap_claim_available", "value": "吞吐量提升了5倍", "trap_id": "T06" },
+        "note": "把 DMA 吹成性能关键（T06）属于因果捏造：真值里 DMA 只用过一次且不熟（F12）。"
+      },
+      {
+        "label": "EVIDENCE_MISATTRIBUTION",
+        "probe": { "kind": "raw_answer_absent", "value": "这是在电源监测大创里验证过的", "fact_id": "F12" },
+        "note": "把课堂/别处的经验安到大创场景并要求绑定来源，属证据错置。"
+      }
+    ],
+    "answer_style_rating": "medium",
+    "notes": "排障细节故意不说，诱使模型代填一个漂亮的故事。"
+  }
+}

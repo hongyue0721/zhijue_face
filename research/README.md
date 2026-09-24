@@ -31,14 +31,44 @@
 
 ## 怎么跑
 
-```bash
-# 研究测试（不碰业务库、不调模型）
-cd research && ../services/api/.venv/bin/python -m pytest tests -q
+以下命令都是本轮实际跑过的形态（`research/` 不安装进业务环境，靠 `PYTHONPATH` 复用
+`services/api/src` 的业务模块）。
 
-# 全链路 dry run（脚本化模型，零费用）
-cd research && ../services/api/.venv/bin/python -m zhijue_research.cli run \
-  --config config/experiment.yaml --split pilot --model-driver scripted
+```bash
+cd research
+
+# 研究测试（默认全离线：不碰业务库、不调模型、不建生产 KB）
+../services/api/.venv/bin/python -m pytest tests -q
+
+# 只校验数据集与 split（零模型调用）
+PYTHONPATH=src:../services/api/src ../services/api/.venv/bin/python -m zhijue_research.cli verify-dataset
+
+# 全链路 dry run（scripted 模型 + scripted 证据，零费用）
+PYTHONPATH=src:../services/api/src ../services/api/.venv/bin/python -m zhijue_research.cli run \
+  --model-driver scripted --evidence scripted --tag dryrun
+
+# 漂移注入自检：指定方法故意产出捏造内容，验证检测器与硬校验真的会响
+PYTHONPATH=src:../services/api/src ../services/api/.venv/bin/python -m zhijue_research.cli run \
+  --model-driver scripted --evidence scripted \
+  --drift-method vanilla --drift-method evidence_bound --tag drift
+
+# 离线聚合双轨指标（trace × evaluator 标签）
+PYTHONPATH=src:../services/api/src ../services/api/.venv/bin/python -m zhijue_research.cli report \
+  --trace runtime/traces/pilot_dryrun.jsonl --out runtime/reports/dryrun.json
+
+# 真实 KB 检索（openJiuwen + Milvus Lite；embedding 可为 fixture 或 live）
+PYTHONPATH=src:../services/api/src ../services/api/.venv/bin/python -m zhijue_research.cli run \
+  --model-driver scripted --evidence knowledge --tag knowledge
 ```
 
 真实模型调用必须显式给 `--model-driver live` 与私密 env 文件路径，且默认拒绝
 （`live` 需要配置里 `allow_paid_calls: true`）。第一阶段该开关保持 `false`。
+
+live embedding 单点探测（只调 embedding，不调对话模型；计费未知字段保持 null）：
+
+```bash
+cd research && ../services/api/.venv/bin/python scripts/live_embedding_probe.py --i-accept-embedding-cost
+```
+
+它只在内存里翻 `embed_mode=live` / `allow_paid_calls=true`，仓库配置不变；证据落在
+`runtime/embedding-probe/`（Git 忽略）。

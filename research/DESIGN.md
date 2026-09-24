@@ -426,14 +426,17 @@ evaluator_version / prompt_versions{} / seed / allow_paid_calls
 
 ## 13. 阶段计划与验收
 
-| Phase | 产物 | 验收命令 | 状态口径 |
+| Phase | 产物 | 验收命令 | 状态（2026-09-24 实测） |
 |---|---|---|---|
-| R0 | 本文件 + README + 3 schema | `python -c "jsonschema …"` 自检 | DESIGN |
-| R1 | B1-B6 + 回归测试 | `pytest tests -q -m 'not integration_live'`（基线 324 passed，允许新增） | VERIFIED（本地） |
-| R2 | dataset/methods/runner/trace + scripted model | `cd research && pytest tests -q`，0 外部调用 | VERIFIED（fixture） |
-| R3 | 索引/检索/observer/parity | 同上 + `embed_mode=fixture` 与 `live` 各一次（live 仅 embedding，无对话费用） | VERIFIED（容器/本机范围） |
-| R4 | 5 个确定性检测器 + Judge 接口 | 每个检测器 fixture 正反例 | VERIFIED |
-| R5 | 2-3 个 synthetic candidate 全链路 dry run | `cli run --model-driver scripted` 产出 trace，schema 全通过，泄漏扫描 0 命中 | IMPLEMENTED→VERIFIED（fixture） |
+| R0 | 本文件 + README + 3 schema | schema 自检 | VERIFIED（本地，§61） |
+| R1 | B1-B6 + 回归测试 | `pytest tests -q -m 'not integration_live'` | VERIFIED（363 passed，唯一失败为本机私密 env 缺失；live 链路 §62） |
+| R2 | dataset/methods/runner/trace + scripted model | `cd research && pytest tests -q`，0 外部调用 | VERIFIED（24 项，fixture 范围，§63） |
+| R3 | 索引/检索/observer/parity | 同上 + fixture 与 live 各一次 | VERIFIED（4 项 + live embedding 探测 dim=4096、19 文档、4 次检索，§64） |
+| R4 | 5 个确定性检测器 + Judge 接口 | 每检测器 fixture 正反例 | VERIFIED（27 项；Judge 只定义端口，未接付费模型，§65） |
+| R5 | 3 个 synthetic candidate 全链路 dry run | `cli run --model-driver scripted` + 泄漏扫描 | VERIFIED（84 项全绿；48 cell schema 全通过；泄漏扫描 0 命中；§66） |
+
+R5 之后的"正式实验"仍 `NOT_RUN`：需要负责人批准费用与规模、冻结 dev/test split。
+VERIFIED 的含义只到"本轮实际跑过的范围"，不等于模型质量或检索质量结论。
 
 R5 之后才谈正式实验；正式实验需要负责人另行批准（付费、数据规模、冻结 test split）。
 

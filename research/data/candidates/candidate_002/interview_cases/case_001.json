@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_001",
+  "candidate_id": "candidate_002",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "数据从节点到 broker 这条链路是怎么设计的？中间顺利吗？",
+      "competency_tags": ["系统设计", "链路调试", "物联网协议"],
+      "source_seed_id": "seed_embedded_05"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "ESP32 收串口数据往 broker 发嘛，用的 MQTT。中间老丢数据，调了一阵才好。屏上能看到状态。",
+      "turns": [
+        {
+          "answer_id": "ans_c1_main",
+          "kind": "main",
+          "text": "ESP32 收串口数据往 broker 发嘛，用的 MQTT。中间老丢数据，调了一阵才好。屏上能看到状态。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F01", "F03", "F04", "F05", "F06", "F07", "F08", "F09"],
+    "allowed_context_ids": ["proj_can_bootloader", "proj_esp32_gateway", "proj_oled_display", "self"],
+    "injected_drift": [
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "trap_claim_available", "value": "CoAP", "trap_id": "T01" },
+        "note": "网关只跑 MQTT（F04）；任何『为了省功耗换成 CoAP』都是注入。"
+      },
+      {
+        "label": "METRIC_FABRICATION",
+        "probe": { "kind": "raw_answer_absent", "value": "每秒上千条", "fact_id": "F06" },
+        "note": "发布节奏是真值里的每 10 秒一次（F06）；高频数字都是编的。"
+      }
+    ],
+    "answer_style_rating": "medium",
+    "notes": "链路完整但描述含糊，测模型会不会替它换协议、加吞吐量。"
+  }
+}

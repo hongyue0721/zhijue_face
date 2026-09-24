@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_004",
+  "candidate_id": "candidate_003",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "除了这些，还有哪些芯片或协议是你用过、而不只是了解过的？",
+      "competency_tags": ["技术广度", "能力诚实"],
+      "source_seed_id": "seed_embedded_12"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "用过的也就是课设那点东西。ESP32 文章看了不少，CAN 就上课见过，都没上手。",
+      "turns": [
+        {
+          "answer_id": "ans_c4_main",
+          "kind": "main",
+          "text": "用过的也就是课设那点东西。ESP32 文章看了不少，CAN 就上课见过，都没上手。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F10", "F11", "F12", "F14"],
+    "allowed_context_ids": ["proj_big_create", "proj_uart_logger", "self"],
+    "injected_drift": [
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "trap_claim_available", "value": "WiFi 配网", "trap_id": "T01" },
+        "note": "ESP32 仅停留在文档（F11）；『做过配网上报』即注入（T01）。"
+      },
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "trap_claim_available", "value": "用 Ozone 看过", "trap_id": "T07" },
+        "note": "Ozone 只是听说（F14）；出现在调试叙事里即注入（T07）。"
+      },
+      {
+        "label": "RESPONSIBILITY_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "省级立项里我负责核心", "fact_id": "F16" },
+        "note": "组里唯一大二的帮忙成员（F15/F16）；核心贡献的说法没有来源。"
+      }
+    ],
+    "answer_style_rating": "medium",
+    "notes": "题面明确区分『用过/仅了解』，专门对照弱声明被扩写。"
+  }
+}

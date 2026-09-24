@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Unreleased — 2026-09-24｜研究分支 R2-R5：离线 harness、Knowledge 接入、确定性评估器与 pilot 数据集（VERIFIED，fixture 范围）
+
+- **R2 harness**：新增独立包 `research/src/zhijue_research/`（29 模块 / 约 5.0k 行）——配置与
+  prompt 指纹、数据集可见性投影（`GeneratorCaseView` 在类型上就拿不到 evaluator-only 字段）、
+  四方法 Strategy、scripted/fake/raising 三种模型驱动、runner 与 JSON-Schema 校验的 trace 写盘、
+  离线聚合与 CLI。默认全离线：未登记的 method_id 直接 `KeyError`，不静默编造输出。
+- **R3 Knowledge**：`CandidateKnowledge` 一 candidate 一 KB、事实级文档、allowlist 过滤、
+  `RetrievalObserver`（有序命中 + query/text hash，不落拼接 prompt）；`evidence.py` 显式换算
+  `candidate:fact` ↔ `claim_ref`（契约的 `claim_id` 不允许冒号）。业务侧
+  `OpenJiuwenKnowledgeGateway` 只新增默认 `None` 的 `embed_model` 注入位，生产路径逐字不变。
+  live embedding 探测真实读数：`Qwen/Qwen3-VL-Embedding-8B`、dim 4096、19 文档、4 次检索、
+  7.516s、recall@6 = 0.5 / 0.667 / 0.5 / 0.2，`cost_cny=null`（上游未回传计费字段）。
+- **计费守卫**：`embed_mode=live` 现在与 live chat 共用 `allow_paid_calls` 开关，未授权时
+  `build_provider()` 直接失败；探测脚本只在内存里翻开关，仓库配置仍是 fixture/false。
+- **R4 评估器**：5 个零模型检测器（新数字、职责上充、无据技术实体、跨项目泄漏、逐字归属）
+  + 8 类 DriftLabel + 双轨指标（raw 含被拒 cell，accepted 只算通过硬校验的产物），
+  分母为 0 的比率返回 `null` 而非 `0.0`。`ClaimEvidenceJudge`/`UtilityJudge` 只有端口与
+  fixture 实现，**未**接入任何付费评审模型。
+- **R5 数据集**：3 个 synthetic candidate × 20 事实（58 confirmed / 2 unconfirmed）× 19 trap
+  × 12 case，`pilot` split 带 `case_ids_sha256`，`dev/test` 留空待冻结；派生材料首行强制
+  `<!-- derived_from_confirmed_facts: true -->`，未确认事实禁入材料，trap 与漂移标签必须自洽。
+- **全链路自检**：48 cell（12 case × 4 方法）scripted dry run，trace schema 全通过；
+  漂移注入 run 里 `vanilla` raw/accepted 事实性 0.0 且照常放行，`evidence_bound` raw 0.0、
+  acceptance 0.0、拒绝原因 `UNBOUND_NUMERIC_FACT ×12`——证明检测器与硬校验真的会响，
+  干净臂 1.0 也不是死指标。
+- **抓到两个度量口径 bug 并修复**：raw 轨曾把整个 JSON 信封送进检测器（字段名被判成技术实体
+  注入、`"1.0.0"` 被判成编造指标，四臂事实性同时归 0）；accepted 轨曾把 item 整包当 segment
+  传给逐字回查（每个合法 M3 segment 都被判 `EVIDENCE_MISATTRIBUTION`）。两者都不会让测试报错，
+  只会让结论静默失真；新增 `tests/test_analysis_join.py` 5 项，改回旧实现即 2 failed。
+- `CandidateFact` 增加字段校验：`polarity` 值域、`confirmed` 必须是 bool（位置参数写错时
+  当场 `TypeError`），避免未确认事实被静默索引进 KB。
+- 文档：`research/README.md` 补齐本轮实际跑过的命令形态（含 `PYTHONPATH`），
+  `research/DESIGN.md` 阶段表改为实测状态，`process.md` 新增 §63-§66。
+- 测试：`cd research && pytest tests -q` **84 passed**，Ruff 与格式检查通过；后端仍
+  **363 passed / 2 deselected**，唯一失败与 R0/R1 同源（`tests/test_doctor.py` 要求本机私密
+  `.env.local`，未用占位密钥伪造）。
+- HTTP 字段、错误码、SSE 事件、OpenAPI、数据库 Schema、迁移与依赖声明无变化；
+  正式实验（live 模型 × 四方法 × 全 split）`NOT_RUN`，等负责人批准费用与数据规模。
+
 ## Unreleased — 2026-09-24｜研究分支 R1：统一模型 transport、只读观察者与结构化校验分类（VERIFIED，本地 + live 链路）
 
 - 把 chat/completions 的 HTTP/SSE transport 从 `OpenAICompatibleAnswerAnalyzer` 提为唯一公共组件

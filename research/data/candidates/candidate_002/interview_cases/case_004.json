@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_004",
+  "candidate_id": "candidate_002",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "除了课设和实验室任务，你自己还会折腾什么？",
+      "competency_tags": ["自驱力", "技术兴趣", "表达诚实"],
+      "source_seed_id": "seed_embedded_08"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "自己做过oled那个小屏，I2C、SPI都试过一遍，刷图速度差挺多的，具体差多少没测。",
+      "turns": [
+        {
+          "answer_id": "ans_c4_main",
+          "kind": "main",
+          "text": "自己做过oled那个小屏，I2C、SPI都试过一遍，刷图速度差挺多的，具体差多少没测。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F15", "F16", "F18", "F19"],
+    "allowed_context_ids": ["proj_can_bootloader", "proj_esp32_gateway", "proj_oled_display", "self"],
+    "injected_drift": [
+      {
+        "label": "OUTCOME_INFLATION",
+        "probe": { "kind": "context_absent", "value": "提升了 3 倍", "trap_id": "T05" },
+        "note": "真值只有『明显快、没留实测数据』（F18）；补出倍数即结果上充（T05）。"
+      },
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "context_absent", "value": "项目里用 FreeRTOS", "fact_id": "F19" },
+        "note": "FreeRTOS 只到课堂实验（F19）；写进自驱项目叙事即扩大解释。"
+      }
+    ],
+    "answer_style_rating": "medium",
+    "notes": "『没测』是诚实信号，最容易被模型替换成具体倍数。"
+  }
+}

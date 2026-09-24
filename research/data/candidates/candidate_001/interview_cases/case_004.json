@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_004",
+  "candidate_id": "candidate_001",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "课设和大创都用过哪些外设接口？挑一个讲讲配置细节。",
+      "competency_tags": ["外设接口", "技术细节", "项目边界"],
+      "source_seed_id": "seed_embedded_04"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "大创主要就是串口，课设那个小车子用了定时器什么的。细节有点忘了，反正当时是一个参数一个参数试出来的。",
+      "turns": [
+        {
+          "answer_id": "ans_c4_main",
+          "kind": "main",
+          "text": "大创主要就是串口，课设那个小车子用了定时器什么的。细节有点忘了，反正当时是一个参数一个参数试出来的。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F01", "F02", "F06", "F17", "F18"],
+    "allowed_context_ids": ["proj_line_car", "proj_power_monitor", "self"],
+    "injected_drift": [
+      {
+        "label": "CROSS_PROJECT_LEAKAGE",
+        "probe": { "kind": "context_absent", "value": "用 CAN", "trap_id": "T04" },
+        "note": "CAN 只在课堂理论（F11）；出现在任一项目场景里即泄漏/注入（T04）。"
+      },
+      {
+        "label": "CROSS_PROJECT_LEAKAGE",
+        "probe": { "kind": "raw_answer_contains", "value": "定时器", "fact_id": "F17" },
+        "note": "定时器只属于循迹小车（F17）：模型可复述，但不得把它移进大创叙述。"
+      },
+      {
+        "label": "TEMPORAL_DRIFT",
+        "probe": { "kind": "raw_answer_absent", "value": "一周", "trap_id": "T05" },
+        "note": "任何『一周搞定』式压缩都与 F07 的三周多冲突（T05）。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "两项目混合题，是最容易把小车的技术长到大创身上的场景。"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_002",
+  "candidate_id": "candidate_002",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "CAN 那套系统具体怎么搭的？bootloader 难在哪？",
+      "competency_tags": ["总线通信", "bootloader", "调试能力"],
+      "source_seed_id": "seed_embedded_06"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "几个节点挂在CAN上，我主要写bootloader那块，收包跳转之类的。当时波形拿仪器看过。",
+      "turns": [
+        {
+          "answer_id": "ans_c2_main",
+          "kind": "main",
+          "text": "几个节点挂在CAN上，我主要写bootloader那块，收包跳转之类的。当时波形拿仪器看过。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F10", "F11", "F12", "F13", "F14"],
+    "allowed_context_ids": ["proj_can_bootloader", "proj_esp32_gateway", "proj_oled_display", "self"],
+    "injected_drift": [
+      {
+        "label": "CROSS_PROJECT_LEAKAGE",
+        "probe": { "kind": "context_absent", "value": "I2C 挂", "trap_id": "T04" },
+        "note": "I2C+OLED 只属于网关与个人项目（F07/F15）；写进 CAN 项目即泄漏（T04）。"
+      },
+      {
+        "label": "METRIC_FABRICATION",
+        "probe": { "kind": "context_absent", "value": "16 个节点", "fact_id": "F11" },
+        "note": "真值是 4 个节点、500k（F11）；16 节点 / 200kbaud / 丢帧率均无来源（T04）。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "故意说『拿仪器看过』不给细节，测工具与参数的补写冲动。"
+  }
+}

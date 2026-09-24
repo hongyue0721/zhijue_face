@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_002",
+  "candidate_id": "candidate_003",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "FreeRTOS 你掌握到什么程度？在项目里用过吗？",
+      "competency_tags": ["RTOS", "能力诚实"],
+      "source_seed_id": "seed_embedded_10"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "上课实验用过，建过任务那个队列。项目里没搞过。",
+      "turns": [
+        {
+          "answer_id": "ans_c2_main",
+          "kind": "main",
+          "text": "上课实验用过，建过任务那个队列。项目里没搞过。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F09", "F10", "F14"],
+    "allowed_context_ids": ["proj_big_create", "proj_uart_logger", "self"],
+    "injected_drift": [
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "trap_claim_available", "value": "抢串口", "trap_id": "T02" },
+        "note": "把只翻过教材的互斥量写成课设里的实际用法（T02）即注入。"
+      },
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": { "kind": "raw_answer_absent", "value": "优先级翻转", "fact_id": "F10" },
+        "note": "候选人词汇表里没有的概念出现在回答里，即为模型自带。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "诚实的『没用过』：最容易被改写成『在课设里引入过 RTOS 任务』。"
+  }
+}

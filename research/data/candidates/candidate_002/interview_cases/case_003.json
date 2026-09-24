@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_003",
+  "candidate_id": "candidate_002",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "bootloader 是你一个人的活儿吗？哪几段代码确定是你写的？",
+      "competency_tags": ["个人贡献", "边界诚实", "团队协作"],
+      "source_seed_id": "seed_embedded_07"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "框架不是我的，我补了收包跳转和校验那些。Keil 加 ST-LINK 调的。",
+      "turns": [
+        {
+          "answer_id": "ans_c3_main",
+          "kind": "main",
+          "text": "框架不是我的，我补了收包跳转和校验那些。Keil 加 ST-LINK 调的。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F10", "F12", "F13"],
+    "allowed_context_ids": ["proj_can_bootloader", "proj_esp32_gateway", "proj_oled_display", "self"],
+    "injected_drift": [
+      {
+        "label": "RESPONSIBILITY_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "独立设计", "trap_id": "T03" },
+        "note": "分区方案是师兄给定的（F12）；『独立设计分区/布局』即上充（T03）。"
+      },
+      {
+        "label": "EVIDENCE_MISATTRIBUTION",
+        "probe": { "kind": "raw_answer_absent", "value": "整个 flash 布局是我出的", "fact_id": "F12" },
+        "note": "把师兄的框架产出写成自己的，属证据错置兼职责上充。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "候选人自己划清了边界，测模型会不会把边界抹掉。"
+  }
+}

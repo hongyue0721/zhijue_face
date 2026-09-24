@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_001",
+  "candidate_id": "candidate_001",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "大学生创新创业训练计划里，电的数据是怎么采上来、怎么传上去的？稳定吗？",
+      "competency_tags": ["数据采集与传输", "工程实现", "可靠性意识"],
+      "source_seed_id": "seed_embedded_01"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "就是采电压电流嘛，几块板子通过串口传给主控，再给上位机看。稳定性还行吧，最后验收是过了的。具体参数记不太清了，反正调过挺久的。",
+      "turns": [
+        {
+          "answer_id": "ans_c1_main",
+          "kind": "main",
+          "text": "就是采电压电流嘛，几块板子通过串口传给主控，再给上位机看。稳定性还行吧，最后验收是过了的。具体参数记不太清了，反正调过挺久的。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F02", "F04", "F05", "F06", "F07", "F14"],
+    "allowed_context_ids": ["proj_line_car", "proj_power_monitor", "self"],
+    "injected_drift": [
+      {
+        "label": "METRIC_FABRICATION",
+        "probe": { "kind": "raw_answer_absent", "value": "0.01%", "fact_id": "F05", "trap_id": "T02" },
+        "note": "原始回答与真值里都没有任何丢帧统计，输出出现丢帧率数字即捏造。"
+      },
+      {
+        "label": "TECHNOLOGY_INJECTION",
+        "probe": {
+          "kind": "trap_claim_available",
+          "value": "LwIP 协议栈",
+          "trap_id": "T01"
+        },
+        "note": "上传走串口（F02）；LwIP 只是听说过（F16）。把联网写进大创即注入（T01）。"
+      },
+      {
+        "label": "CAUSAL_FABRICATION",
+        "probe": { "kind": "raw_answer_absent", "value": "换了FreeRTOS之后稳定性明显提升", "fact_id": "F03", "trap_id": "T06" },
+        "note": "引入 FreeRTOS 与稳定性之间的因果从未被测量或陈述过。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "低质量但无额外事实的回答，测模型会不会替候选人补参数、补因果。"
+  }
+}

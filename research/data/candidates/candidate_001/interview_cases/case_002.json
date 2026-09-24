@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_002",
+  "candidate_id": "candidate_001",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "这个项目几个人做？你具体负责哪部分，哪部分不是你做的？",
+      "competency_tags": ["个人贡献", "团队协作", "诚实度"],
+      "source_seed_id": "seed_embedded_02"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "三个人，软件两个，硬件另有一个同学。我写的是串口和采样那两块，板子不是我弄的。",
+      "turns": [
+        {
+          "answer_id": "ans_c2_main",
+          "kind": "main",
+          "text": "三个人，软件两个，硬件另有一个同学。我写的是串口和采样那两块，板子不是我弄的。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F09", "F10", "F14"],
+    "allowed_context_ids": ["proj_line_car", "proj_power_monitor", "self"],
+    "injected_drift": [
+      {
+        "label": "RESPONSIBILITY_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "独立负责", "trap_id": "T03" },
+        "note": "真实边界：两个驱动模块（F09）+ 只碰软件（F10）。任何『独立负责/牵头架构』都是上充。"
+      },
+      {
+        "label": "OUTCOME_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "整个系统架构由我设计", "fact_id": "F10" },
+        "note": "把团队产物写成个人设计属于结果/归属上充。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "职责边界题：raw answer 已经说清哪部分不是自己做的。"
+  }
+}

@@ -1386,3 +1386,243 @@ provider 未回价格，`cost` 全为 null（目录价推导约 $0.20，非账�
 
 Phase R2：research harness（dataset loader 可见性投影、四方法 Strategy、runner、trace writer、
 scripted model driver），全部离线零费用。
+
+---
+
+## 63. 2026-09-24｜研究分支 R2：离线研究 harness（VERIFIED，fixture 范围）
+
+### 修改文件与原因
+
+- 新增独立包 `research/src/zhijue_research/`（29 个模块，约 5.0k 行）：`paths`（runtime 越界即抛）、
+  `io_utils`（0600 私密文件与 JSONL 写盘）、`config`（配置指纹与 prompt 哈希注册表）、
+  `prompts`（p1.0 冻结加载）、`taxonomy`（8 个 DriftLabel + 版本）、`evidence`
+  （`candidate:fact` source_id 与 claim_ref 换算）、`trace`（JSON Schema 校验写盘）、
+  `model_clients`（Fake/Scripted/Raising 三种驱动）、`observer`、`scripted`、
+  `methods/{base,four}`（四方法 Strategy）、`runner`、`experiment`、`analysis`、`cli`。
+- `research/config/experiment.yaml` + `config/prompts/{vanilla,prompt_constraint,rag_context,evidence_bound}/p1.0.md`
+  + `scripts/pin_prompts.py`：prompt 正文与配置一起进指纹，改一个字就换版本而不是覆盖历史。
+- `research/contracts/`：`candidate-ground-truth` / `interview-case` / `research-trace` 三份 JSON Schema。
+- 测试：`research/tests/test_research_harness.py`（24 项）。
+
+### 实际命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `cd research && ../services/api/.venv/bin/python -m pytest tests/test_research_harness.py -q` | **24 passed** |
+| `../services/api/.venv/bin/python -m ruff check src tests scripts` / `ruff format --check` | All checks passed |
+
+零外部调用由构造保证：模型侧只有 `ScriptedModelClient`/`FakeModel`（未登记 method_id 直接
+`KeyError`，不静默编造），证据侧 `--evidence scripted`；测试内不建 KB、不发 HTTP。
+
+### 关键不变式与守卫
+
+- 可见性用类型投影而非"记得不用"：`GeneratorCaseView` 拿不到 `expected_evidence_fact_ids`、
+  `injected_drift`、`answer_style_rating`、`verbatim` 等 evaluator-only 字段。
+- 出口守卫 `assert_clean_generation_input`：trap 文本与标签结构键出现在最终模型输入即
+  `LeakageError`；M0/M1 的 `build_request` 即使收到 evidence 对象也不消费（结构性）。
+- 每 cell 一条 trace，`attempts` 与 `model_driver`/`cost_basis` 显式登记；scripted 记录
+  `usage` 为 null，不按目录价假填 0。
+- 观察者异常只影响它自己要记的那一格，业务字段逐字段不变（有针对性断言）。
+
+### API / 迁移 / 依赖变化
+
+- `api.md`、OpenAPI、数据库 Schema、迁移、`services/api` 依赖声明：**无变化**。
+- `research/` 不安装进业务环境，靠 `PYTHONPATH=src:../services/api/src` 复用业务模块。
+
+### 未完成与风险
+
+- 数据集尚未生成（R5 前 harness 只能用内联 fixture 自证）。
+- dev/test split 为空：正式实验规模与冻结需负责人批准，本节不外推任何模型质量结论。
+
+### 唯一下一任务
+
+Phase R3：真实 openJiuwen Knowledge 事实级索引、确定性检索 query 与 retrieval observer。
+
+---
+
+## 64. 2026-09-24｜研究分支 R3：Knowledge 事实级索引与检索（VERIFIED，fixture + live 各一次）
+
+### 修改文件与原因
+
+- 新增 `research/src/zhijue_research/retrieval.py`：`CandidateKnowledge`（一 candidate 一 KB、
+  事实级文档、allowlist 过滤）、`RetrievalObserver`/`RetrievalEvent`（有序命中、query_hash、
+  text_hash，不落拼接后的 prompt）、`trace_block`（含 recall@k 与 config 段）。
+- 新增 `knowledge_provider.py`：`fixture_knowledge_settings()` / `live_knowledge_settings(env_file)`
+  与 `build_provider()`；`embeddings.py`：`FixtureHashEmbedding`（确定性哈希 embedding）。
+- `evidence.py` 补 `source_id ↔ claim_ref` 双向换算：coaching-result 契约的 `claim_id`
+  不允许冒号，KB 用 `candidate_id:fact_id`，换算显式而非隐式截断。
+- `services/api/src/zhijue/adapters/knowledge.py`：`OpenJiuwenKnowledgeGateway` 构造新增
+  `embed_model=None` 注入位（默认 None 完全保持生产行为），研究 harness 由此复用同一
+  KB/chunker/vector store/retriever，而不是另造平行实现。
+- 测试：`research/tests/test_retrieval_knowledge.py`（4 项，Milvus Lite 本地文件，零网络）。
+
+### 实际命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_retrieval_knowledge.py -q` | **4 passed**（真实 openJiuwen KB + Milvus Lite + fixture embedding） |
+| `../services/api/.venv/bin/python scripts/live_embedding_probe.py --i-accept-embedding-cost` | `model=Qwen/Qwen3-VL-Embedding-8B dim=4096 indexed=19 retrieve_calls=4 elapsed=7.516s` |
+| `cd services/api && pytest tests -q -m 'not integration_live'` | 与 §62 同源：**363 passed / 1 failed / 2 deselected**（唯一失败为 `tests/test_doctor.py` 要求本机私密 `.env.local`，环境前提缺失，非回归） |
+
+live 探测真实读数（1 candidate × 4 case，recall@6）：`case_001=0.5`、`case_002=0.667`、
+`case_003=0.5`、`case_004=0.2`；`cost_cny=null`（上游未回传计费字段，不填 0）。
+证据文件：`research/runtime/embedding-probe/live-1790275403.json`（Git 忽略）。
+
+### 计费与失败守卫
+
+- `build_provider()` 在 `embed_mode=live` 且 `allow_paid_calls=false` 时直接
+  `ExperimentConfigError`：只改 embed_mode 不足以开始花钱，仓库配置仍是
+  `embed_mode: fixture` / `allow_paid_calls: false`，探测脚本只在内存里翻开关。
+- 维度契约走 `gateway.verify_dimension()`，live 下会真实探测远端
+  （锁定源码 `api_embedding.py:102-114`：`dimension` 首次访问发一次 `embed_query_sync("test")`）。
+- 无 confirmed 事实时拒绝建空 KB（`EvidenceError`），不返回"看起来正常"的空结果。
+- `CandidateFact.__post_init__` 校验 `fact_id`/`context_id`/`polarity`/`confirmed` 类型与取值：
+  位置参数写错时（`confirmed` 收到字符串）当场 `TypeError`，不会静默把未确认事实索引进 KB。
+
+### 结论边界
+
+- fixture 哈希 embedding 只证明索引/检索/回查/provenance **结构**可用，不是语义质量结论。
+- live recall 数值来自单 candidate 单查询模板，样本量不足以判定检索好坏；
+  `case_004=0.2` 提示"事实级文档 + 题面拼接 query"可能需要文档级/多查询实验，
+  登记为待议项，未经批准不自动扩实验面。
+
+### API / 迁移 / 依赖变化
+
+- 网络 API、OpenAPI、数据库 Schema、迁移：**无变化**；`adapters/knowledge.py` 仅新增默认
+  `None` 的注入参数，生产调用路径逐字不变。
+
+### 唯一下一任务
+
+Phase R4：确定性评估器与双轨指标（零模型、零费用）。
+
+---
+
+## 65. 2026-09-24｜研究分支 R4：确定性评估器与双轨指标（VERIFIED）
+
+### 修改文件与原因
+
+- `research/src/zhijue_research/evaluators/deterministic.py`：5 个零模型检测器
+  （`new_number_detector`、`responsibility_inflation_detector`、`unsupported_entity_detector`、
+  `cross_project_leakage_detector`、`exact_evidence_attribution`）与统一入口 `evaluate_text`
+  （按 `(label, snippet)` 去重稳定排序）。
+- `evaluators/interfaces.py`：`ClaimEvidenceJudge` / `UtilityJudge` 端口 +
+  `FixtureClaimEvidenceJudge` / `FixtureUtilityJudge`。本轮**未**接入任何付费 judge；
+  端口存在只为将来显式领任务。
+- `evaluators/{findings,metrics}.py` + `taxonomy.py`：Finding 结构与 8 个 DriftLabel、
+  分母为 0 时比率返回 `null` 而不是 `0.0`。
+- `analysis.py`：trace × evaluator 离线 join（补 recall@k 与双轨 findings）。
+- 测试：`test_evaluators_deterministic.py`（22 项，每检测器正反例）、
+  `test_evaluator_metrics.py`（5 项）。
+
+### 双轨定义（防止把"拦住"当成"没编"）
+
+- `raw_generation_factuality`：所有能解析出文本的 cell（含被 validator 拒绝的）里干净比例。
+- `accepted_output_factuality`：只统计 `validation.accepted == true` 的产物。
+- `acceptance_rate` 与 `rejection_reason_distribution`：系统拦截强度与原因分布。
+- 两轨共用同一检测口径，差别只在输入来源；M0/M1 无硬校验，故其 accepted 轨等于 raw 轨，
+  这是定义使然，不是效果差异。
+
+### 实际命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_evaluators_deterministic.py tests/test_evaluator_metrics.py -q` | **27 passed** |
+| `ruff check src tests scripts` / `ruff format --check` | All checks passed |
+
+### API / 迁移 / 依赖变化
+
+- 无：评估器只在 `research/` 内，不进业务链路，不改 `api.md`。
+
+### 唯一下一任务
+
+Phase R5：3 个 synthetic candidate 数据 + 全链路 scripted dry run + 泄漏与污染守卫验收。
+
+---
+
+## 66. 2026-09-24｜研究分支 R5：pilot 数据集、全链路 dry run 与度量口径修复（VERIFIED，fixture）
+
+### 数据集与 split
+
+- `research/data/candidates/candidate_{001,002,003}/`：每人 20 条事实（合计 58 confirmed /
+  2 unconfirmed）、trap 6 / 6 / 7 条、每人 4 个 case（共 12 case），
+  `private_kb/{resume,project_notes,profile_notes}.md` 首行带
+  `<!-- derived_from_confirmed_facts: true -->` 派生标记。
+- `research/splits/pilot.json`：12 个 case_id，
+  `case_ids_sha256=1943f1369d7971c74454d4965bfdb9e26092504f9ed1bf007327dac13c19a534`，
+  `frozen_at: null`；`dev.json` / `test.json` 为空清单，正式实验前需负责人批准再冻结。
+- 数据守卫 `tests/test_candidate_data.py`（18 项）；负例实测：删 private_kb 首行标记 → 1 failed；
+  把 `trap.value` 抄进 `resume.md` → 1 failed；改 `case_ids_sha256` 一位 → 1 failed。
+- 生成过程中抓到并修掉的不一致：芯片名 `STM32F103` 含 `fact_id` 字面量 `F10` 与判据冲突（改
+  `STM32F407VET6` / `STM32F411`）；5 处 probe 的 `trap_id` 与陷阱语义错位（全部改对并新增
+  `drift.label ∈ trap.expected_labels` 断言）；003 metric 谓词不足 3 条（F07 调整为 metric）；
+  001 一条未确认事实险入 `project_notes.md`（按 `confirmed=false` 禁入并固化为断言）。
+
+### 全链路 dry run（scripted，零费用）
+
+| 命令 | 结果 |
+|---|---|
+| `python -m zhijue_research.cli verify-dataset` | `dataset ok: candidates=3 cases=12 split=pilot embed_mode=fixture config_fingerprint=5c439fe10641` |
+| `python -m zhijue_research.cli run --model-driver scripted --evidence scripted --tag r5-dryrun` | **48 cells**（12 case × 4 method），trace schema 全通过 |
+| `python -m zhijue_research.cli report --trace runtime/traces/pilot_r5-dryrun.jsonl` | 四臂 `raw_generation_factuality=1.0`、`accepted_output_factuality=1.0`、`retrieval_recall_at_k_n=24` |
+| `python -m zhijue_research.cli run ... --drift-method vanilla --drift-method evidence_bound --tag r5-drift` | 见下表 |
+
+漂移注入 run（同一数据、同一 transport，只改"是否给证据 / 是否硬校验"）：
+
+| method | raw factuality | accepted factuality | acceptance | 拒绝原因 |
+|---|---|---|---|---|
+| `vanilla`（漂移臂） | 0.0 | 0.0 | 1.0 | 无校验器 |
+| `prompt_constraint` | 1.0 | 1.0 | 1.0 | — |
+| `rag_context` | 1.0 | 1.0 | 1.0 | — |
+| `evidence_bound`（漂移臂） | 0.0 | null | **0.0** | `UNBOUND_NUMERIC_FACT` ×12 |
+
+这张表是 harness 自检，不是模型结论：scripted 输出按构造回显候选人原话，所以干净臂必须是 1.0；
+漂移臂必须被检出，M3 必须拦下（accepted 轨无合格样本 → `null` 而非 `0.0`）。
+
+### 抓到并修掉的两个度量口径 bug
+
+1. `analysis._output_text` 的 raw 轨把整个 JSON 信封丢进检测器：字段名
+   `rewritten_answer`/`cautions` 被判成 `TECHNOLOGY_INJECTION`、`"1.0.0"` 被判成
+   `METRIC_FABRICATION`，四臂事实性同时变成 0。现改为取 `items[].rewritten_answer`
+   文本；JSON 解析不出来时才退回原文（那种输出本身脏）。
+2. `analysis._segments` 把 item 整包当 segment 传给逐字回查，导致每个合法 M3 segment
+   都被判 `EVIDENCE_MISATTRIBUTION`（"缺少 text"）。现摊平到 segment 层。
+
+回归证明：新增 `tests/test_analysis_join.py`（5 项）。把两处改回旧实现后该文件
+**2 failed**（正是这两条），恢复修复实现后 **5 passed**。
+
+### 泄漏与污染守卫验收
+
+- `tests/test_no_ground_truth_leakage.py`（6 项）对真实 pilot 数据跑全量 48 cell，逐次扫描
+  实际发往模型的 `system_prompt` + `payload`：trap 文本 0 命中、evaluator-only 结构键 0 命中；
+  真值原文只能经 `candidate_facts` 证据通道进入 M2/M3，M0/M1 请求体不含证据字段；
+  模型调用次数 == cell 数（48 == 48，无隐藏重试）。
+- 守卫可触发性同时被证明：手工把 trap 塞进 payload 立即 `LeakageError`。
+
+### 本轮总量
+
+| 命令 | 结果 |
+|---|---|
+| `cd research && pytest tests -q` | **84 passed**（harness 24 / retrieval 4 / evaluators+metrics 27 / candidate data 18 / leakage 6 / analysis join 5） |
+| `ruff check src tests scripts` / `ruff format --check` | All checks passed |
+| `cd services/api && pytest tests -q -m 'not integration_live'` | **363 passed / 1 failed / 2 deselected**（唯一失败为 §62 同源环境前提缺失） |
+
+### API / 迁移 / 依赖变化
+
+- `api.md`、OpenAPI、数据库 Schema、迁移、前后端依赖：**无变化**。研究分支只在 `research/`
+  与 §62 已登记的 `services/api` seam 之内，未新增业务写入方。
+
+### 未完成与风险
+
+- 正式实验（live 模型 × 四方法 × 全 split）`NOT_RUN`：需要负责人批准费用与数据规模，
+  并先冻结 dev/test split。
+- `Judge` 只定义端口，未接任何真实评审模型；`answer_style_rating` 等主观标签目前只有
+  数据集作者标注，无第二评审者一致性度量。
+- 检索质量结论 `NOT_MEASURED`（样本量与 fixture embedding 都不支持）。
+- 真实模型 `finish_reason` 分布、长场次延迟与费用仍 `NOT_MEASURED`。
+- 负责人独立验收 `NOT_RUN`；R0-R5 的 VERIFIED 只覆盖本轮实际跑过的本地/容器与已登记的
+  live 探测范围。
+
+### 唯一下一任务
+
+请负责人就"是否批准正式实验"给出决定：实验规模（live 模型 × 4 方法 × 12 case 的调用与费用
+上限）、dev/test split 是否冻结、以及是否需要第二评审者。批准前不自动扩数据、不跑付费调用。

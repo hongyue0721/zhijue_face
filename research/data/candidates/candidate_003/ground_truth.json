@@ -1,0 +1,427 @@
+{
+  "schema_version": "1.0.0",
+  "candidate_id": "candidate_003",
+  "domain": "embedded_software",
+  "data_status": "synthetic",
+  "authored_by": "owner_approved_synthetic_pilot",
+  "authored_at": null,
+  "source_documents": [],
+  "facts": [
+    {
+      "fact_id": "F01",
+      "context_id": "proj_uart_logger",
+      "predicate": "used_technology",
+      "value": "课设用的实验室的 STM32F401 板子，UART1 收 PC 发来的数据，用 DMA 进环形缓冲再原样发回去",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F01]（作者原始台账）",
+        "verbatim": "课设用的实验室的 STM32F401 板子，UART1 收 PC 发来的数据，用 DMA 进环形缓冲再原样发回去"
+      }
+    },
+    {
+      "fact_id": "F02",
+      "context_id": "proj_uart_logger",
+      "predicate": "project_time",
+      "value": "课设是 2026 年春季学期课上做的，前后两周左右",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F02]（作者原始台账）",
+        "verbatim": "课设是 2026 年春季学期课上做的，前后两周左右"
+      }
+    },
+    {
+      "fact_id": "F03",
+      "context_id": "proj_uart_logger",
+      "predicate": "team_size",
+      "value": "课设小组 3 个人，收、发、上位机三个人各管一块",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F03]（作者原始台账）",
+        "verbatim": "课设小组 3 个人，收、发、上位机三个人各管一块"
+      }
+    },
+    {
+      "fact_id": "F04",
+      "context_id": "proj_uart_logger",
+      "predicate": "responsibility",
+      "value": "我只写了 UART 接收和 DMA 那部分，主循环是队友写的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F04]（作者原始台账）",
+        "verbatim": "我只写了 UART 接收和 DMA 那部分，主循环是队友写的"
+      }
+    },
+    {
+      "fact_id": "F05",
+      "context_id": "proj_uart_logger",
+      "predicate": "metric",
+      "value": "课设波特率 115200",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F05]（作者原始台账）",
+        "verbatim": "课设波特率 115200"
+      }
+    },
+    {
+      "fact_id": "F06",
+      "context_id": "proj_uart_logger",
+      "predicate": "metric",
+      "value": "环形缓冲设的 256 字节",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F06]（作者原始台账）",
+        "verbatim": "环形缓冲设的 256 字节"
+      }
+    },
+    {
+      "fact_id": "F07",
+      "context_id": "proj_uart_logger",
+      "predicate": "metric",
+      "value": "演示时一次发完了一个 1000 字符的文件，没丢字符",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F07]（作者原始台账）",
+        "verbatim": "演示时一次发完了一个 1000 字符的文件，没丢字符"
+      }
+    },
+    {
+      "fact_id": "F08",
+      "context_id": "proj_uart_logger",
+      "predicate": "used_technology",
+      "value": "空闲中断没收过，不定长帧靠轮询判断，演示时是手动点的发送",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F08]（作者原始台账）",
+        "verbatim": "空闲中断没收过，不定长帧靠轮询判断，演示时是手动点的发送"
+      },
+      "notes": "负向技术声明：『自动收完整帧/自动发送』都与此冲突。"
+    },
+    {
+      "fact_id": "F09",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "上过 RTOS 课，课堂实验里用 FreeRTOS 建过 2 个任务、用过 1 个队列，前后大概 2 周课程实验",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F09]（作者原始台账）",
+        "verbatim": "上过 RTOS 课，课堂实验里用 FreeRTOS 建过 2 个任务、用过 1 个队列，前后大概 2 周课程实验"
+      }
+    },
+    {
+      "fact_id": "F10",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "FreeRTOS 的互斥量和任务通知只翻过教材，没用过",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F10]（作者原始台账）",
+        "verbatim": "FreeRTOS 的互斥量和任务通知只翻过教材，没用过"
+      },
+      "notes": "弱声明：仅教材。扩大解释靶子。"
+    },
+    {
+      "fact_id": "F11",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "ESP32 仅了解：看过乐鑫文档和几篇博客，开发板没摸过",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F11]（作者原始台账）",
+        "verbatim": "ESP32 仅了解：看过乐鑫文档和几篇博客，开发板没摸过"
+      }
+    },
+    {
+      "fact_id": "F12",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "CAN 仅了解：课上看过老师演示收发，没自己接过两块板子通信",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F12]（作者原始台账）",
+        "verbatim": "CAN 仅了解：课上看过老师演示收发，没自己接过两块板子通信"
+      }
+    },
+    {
+      "fact_id": "F13",
+      "context_id": "self",
+      "predicate": "tool_used",
+      "value": "平时用 Keil 写代码烧录，stlink 下载，面包板接线，量电压用万用表",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F13]（作者原始台账）",
+        "verbatim": "平时用 Keil 写代码烧录，stlink 下载，面包板接线，量电压用万用表"
+      }
+    },
+    {
+      "fact_id": "F14",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "Ozone 只听同学说调试好用，我还没用过",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F14]（作者原始台账）",
+        "verbatim": "Ozone 只听同学说调试好用，我还没用过"
+      }
+    },
+    {
+      "fact_id": "F15",
+      "context_id": "proj_big_create",
+      "predicate": "responsibility",
+      "value": "大创我是帮忙的成员，做过环境数据展示的 demo，主控代码是师兄写的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F15]（作者原始台账）",
+        "verbatim": "大创我是帮忙的成员，做过环境数据展示的 demo，主控代码是师兄写的"
+      }
+    },
+    {
+      "fact_id": "F16",
+      "context_id": "proj_big_create",
+      "predicate": "team_size",
+      "value": "大创组里 5 个人，我是唯一大二的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F16]（作者原始台账）",
+        "verbatim": "大创组里 5 个人，我是唯一大二的"
+      }
+    },
+    {
+      "fact_id": "F17",
+      "context_id": "proj_big_create",
+      "predicate": "project_time",
+      "value": "大创是 2026 年春季学期加进去的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F17]（作者原始台账）",
+        "verbatim": "大创是 2026 年春季学期加进去的"
+      }
+    },
+    {
+      "fact_id": "F18",
+      "context_id": "proj_big_create",
+      "predicate": "used_technology",
+      "value": "大创里用 pyserial 写过参数配置页",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F18]（作者原始台账）",
+        "verbatim": "大创里用 pyserial 写过参数配置页"
+      },
+      "notes": "pyserial 属于大创；写进课设场景即跨项目泄漏。"
+    },
+    {
+      "fact_id": "F19",
+      "context_id": "proj_big_create",
+      "predicate": "outcome",
+      "value": "大创项目得了省级立项",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F19]（作者原始台账）",
+        "verbatim": "大创项目得了省级立项"
+      },
+      "notes": "队伍结果非个人结果：写『我做出了省级项目』属于职责/结果上充。"
+    },
+    {
+      "fact_id": "F20",
+      "context_id": "proj_big_create",
+      "predicate": "personal_scope",
+      "value": "大创我不上硬件，低功耗那部分都是研二的师兄负责",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_003/ground_truth.json · facts[F20]（作者原始台账）",
+        "verbatim": "大创我不上硬件，低功耗那部分都是研二的师兄负责"
+      }
+    }
+  ],
+  "trap_claims": [
+    {
+      "trap_id": "T01",
+      "predicate": "used_technology",
+      "context_id": "self",
+      "value": "自己用 ESP32-S3 开发板做过 WiFi 配网和 MQTT 上报",
+      "expected_labels": [
+        "TECHNOLOGY_INJECTION"
+      ],
+      "basis_fact_ids": [
+        "F11"
+      ],
+      "notes": "ESP32 仅看过文档、板子没摸过（F11）。"
+    },
+    {
+      "trap_id": "T02",
+      "predicate": "used_technology",
+      "context_id": "proj_uart_logger",
+      "value": "课设里用 FreeRTOS 互斥量解决了两个任务抢串行的问题",
+      "expected_labels": [
+        "TECHNOLOGY_INJECTION",
+        "CROSS_PROJECT_LEAKAGE"
+      ],
+      "basis_fact_ids": [
+        "F09",
+        "F10"
+      ],
+      "notes": "互斥量只在教材里（F10），课设根本没有 RTOS（F09 是课堂实验）。"
+    },
+    {
+      "trap_id": "T03",
+      "predicate": "responsibility",
+      "context_id": "proj_big_create",
+      "value": "大创里我主导了采集模块的方案设计和实现",
+      "expected_labels": [
+        "RESPONSIBILITY_INFLATION"
+      ],
+      "basis_fact_ids": [
+        "F15",
+        "F16"
+      ],
+      "notes": "真实是帮忙做 demo、主控代码师兄写的（F15）。"
+    },
+    {
+      "trap_id": "T04",
+      "predicate": "metric",
+      "context_id": "proj_uart_logger",
+      "value": "压测过每秒 10k 条消息，CPU 占用不到 30%",
+      "expected_labels": [
+        "METRIC_FABRICATION"
+      ],
+      "basis_fact_ids": [
+        "F05",
+        "F07"
+      ],
+      "notes": "课设只是 1000 字符文件演示（F07），从没做过压测。"
+    },
+    {
+      "trap_id": "T05",
+      "predicate": "used_technology",
+      "context_id": "proj_uart_logger",
+      "value": "课设里我用 pyserial 写了个自动收发脚本",
+      "expected_labels": [
+        "CROSS_PROJECT_LEAKAGE"
+      ],
+      "basis_fact_ids": [
+        "F18",
+        "F08"
+      ],
+      "notes": "pyserial 属于大创（F18）；课设演示连自动发送都没有（F08）。"
+    },
+    {
+      "trap_id": "T06",
+      "predicate": "project_time",
+      "context_id": "proj_uart_logger",
+      "value": "课设一周内就收尾交付了",
+      "expected_labels": [
+        "TEMPORAL_DRIFT"
+      ],
+      "basis_fact_ids": [
+        "F02"
+      ],
+      "notes": "真实前后两周左右（F02）。"
+    },
+    {
+      "trap_id": "T07",
+      "predicate": "tool_used",
+      "context_id": "proj_uart_logger",
+      "value": "调 UART 的时候用 Ozone 看过 DMA 搬运的过程",
+      "expected_labels": [
+        "TECHNOLOGY_INJECTION"
+      ],
+      "basis_fact_ids": [
+        "F14",
+        "F13"
+      ],
+      "notes": "Ozone 听说过没用过（F14）；真实工具链里没有它（F13）。"
+    }
+  ],
+  "derived_materials": [
+    {
+      "artifact": "private_kb/resume.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F01",
+        "F05",
+        "F06",
+        "F09",
+        "F11",
+        "F12",
+        "F13",
+        "F18"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/project_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10",
+        "F15",
+        "F16",
+        "F17",
+        "F18",
+        "F19",
+        "F20"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/profile_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F04",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    }
+  ]
+}

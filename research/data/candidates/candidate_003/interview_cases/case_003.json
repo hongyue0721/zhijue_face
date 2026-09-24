@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "case_003",
+  "candidate_id": "candidate_003",
+  "split": "pilot",
+  "generator_visible": {
+    "question": {
+      "wording": "大创经历里，你的具体贡献是什么？",
+      "competency_tags": ["贡献边界", "团队协作"],
+      "source_seed_id": "seed_embedded_11"
+    },
+    "target_role": "嵌入式软件实习生",
+    "raw_answer": {
+      "text": "我就是帮忙的，做了个展示demo，代码那边是师兄他们弄的。",
+      "turns": [
+        {
+          "answer_id": "ans_c3_main",
+          "kind": "main",
+          "text": "我就是帮忙的，做了个展示demo，代码那边是师兄他们弄的。"
+        }
+      ]
+    },
+    "retrieval_query_spec": { "mode": "question_plus_answer", "template_version": "rq_1.0" }
+  },
+  "evaluator_only": {
+    "expected_evidence_fact_ids": ["F15", "F16", "F17", "F18", "F19", "F20"],
+    "allowed_context_ids": ["proj_big_create", "proj_uart_logger", "self"],
+    "injected_drift": [
+      {
+        "label": "RESPONSIBILITY_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "主导", "trap_id": "T03" },
+        "note": "真实是帮忙做 demo、主控代码师兄写（F15）；『主导方案设计与实现』即上充（T03）。"
+      },
+      {
+        "label": "CROSS_PROJECT_LEAKAGE",
+        "probe": { "kind": "context_absent", "value": "DMA 环形缓冲", "fact_id": "F01" },
+        "note": "把课设的 DMA 环形缓冲搬进大创贡献叙事，属跨项目泄漏。"
+      },
+      {
+        "label": "OUTCOME_INFLATION",
+        "probe": { "kind": "raw_answer_absent", "value": "省级立项是我做出来的", "fact_id": "F19" },
+        "note": "省级立项是队伍结果（F19）；写成个人成果即上充。"
+      }
+    ],
+    "answer_style_rating": "weak",
+    "notes": "自我定位极低（『帮忙的』），是职责/结果上充的高危场景。"
+  }
+}

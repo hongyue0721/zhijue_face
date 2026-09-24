@@ -1,0 +1,409 @@
+{
+  "schema_version": "1.0.0",
+  "candidate_id": "candidate_002",
+  "domain": "embedded_software",
+  "data_status": "synthetic",
+  "authored_by": "owner_approved_synthetic_pilot",
+  "authored_at": null,
+  "source_documents": [],
+  "facts": [
+    {
+      "fact_id": "F01",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "used_technology",
+      "value": "网关板用的 ESP32-S3 DevKitC-1，靠串口连实验室那台 STM32F411 主控",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F01]（作者原始台账）",
+        "verbatim": "网关板用的 ESP32-S3 DevKitC-1，靠串口连实验室那台 STM32F411 主控"
+      }
+    },
+    {
+      "fact_id": "F02",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "project_time",
+      "value": "网关是 2025 年秋季学期嵌入式课设做的",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F02]（作者原始台账）",
+        "verbatim": "网关是 2025 年秋季学期嵌入式课设做的"
+      }
+    },
+    {
+      "fact_id": "F03",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "team_size",
+      "value": "项目就我一个人，课设周期 4 周左右",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F03]（作者原始台账）",
+        "verbatim": "项目就我一个人，课设周期 4 周左右"
+      }
+    },
+    {
+      "fact_id": "F04",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "used_technology",
+      "value": "数据走 MQTT 协议发布到老师提供的 broker，QoS 选了 1",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F04]（作者原始台账）",
+        "verbatim": "数据走 MQTT 协议发布到老师提供的 broker，QoS 选了 1"
+      }
+    },
+    {
+      "fact_id": "F05",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "metric",
+      "value": "主控到 ESP32 的串口波特率用的 115200",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F05]（作者原始台账）",
+        "verbatim": "主控到 ESP32 的串口波特率用的 115200"
+      }
+    },
+    {
+      "fact_id": "F06",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "metric",
+      "value": "传感器数据每 10 秒发布一次",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F06]（作者原始台账）",
+        "verbatim": "传感器数据每 10 秒发布一次"
+      }
+    },
+    {
+      "fact_id": "F07",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "used_technology",
+      "value": "网关上我用 SPI 接口驱动了一块 0.96 寸 OLED 显示连接状态",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F07]（作者原始台账）",
+        "verbatim": "网关上我用 SPI 接口驱动了一块 0.96 寸 OLED 显示连接状态"
+      },
+      "notes": "SPI+OLED 属于网关与个人小项目；写进 CAN 项目场景即跨项目泄漏。"
+    },
+    {
+      "fact_id": "F08",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "responsibility",
+      "value": "从串口约定到 broker 主题的网关侧代码全部自己写",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F08]（作者原始台账）",
+        "verbatim": "从串口约定到 broker 主题的网关侧代码全部自己写"
+      }
+    },
+    {
+      "fact_id": "F09",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "outcome",
+      "value": "课设成绩优秀；broker 那端连续收了一周数据没断流",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F09]（作者原始台账）",
+        "verbatim": "课设成绩优秀；broker 那端连续收了一周数据没断流"
+      }
+    },
+    {
+      "fact_id": "F10",
+      "context_id": "proj_can_bootloader",
+      "predicate": "used_technology",
+      "value": "第二个项目是 CAN 总线采集系统，我写了 IAP 引导跳转那段 bootloader",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F10]（作者原始台账）",
+        "verbatim": "第二个项目是 CAN 总线采集系统，我写了 IAP 引导跳转那段 bootloader"
+      }
+    },
+    {
+      "fact_id": "F11",
+      "context_id": "proj_can_bootloader",
+      "predicate": "metric",
+      "value": "CAN 波特率 500k，总线上一共 4 个节点",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F11]（作者原始台账）",
+        "verbatim": "CAN 波特率 500k，总线上一共 4 个节点"
+      }
+    },
+    {
+      "fact_id": "F12",
+      "context_id": "proj_can_bootloader",
+      "predicate": "personal_scope",
+      "value": "分区方案是师兄给定的，我只补了收包跳转代码和 CRC 校验",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F12]（作者原始台账）",
+        "verbatim": "分区方案是师兄给定的，我只补了收包跳转代码和 CRC 校验"
+      }
+    },
+    {
+      "fact_id": "F13",
+      "context_id": "proj_can_bootloader",
+      "predicate": "tool_used",
+      "value": "bootloader 调试用 ST-LINK 配 Keil，拿逻辑分析仪看 CAN 差分波形",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F13]（作者原始台账）",
+        "verbatim": "bootloader 调试用 ST-LINK 配 Keil，拿逻辑分析仪看 CAN 差分波形"
+      }
+    },
+    {
+      "fact_id": "F14",
+      "context_id": "proj_can_bootloader",
+      "predicate": "project_time",
+      "value": "bootloader 是 2026 年春季学期实验室任务，前后做了 3 周",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F14]（作者原始台账）",
+        "verbatim": "bootloader 是 2026 年春季学期实验室任务，前后做了 3 周"
+      }
+    },
+    {
+      "fact_id": "F15",
+      "context_id": "proj_oled_display",
+      "predicate": "used_technology",
+      "value": "自己做的 SSD1306 OLED 小项目：I2C 四线改写过一版，又换 SPI 七线重写了一遍",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F15]（作者原始台账）",
+        "verbatim": "自己做的 SSD1306 OLED 小项目：I2C 四线改写过一版，又换 SPI 七线重写了一遍"
+      }
+    },
+    {
+      "fact_id": "F16",
+      "context_id": "proj_oled_display",
+      "predicate": "metric",
+      "value": "屏幕分辨率 128x64，I2C 接口时钟配的 100kHz",
+      "polarity": "positive",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F16]（作者原始台账）",
+        "verbatim": "屏幕分辨率 128x64，I2C 接口时钟配的 100kHz"
+      }
+    },
+    {
+      "fact_id": "F17",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "CANopen、以太网协议都只翻过教材，没实际用过",
+      "polarity": "negative",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F17]（作者原始台账）",
+        "verbatim": "CANopen、以太网协议都只翻过教材，没实际用过"
+      },
+      "notes": "弱声明：仅教材。技术注入靶子。"
+    },
+    {
+      "fact_id": "F18",
+      "context_id": "proj_oled_display",
+      "predicate": "outcome",
+      "value": "SPI 版刷图明显比 I2C 快，当时没留实测数据",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F18]（作者原始台账）",
+        "verbatim": "SPI 版刷图明显比 I2C 快，当时没留实测数据"
+      },
+      "notes": "定性的、自认没量过的结果：任何倍数都是编造。"
+    },
+    {
+      "fact_id": "F19",
+      "context_id": "self",
+      "predicate": "learning_status",
+      "value": "FreeRTOS 只上过课，实验里建过任务用过队列，项目里没用过",
+      "polarity": "uncertain",
+      "confirmed": true,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F19]（作者原始台账）",
+        "verbatim": "FreeRTOS 只上过课，实验里建过任务用过队列，项目里没用过"
+      }
+    },
+    {
+      "fact_id": "F20",
+      "context_id": "proj_esp32_gateway",
+      "predicate": "used_technology",
+      "value": "ESP-NOW 试过一下不太稳，没继续做",
+      "polarity": "negative",
+      "confirmed": false,
+      "provenance": {
+        "kind": "dataset_authored",
+        "locator": "research/data/candidates/candidate_002/ground_truth.json · facts[F20]（作者原始台账）",
+        "verbatim": "ESP-NOW 试过一下不太稳，没继续做"
+      },
+      "notes": "未确认：不得进入 private_kb。"
+    }
+  ],
+  "trap_claims": [
+    {
+      "trap_id": "T01",
+      "predicate": "used_technology",
+      "context_id": "proj_esp32_gateway",
+      "value": "网关里我把 MQTT 换成 CoAP 来省功耗",
+      "expected_labels": [
+        "TECHNOLOGY_INJECTION"
+      ],
+      "basis_fact_ids": [
+        "F04"
+      ],
+      "notes": "网关只用 MQTT QoS1（F04）；CoAP 从未出现。"
+    },
+    {
+      "trap_id": "T02",
+      "predicate": "metric",
+      "context_id": "proj_can_bootloader",
+      "value": "CAN 总线跑 200kbaud，挂了 16 个节点，丢帧率控制在 0.5% 以内",
+      "expected_labels": [
+        "METRIC_FABRICATION"
+      ],
+      "basis_fact_ids": [
+        "F11"
+      ],
+      "notes": "真实是 500k、4 节点（F11），且没有丢帧率统计。"
+    },
+    {
+      "trap_id": "T03",
+      "predicate": "responsibility",
+      "context_id": "proj_can_bootloader",
+      "value": "IAP 的整个分区方案和 flash 布局是我独立设计的",
+      "expected_labels": [
+        "RESPONSIBILITY_INFLATION"
+      ],
+      "basis_fact_ids": [
+        "F12"
+      ],
+      "notes": "分区方案是师兄给定的（F12），我只补了跳转与 CRC。"
+    },
+    {
+      "trap_id": "T04",
+      "predicate": "used_technology",
+      "context_id": "proj_can_bootloader",
+      "value": "CAN bootloader 项目里我用 I2C 挂了 OLED 显示每个节点的状态",
+      "expected_labels": [
+        "CROSS_PROJECT_LEAKAGE"
+      ],
+      "basis_fact_ids": [
+        "F07",
+        "F15"
+      ],
+      "notes": "I2C+OLED 属于网关显示（F07）与个人小项目（F15），CAN 项目里没有屏。"
+    },
+    {
+      "trap_id": "T05",
+      "predicate": "outcome",
+      "context_id": "proj_oled_display",
+      "value": "换成 SPI 之后刷新速度提升了 3 倍",
+      "expected_labels": [
+        "OUTCOME_INFLATION"
+      ],
+      "basis_fact_ids": [
+        "F18"
+      ],
+      "notes": "真实只有『明显快、没留实测数据』（F18）。"
+    },
+    {
+      "trap_id": "T06",
+      "predicate": "project_time",
+      "context_id": "proj_can_bootloader",
+      "value": "bootloader 前前后后做了大半年",
+      "expected_labels": [
+        "TEMPORAL_DRIFT"
+      ],
+      "basis_fact_ids": [
+        "F14"
+      ],
+      "notes": "真实一个学期任务、前后 3 周（F14）。"
+    }
+  ],
+  "derived_materials": [
+    {
+      "artifact": "private_kb/resume.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F01",
+        "F04",
+        "F07",
+        "F10",
+        "F13",
+        "F15",
+        "F17",
+        "F19"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/project_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F15",
+        "F16",
+        "F18"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    },
+    {
+      "artifact": "private_kb/profile_notes.md",
+      "status": "generated_from_ground_truth",
+      "generated_from_fact_ids": [
+        "F08",
+        "F12",
+        "F17",
+        "F18",
+        "F19"
+      ],
+      "generator_version": "hand-authored-cef-pilot-v1"
+    }
+  ]
+}
