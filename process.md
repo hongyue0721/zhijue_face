@@ -1642,6 +1642,10 @@ Phase R5：3 个 synthetic candidate 数据 + 全链路 scripted dry run + 泄�
 - 真实模型 `finish_reason` 分布、长场次延迟与费用仍 `NOT_MEASURED`。
 - 负责人独立验收 `NOT_RUN`；R0-R5 的 VERIFIED 只覆盖本轮实际跑过的本地/容器与已登记的
   live 探测范围。
+- 研究测试不在任何自动门禁里：`.github/workflows/ci.yml` 只覆盖 `services/api` 与 `apps/web`，
+  且触发面是 `main` push 与 PR，research 分支推送不跑。research 的 84 项目前只有本地手动运行
+  这一条证据链。是否新增 research job（纯离线零费用）或改走 PR 触发，待负责人定；
+  在此之前不得声称"研究测试有 CI 保障"。
 
 ### 唯一下一任务
 
