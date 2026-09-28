@@ -109,7 +109,9 @@ def _assert_safe_evidence(value: Any, secret: str) -> None:
 
 
 def _load_seed(root: Path) -> tuple[dict[str, Any], Path]:
-    path = root / "data" / "seeds" / SEED_FILENAME
+    path = (
+        root / "knowledge_packs" / "embedded_software_junior" / "seeds" / SEED_FILENAME
+    )
     seed = json.loads(path.read_text(encoding="utf-8"))
     if seed.get("review_status") != "approved":
         raise ValueError("live smoke requires an approved Seed")

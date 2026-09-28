@@ -11,6 +11,7 @@ from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from openjiuwen.core.common.task_manager import get_task_manager
+from openjiuwen.core.session.constants import WORKFLOW_EXECUTE_TIMEOUT
 from openjiuwen.core.session.workflow import create_workflow_session
 from openjiuwen.core.workflow import (
     End,
@@ -22,6 +23,7 @@ from openjiuwen.core.workflow import (
     WorkflowOutput,
 )
 
+from zhijue.application.model_output import unwrap_code_fence
 from zhijue.domain.interview_policy import (
     ObservationValidationError,
     decide_next,
@@ -203,7 +205,7 @@ def _parse_json_object(content: str) -> dict[str, Any]:
 
     try:
         parsed = json.loads(
-            content,
+            unwrap_code_fence(content),
             object_pairs_hook=reject_duplicate_keys,
             parse_constant=reject_nonfinite,
         )
@@ -411,6 +413,29 @@ def _require_nonnegative_integer(value: Any, name: str) -> int:
     return value
 
 
+def _sdk_timeout_error(
+    exc: BaseException, timeout_seconds: float
+) -> TimeoutError | None:
+    """openJiuwen 把执行超时包成 ExecutionError；服务层按裸 TimeoutError 映射 UPSTREAM_TIMEOUT。
+
+    会话级 `_execute_timeout` 与这里的 timeout_seconds 同源对齐后，SDK 内部超时先到期也会
+    被还原成契约内的 TimeoutError，而不是笼统的 workflow execution failed。
+    """
+    pending: list[BaseException | None] = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return TimeoutError(
+                f"workflow execution exceeded {timeout_seconds} seconds"
+            )
+        pending.extend((current.__cause__, current.__context__))
+    return None
+
+
 def _workflow_contract_error(exc: Exception) -> Exception:
     """Recover application errors wrapped by the SDK component boundary."""
     pending: list[BaseException | None] = [exc]
@@ -486,7 +511,9 @@ async def run_handle_answer_workflow(
         "decision_id": _require_nonempty(decision_id, "decision_id"),
     }
     workflow = build_handle_answer_workflow(analyzer)
-    session = create_workflow_session(session_id=uuid4().hex)
+    session = create_workflow_session(
+        session_id=uuid4().hex, envs={WORKFLOW_EXECUTE_TIMEOUT: float(timeout_seconds)}
+    )
     try:
         output = await _invoke_bounded(
             workflow.invoke(inputs, session), float(timeout_seconds)
@@ -494,5 +521,8 @@ async def run_handle_answer_workflow(
     except TimeoutError:
         raise
     except Exception as exc:
+        timeout = _sdk_timeout_error(exc, float(timeout_seconds))
+        if timeout is not None:
+            raise timeout from exc
         raise _workflow_contract_error(exc) from exc
     return _checked_output(output)

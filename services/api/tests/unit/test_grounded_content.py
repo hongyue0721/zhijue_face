@@ -177,6 +177,66 @@ def test_content_workflow_preserves_model_transport_timeout():
         )
 
 
+def test_sdk_wrapped_timeout_surfaces_as_bare_timeout_error():
+    """openJiuwen 把执行超时包成 ExecutionError；业务层必须还原为裸 TimeoutError。"""
+
+    from openjiuwen.core.common.exception.errors import ExecutionError
+
+    class SdkWrappedTimeoutGenerator:
+        async def generate(self, *, task, payload):
+            del task, payload
+            try:
+                raise TimeoutError("exceeded time limit of 60 seconds")
+            except TimeoutError as inner:
+                raise ExecutionError(
+                    "workflow execution exceeded time limit"
+                ) from inner
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(
+            run_grounded_content_workflow(
+                generator=SdkWrappedTimeoutGenerator(),
+                task="extract_claims",
+                payload={"document_kind": "resume", "source_blocks": []},
+                timeout_seconds=180,
+            )
+        )
+
+
+def test_session_execution_timeout_follows_business_budget(monkeypatch):
+    """会话级 _execute_timeout 必须与 timeout_seconds 同源，不再各用各的 60 秒。"""
+
+    from openjiuwen.core.session.constants import WORKFLOW_EXECUTE_TIMEOUT
+
+    import zhijue.application.content_workflow as cw
+
+    captured: dict = {}
+    real = cw.create_workflow_session
+
+    def spy(*args, **kwargs):
+        captured.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cw, "create_workflow_session", spy)
+
+    class FailingExtractor:
+        async def generate(self, *, task, payload):
+            raise AssertionError("not reached")
+
+    from zhijue.application.content_workflow import ContentWorkflowError
+
+    with pytest.raises(ContentWorkflowError):
+        asyncio.run(
+            run_grounded_content_workflow(
+                generator=FailingExtractor(),
+                task="extract_claims",
+                payload={"document_kind": "resume", "source_blocks": []},
+                timeout_seconds=240,
+            )
+        )
+    assert captured["envs"][WORKFLOW_EXECUTE_TIMEOUT] == 240.0
+
+
 def test_coaching_accepts_only_exact_answer_quotes_and_snapshot_claims():
     answer_text = "我使用 FreeRTOS Queue 传递采样数据，并通过日志定位问题。"
     candidate = _coaching_candidate(

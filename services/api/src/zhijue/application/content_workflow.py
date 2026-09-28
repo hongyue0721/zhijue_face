@@ -9,6 +9,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from openjiuwen.core.common.task_manager import get_task_manager
+from openjiuwen.core.session.constants import WORKFLOW_EXECUTE_TIMEOUT
 from openjiuwen.core.session.workflow import create_workflow_session
 from openjiuwen.core.workflow import (
     End,
@@ -24,7 +25,9 @@ from zhijue.application.answer_workflow import (
     AnalysisResult,
     ModelRequestError,
     ModelRequestTimeoutError,
+    _sdk_timeout_error,
 )
+from zhijue.application.model_output import unwrap_code_fence
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
     validate_claim_extraction_candidate,
@@ -117,7 +120,7 @@ def _parse_json_object(content: str) -> dict[str, Any]:
 
     try:
         parsed = json.loads(
-            content,
+            unwrap_code_fence(content),
             object_pairs_hook=reject_duplicate_keys,
             parse_constant=lambda _value: (_ for _ in ()).throw(
                 ValueError("non-finite JSON number")
@@ -277,7 +280,9 @@ async def run_grounded_content_workflow(
         raise ValueError("timeout_seconds must be a finite positive number")
 
     workflow = build_grounded_content_workflow(generator)
-    session = create_workflow_session(session_id=uuid4().hex)
+    session = create_workflow_session(
+        session_id=uuid4().hex, envs={WORKFLOW_EXECUTE_TIMEOUT: float(timeout_seconds)}
+    )
     try:
         output = await _invoke_bounded(
             workflow.invoke({"task": task, "payload": payload}, session),
@@ -286,5 +291,8 @@ async def run_grounded_content_workflow(
     except TimeoutError:
         raise
     except Exception as exc:
+        timeout = _sdk_timeout_error(exc, float(timeout_seconds))
+        if timeout is not None:
+            raise timeout from exc
         raise _workflow_contract_error(exc) from exc
     return _checked_output(output)

@@ -14,25 +14,26 @@ M0 在独立目录创建 Python 3.11 环境、Node 24 LTS 环境；不要修改�
 
 本地部署默认发布到 127.0.0.1。真实数据、数据库、知识索引、上传分别在 gitignored runtime 下；启动时拒绝将 tests/fixture 库当成用户数据运行。
 
-## 3. 命令接口（M1-03 起：已落地目标与仍为目标的项）
+## 3. 命令接口（2026-09-25 岗位知识包轮次后：已落地目标与仍为目标的项）
 
-根目录 `Makefile` 已存在，且**只登记真实可运行的目标**：`doctor`、`check`、`lint`、`test`、`test-live`、`api`、`web`、`dev`（`dev` 只提示分别启动两个前台进程）。其余命令仍是目标契约，未实现前不写入 Makefile（不把未实现能力包装成一键启动）。
+根目录 `Makefile` **只登记真实可运行的目标**。已落地：
 
-
-| 命令 | 应做什么 |
+| 命令 | 实际行为 |
 |---|---|
-| `make doctor` | 检查 OS/架构、版本、配置、卷权限、模型资产；不打印密钥 |
-| `make install` | 用锁文件安装依赖；首次无锁需显式 bootstrap |
-| `make migrate` | 执行 Alembic migration，不自动丢表（目标；当前用 alembic 命令直接执行） |
-| `make seed-demo` | 导入合成资料/已审核题库；重复执行不产生重复数据 |
-| `make dev` | 启动 API 与前端开发代理，默认本机（当前实现：分别运行 `make api` 与 `make web`） |
-| `make check` | 格式/类型/单测/契约/文档，默认不花模型费用（当前实现：`lint` + `test`） |
-| `make test-live` | 显式真实 SDK/模型 smoke，需授权与预算 |
-| `make test-e2e` | 浏览器闭环，区分 fixture 与 live |
-| `make build` | 生成静态前端与生产镜像，不带真实 runtime |
-| `make up` | 生产模式本机启动、卷与健康检查 |
-| `make backup` | 创建一致性备份与版本清单 |
-| `make export-demo` | 只打包合成输入、许可允许内容、报告、截图、版本 |
+| `make setup` | 锁定依赖安装：后端 `uv sync --frozen --python 3.11`、前端 `pnpm install --frozen-lockfile`；零模型调用 |
+| `make doctor` | 三档画像检查（offline/toolchain/live）；不打印密钥 |
+| `make check` | `lint` + `test` + `spec` + `integrity` + `doctor`，默认不花模型费用 |
+| `make test` | 后端离线回归，显式排除 `integration_live` |
+| `make test-live` | 显式真实 SDK/embedding smoke；需要私密 env 与负责人授权 |
+| `make demo-fixture` | `scripts/demo.sh fixture`：隔离 runtime 目录 `runtime/demo-fixture/`，合成 Knowledge/脚本分析端口，子进程剥离模型 env，绝不触发真实调用；端口占用友好失败，退出只清理自己的子进程 |
+| `make demo-live` | `scripts/demo.sh live`：独立 runtime `runtime/demo-live/`，要求显式导出私密 env 文件路径；启动后不自动发送任何测试请求，不打印密钥 |
+| `make api` / `make web` | 分别前台启动后端（127.0.0.1:8000）与 Vite（5199，/api 代理）；使用 PATH 中真实 node，不依赖仓库外私有目录 |
+| `make openapi` | 由运行时代码导出 `contracts/openapi.json`（契约测试断言与实时 document 一致） |
+| `make checksums` | 重建 `CHECKSUMS.sha256`（与 doctor 口径一致：`git ls-files -c -o --exclude-standard`） |
+| `make competition-bundle` | `scripts/build_bundle.py`：源码发行包 zip + 逐文件 sha256 manifest + 包指纹 |
+| `make verify-bundle` | `scripts/verify_bundle.sh`：干净临时目录解压、防目录穿越、逐文件校验、doctor bundle 档复验 |
+
+仍是目标契约、未实现前不写入 Makefile：`make migrate`（当前由 API 启动时执行或手工 alembic）、`make seed-demo`、`make build`、`make up`、`make backup`、`make export-demo`、`make test-e2e`（浏览器闭环当前以验收脚本+人工证据记录，不是一键目标）。
 
 AI 必须维护命令真实行为；不把“建议手动做的步骤”藏在一键启动宣传后面。
 

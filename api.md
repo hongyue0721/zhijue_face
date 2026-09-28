@@ -6,6 +6,8 @@
 
 **前端迁移状态（2026-09-22）**：正式准备页只提交用户明确填写的岗位名称与必要项/加分项/岗位职责，不再提供“使用演示岗位配置”入口。`POST /interviews` 省略 `jd_text/jd_source_name` 时使用 `SYNTHETIC_DEMO_JD` 的 HTTP 契约仍保留给显式 fixture、受控测试或直接 API 客户端；这不是正式页面的默认值。本轮没有修改 HTTP 路径、字段、错误码、SSE、数据库 Schema、迁移或 OpenAPI。
 
+**岗位知识包轮次（2026-09-25）**：新增 §9 `GET /knowledge-packs`、`GET /knowledge-packs/{release_id}`、`POST /knowledge-packs/import`（multipart + Idempotency-Key，202 异步）与 `knowledge_pack.import` Operation kind；`POST /interviews` 增加可选 `pack_release_id`，`InterviewView` 增加冻结摘要 `knowledge_pack`，`/runtime/info` 增加 `knowledge_packs` 增量。迁移 `a7c4e1f29b58` 建 `knowledge_pack_release/review/import` 三表并为 `interview` 增加三个可空绑定列；旧行保持 null（`legacy_unresolved`），不回填捏造。HTTP 面无“全局激活”写接口。
+
 ## 1. 全局约定
 
 Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_..."}}`。Content-Type 为 `application/json; charset=utf-8`，上传除外。所有网络 DTO 字段为 snake_case；时间 RFC3339 UTC；ID 为不透明字符串。
@@ -39,13 +41,13 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 | 400 | INVALID_REQUEST / INVALID_EVENT_CURSOR | 格式、游标语义无效 |
 | 401/403 | UNAUTHENTICATED / FORBIDDEN | 非本地部署的认证/权限错误 |
 | 404 | RESOURCE_NOT_FOUND | 不存在或不可见；不泄漏其他 workspace 资源 |
-| 409 | REVISION_CONFLICT / IDEMPOTENCY_CONFLICT / OPERATION_IN_PROGRESS / INVALID_STATE / REPORT_NOT_READY / PROFILE_UNCONFIRMED | 业务状态冲突 |
+| 409 | REVISION_CONFLICT / IDEMPOTENCY_CONFLICT / OPERATION_IN_PROGRESS / INVALID_STATE / REPORT_NOT_READY / PROFILE_UNCONFIRMED / PACK_REVIEW_PENDING / PACK_REVIEW_REJECTED / PACK_VERSION_CONFLICT / RETRY_NOT_ALLOWED | 业务状态冲突 |
 | 410 | EVENT_HISTORY_GONE | 游标早于保留事件；客户端获取快照 |
-| 413 | FILE_TOO_LARGE / TEXT_TOO_LARGE | 超过业务资源上限 |
+| 413 | FILE_TOO_LARGE / TEXT_TOO_LARGE / PACK_UPLOAD_TOO_LARGE | 超过业务资源上限 |
 | 415 | UNSUPPORTED_FILE_TYPE | 格式不支持或魔数不匹配 |
 | 422 | SCHEMA_VALIDATION_FAILED | 合法 JSON 但字段/枚举不符合契约 |
 | 429 | CAPACITY_LIMITED | 队列或预算限制；可给 Retry-After |
-| 502/503/504 | UPSTREAM_FAILED / SERVICE_NOT_READY / UPSTREAM_TIMEOUT | 在异步受理前发现的依赖问题 |
+| 502/503/504 | UPSTREAM_FAILED / SERVICE_NOT_READY / UPSTREAM_TIMEOUT / PACK_CONTENT_MISSING / PACK_CONTENT_CORRUPTED / PACK_UPLOAD_INPUT_LOST | 在异步受理前发现的依赖问题 |
 | 500 | INTERNAL_ERROR | 未预料故障；前台不显示栈/密钥 |
 
 异步操作受理后才失败：初始 HTTP 仍然是 202；失败记录在 Operation 和 `operation.failed` 事件。前端不得把任何 202 当作业务已成功。
@@ -56,7 +58,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 `DocumentView`：id、profile_id、kind、filename_display、sha256、page_count、extract_status、index_status、warnings；不含实际文件路径。
 
-`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`jd_text` 只读返回该会话冻结的岗位输入原文，供准备页刷新后核对与修改；仅历史记录确未保存原文时为 null，不从 requirements 拼造原文，不写浏览器持久存储。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
+`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations、knowledge_pack。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`knowledge_pack` 是该场受理时冻结的摘要：`{binding:"frozen"|"frozen_unavailable"|"legacy_unresolved", pack_release_id, pack_id, name, version, content_digest, competency_profile_id}`；旧记录无可证实绑定时 binding=`legacy_unresolved` 并附说明 note，绝不从“当前默认包”倒推或捏造版本。`jd_text` 只读返回该会话冻结的岗位输入原文，供准备页刷新后核对与修改；仅历史记录确未保存原文时为 null，不从 requirements 拼造原文，不写浏览器持久存储。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
 
 `OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、attempts、result、error、last_event_seq、created_at、updated_at。
 
@@ -84,7 +86,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 手填 items 一次最多 50 条，section 为 basic/education/project/skill/award/other，text 长度 1—2,000。合计字符上限沿用配置。展示姓名/联系方式不会自动进入模型评价上下文。
 
-上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。长文档按源文字预算切成连续段、分多次真实 Workflow 调用抽取，切分无损（段可拼接还原），逐字来源不变量不因分块改变；50 条上限对合并结果生效，超出同样全部拒绝。`extraction_metadata` 增加 `model_calls`（本次导入的模型调用次数），`usage` 为各次调用聚合，任一调用缺该字段则保持 null，不填造 0。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。全部 chat/completions 请求使用 SSE 流式：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS` 是块间静默预算（生效取较小值），生成器元数据同时公开两者与 `reasoning_effort`。P-EXTRACT 的模型传输超时（含总预算与 stall）记录为 `UPSTREAM_TIMEOUT`，其他模型请求失败记录为 `UPSTREAM_FAILED`；模型已返回但 JSON/逐字来源校验失败仍为 `UPSTREAM_FAILED`，三类错误不得用同一“来源校验失败”文案混淆。
+上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。长文档按源文字预算切成连续段、分多次真实 Workflow 调用抽取，切分无损（段可拼接还原），逐字来源不变量不因分块改变；50 条上限对合并结果生效，超出同样全部拒绝。`extraction_metadata` 增加 `model_calls`（本次导入的模型调用次数），`usage` 为各次调用聚合，任一调用缺该字段则保持 null，不填造 0。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。chat/completions 请求默认使用 SSE 流式（`MODEL_STREAM=true`）：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS` 是块间静默预算；实测部分兼容网关的 SSE 通道不落实 `response_format=json_object` 强制，此类网关显式 `MODEL_STREAM=false` 走单 JSON 体，两条路径的严格校验语义一致。`MODEL_STREAM_STALL_SECONDS` 是块间静默预算（生效取较小值），生成器元数据同时公开两者与 `reasoning_effort`。P-EXTRACT 的模型传输超时（含总预算与 stall）记录为 `UPSTREAM_TIMEOUT`，其他模型请求失败记录为 `UPSTREAM_FAILED`；模型已返回但 JSON/逐字来源校验失败仍为 `UPSTREAM_FAILED`，三类错误不得用同一“来源校验失败”文案混淆。
 
 confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必须提供 corrected_text，创建新的 user_input 依据；用户不能把随意改写的内容继续绑定为原文 exact_quote。一个明确提交的批次原子写入裁决、确认快照、Profile revision 和确认 Operation，再异步激活该代次 Knowledge。单个批次最多 50 项；不替用户默认选中。Knowledge 失败保留确认事实与同一快照，snapshot_activation.status=failed；重试仅激活该快照，不再次应用 decisions、不再增加 revision。创建计划和开始面试均要求各自绑定的快照代次 ready，失败返回 409 INVALID_STATE。所有未完成/失败激活必须能从 ProfileView 恢复，不依赖单个标签页缓存。
 
@@ -108,7 +110,7 @@ jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事�
 
 | 方法与路径 | 输入 | 成功 | 语义 |
 |---|---|---|---|
-| POST `/interviews` | profile_id、profile_revision、jd_text?、jd_source_name?、role_preset、memory_enabled=false、observer_mode=false | 202 OperationAccepted | 检查确认/索引状态，固定快照、生成五题计划；成功 ready |
+| POST `/interviews` | profile_id、profile_revision、jd_text?、jd_source_name?、role_preset、memory_enabled=false、observer_mode=false、pack_release_id? | 202 OperationAccepted | 检查确认/索引状态，固定快照、生成五题计划；受理时冻结岗位包 release+摘要；成功 ready |
 | GET `/interviews/{id}` | 无 | 200 InterviewView | 当前问题与服务端状态；不靠聊天文本恢复 |
 | POST `/interviews/{id}/start` | expected_revision | 202 OperationAccepted | ready→active，显示第一题；幂等 |
 | POST `/interviews/{id}/answers` | expected_revision、question_id、client_turn_id、answer_text | 202 OperationAccepted | 接受原回答，分析、决策、生成下一题或结束 |
@@ -119,6 +121,10 @@ jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事�
 end 在回答操作进行中也可受理：服务端原子记录 `stop_requested=true` 和唯一结束 operation；不再接受新答案、不再向 InterviewView 暴露待答问题，结束 operation 在当前回答安全释放后串行汇总。结束不保证远端调用立即取消或退费。重复 end 返回同一 operation。skip 仅在没有 active operation 且仍有 current_question 时受理：跳过主问题会使该根题 `status=skipped`、`score=null`；跳过追问保留该根题已有 Observation，但整场 `completion=incomplete`。两种 control 都不调用模型。
 
 role_preset P0 只支持 `embedded_junior`。JD 不提供时使用显著标注的预置（`SYNTHETIC_DEMO_JD`）；不将其称为某企业真实招聘要求。JD 最多 8,000 字符。五主问题与追问上限由服务端配置，客户端不得无限增加。
+
+`pack_release_id`（`kpr_` + 16 hex）为可选：省略 = 服务端在受理瞬间解析默认岗位包。无论显式或默认，release ID、内容摘要与能力配置 ID 都在受理时冻结进 Interview；后续默认变化、包被替换或损坏都不改变本场。未审核/被拒/损坏/能力配置未注册的包在受理前同步返回 409（`PACK_REVIEW_PENDING`/`PACK_REVIEW_REJECTED`/`PACK_CONTENT_*`/`COMPETENCY_PROFILE_UNSUPPORTED`），不进入后台。幂等重放按 §1 先找回原操作返回受理结果：客户端未显式给 `pack_release_id` 时，服务端解析出的默认值不参与输入 hash，避免“默认变化导致重放误报冲突”。
+
+开始面试（`POST /interviews/{id}/start`）只按本场冻结绑定解析岗位包：绑定 release 内容与登记摘要不符返回 409 并明确失败，绝不回落其他包顶替；`legacy_unresolved` 记录不允许再开始新回答流程，原报告仍可读。
 
 开始面试时，服务端按五个冻结 slot 逐一实例化根问题：优先绑定同 competency 的 approved Seed；`embedded.rtos.fundamentals` 只允许映射到未重复使用的 approved `embedded.rtos.*` Seed。没有相符 Seed 时，退回经历/证据表达题并令 `seed_id=null`，其 Rubric 不评价无技术参考支持的技术正确性。不得为了凑五题绑定无关 Seed，也不得把回退题冒充经 Level 2 审核的技术题。
 
@@ -158,11 +164,11 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 | GET `/operations/{id}` | 无 | 200 OperationView |
 | GET `/operations/{id}/events` | after? 或 Last-Event-ID | 200 text/event-stream |
 | POST `/operations/{id}/retry` | expected_revision（目标业务资源） | 202 新 OperationAccepted |
-| GET `/runtime/info` | 无 | 200 {run_mode,versions,feature_flags,health_summary} |
+| GET `/runtime/info` | 无 | 200 {run_mode,versions,feature_flags,health_summary,knowledge_packs} |
 | GET `/health/live` | 无 | 200 {status:"ok"} |
 | GET `/health/ready` | 无 | 200 ready 或 503 not_ready |
 
-retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。`GET /operations/{id}` 的 `error.retryable` 表示当前配置下是否仍可执行恢复动作：负责人显式提高 `MODEL_MAX_RETRIES` 后，既有 `interview.answer` 的 `UPSTREAM_FAILED / UPSTREAM_TIMEOUT` 可在新预算内重新开放，其他业务失败不会因此变成可重试。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
+retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。`knowledge_pack.import` 的 retry 复用同一上传回执（后台输入持久在受控 runtime 目录）与 parent 链累计预算（最多三次）；回执字节丢失返回 `PACK_UPLOAD_INPUT_LOST` 并要求重新上传同一文件（内容 digest 去重保证不会登记第二份）。`GET /operations/{id}` 的 `error.retryable` 表示当前配置下是否仍可执行恢复动作：负责人显式提高 `MODEL_MAX_RETRIES` 后，既有 `interview.answer` 的 `UPSTREAM_FAILED / UPSTREAM_TIMEOUT` 可在新预算内重新开放，其他业务失败不会因此变成可重试。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
 
 资料确认/激活 operation retry 使用当前 Profile revision，并校验目标仍是最新快照；每个逻辑激活最多三次尝试，换 Idempotency-Key 不重新开启预算。恢复只作用于原代次 Knowledge，不重复确认事实。上传原始字节不持久化，`document.import` 失败不可通过通用 `/retry` 重放，error.retryable=false，页面明确提供重新选择并上传文件的恢复方式；网络受理结果不明确时，同一已选文件与原请求 body/Idempotency-Key 必须复用，不擅自新建一次模型调用。
 
@@ -193,7 +199,25 @@ P0 不推送未验证的模型 token，因此不会先把错误前提渲染给�
 - 禁止把 HTTP 连接正常关闭当作 operation.completed。没有终态事件时查快照。
 - 设置 no-cache；反向代理不得缓冲 SSE；本机不经过代理也要测试断流恢复。
 
-## 9. 示例业务请求
+## 9. 岗位知识包 API
+
+| 方法与路径 | 输入 | 成功 | 语义 |
+|---|---|---|---|
+| GET `/knowledge-packs` | 无 | 200 {items,default_pack_release_id,import_limits} | 真实 release 列表；每项含格式/审核/可选择三个独立状态与阻断原因 |
+| GET `/knowledge-packs/{release_id}` | 无 | 200 KnowledgePackDetailView | 详情：范围、能力覆盖、来源登记、校验明细；不含参考答案/评分细则/Seed 正文 |
+| POST `/knowledge-packs/import` | multipart：file（ZIP）；header：Idempotency-Key | 202 OperationAccepted | 安全解压校验后异步登记；结果只声明格式通过 |
+
+契约要点：
+
+- 无“全局激活”写接口。默认包只影响新创建的面试；已创建面试使用其冻结绑定（§6）。
+- 导入幂等：相同 key + 相同上传内容 hash 复用原操作；相同 key 不同内容返回 409 `IDEMPOTENCY_CONFLICT`。相同内容不同 ZIP 重打包按内容 digest 去重复用原 release（`result.reused=true`），不生成第二项；同 `(pack_id, version)` 不同内容返回 409 `PACK_VERSION_CONFLICT`，禁止覆盖旧包。
+- 上传限制由 `config/demo.yaml knowledge_packs.limits` 集中声明（ZIP 5 MiB、解压 20 MiB、单文件 1 MiB、条目 256、压缩比 50、路径深度 5）；超限 413 `PACK_UPLOAD_TOO_LARGE`；ZIP 内绝对路径/`..`/符号链接/设备文件/加密条目/声明外文件全部拒绝（`PACK_PATH_*`/`PACK_SYMLINK_FORBIDDEN`/`PACK_ENCRYPTED`/`PACK_UNDECLARED_FILE` 等，422 类不可重试修复）。
+- ZIP manifest 里的 `approved` 只是作者声明，服务端一律从 `unreviewed` 开始。有效审核 = 绑定当前 `content_digest` 的包外负责人记录 ∩ Seed 内容 hash 批准范围；批准经 `scripts/manage_knowledge_pack.py` CLI 由负责人登记，HTTP 面不提供自批接口。
+- Operation result：`{release_id, pack_id, version, content_digest, reused, review_status, selectable_for_new_interview}`。导入成功 ≠ 可用于技术评分。
+- 列表/详情/导入不依赖模型或候选人 embedding 就绪；没有可用包时这些入口仍可访问，仅“生成面试”能力不就绪（`/health/ready` 的 `knowledge_packs` 与 `default_pack_release_id` 增量报告）。
+- 内置 embedded-software-junior release 由启动时 `ensure_builtin` 登记，批准范围锁定为 M2-01 负责人已批的六条 Seed 原内容（逐条内容 hash）；内置目录新增 Seed 不会自动获批。
+
+## 10. 示例业务请求
 
 ```http
 POST /api/v1/interviews/interview_example/answers
@@ -209,7 +233,7 @@ Idempotency-Key: answer-demo-turn-0001
 
 这是合成契约示例，不是抓取到的真实响应。实际服务必须用契约测试验证。
 
-## 10. 文档同步要求
+## 11. 文档同步要求
 
 每次接口变更先登记：涉及路径、字段、状态、错误、幂等、事件、迁移、兼容性。更新本文件后同步 Pydantic DTO、导出的 OpenAPI、TS 生成类型、前端错误分支、契约测试和 process.md。
 

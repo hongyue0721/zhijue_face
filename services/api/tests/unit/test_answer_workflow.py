@@ -321,7 +321,9 @@ def test_model_env_rejects_permissions_broader_than_0600(tmp_path, mode):
         {"api_key": "   "},
         {"api_base": "http://model.example"},
         {"api_base": "https://user:secret@model.example"},
-        {"api_base": "https://model.example/v1"},
+        {"api_base": "https://model.example/v1/chat"},
+        {"api_base": "https://model.example/v2"},
+        {"api_base": "https://model.example?x=1"},
         {"model_timeout": 0},
         {"model_timeout": float("inf")},
         {"model_reasoning_effort": "medium"},
@@ -333,6 +335,82 @@ def test_model_env_rejects_permissions_broader_than_0600(tmp_path, mode):
 def test_model_settings_reject_unsafe_or_unbounded_values(overrides):
     with pytest.raises(ValidationError):
         model_settings(**overrides)
+
+
+def test_api_base_accepts_openai_compatible_v1_suffix():
+    """网关惯例 base 带 /v1：必须原样保留并只追加 /chat/completions。"""
+    captured: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            content=sse_body(json.dumps(VALID_OBSERVATION)),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async def scenario():
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(
+                model_settings(
+                    api_base="https://gateway.example/v1", model_max_retries=0
+                ),
+                client=client,
+            )
+            await analyzer.analyze(
+                observation_id="observation_1",
+                answer_id="answer_1",
+                question_id="question_1",
+                root_question_id="question_1",
+                question_text="Question text",
+                answer_text="answer text",
+                rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                reference_material={},
+            )
+
+    asyncio.run(scenario())
+    assert len(captured) == 1
+    assert captured[0].url == httpx.URL("https://gateway.example/v1/chat/completions")
+
+
+def test_model_stream_false_sends_single_json_body():
+    """网关 SSE 通道不落实 json_object 强制时可显式走非流式；校验语义不变。"""
+    captured: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": json.dumps(VALID_OBSERVATION)}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 9},
+            },
+        )
+
+    async def scenario():
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            analyzer = OpenAICompatibleAnswerAnalyzer(
+                model_settings(model_stream=False, model_max_retries=0), client=client
+            )
+            return await analyzer.analyze(
+                observation_id="observation_1",
+                answer_id="answer_1",
+                question_id="question_1",
+                root_question_id="question_1",
+                question_text="Question text",
+                answer_text="answer text",
+                rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
+                reference_material={},
+            )
+
+    result = asyncio.run(scenario())
+    assert json.loads(result.content) == VALID_OBSERVATION
+    assert result.input_tokens == 7 and result.output_tokens == 9
+    payload = json.loads(captured[0].content)
+    assert "stream" not in payload and "stream_options" not in payload
+    assert captured[0].headers["accept"] == "application/json"
 
 
 def test_openai_compatible_request_keeps_answer_as_data_and_usage_nullable():
