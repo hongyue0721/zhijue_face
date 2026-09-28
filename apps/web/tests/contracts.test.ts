@@ -14,10 +14,13 @@ import {
   preferObservedOperation,
 } from "../src/hooks/useOperationMonitor";
 import { scoreText } from "../src/presentation";
-import { parseRoute, preparePath, reportPath, resumeDraftPath } from "../src/routing";
+import { knowledgePacksPath, parseRoute, preparePath, reportPath, resumeDraftPath } from "../src/routing";
 import {
   clearRecoverableCommand,
+  clearPackSelection,
+  loadPackSelection,
   loadRecoverableCommand,
+  savePackSelection,
   saveRecoverableCommand,
   type RecoverableCommand,
 } from "../src/storage";
@@ -395,5 +398,68 @@ describe("URL and presentation contracts", () => {
   it("distinguishes an observed zero score from an unmeasured result", () => {
     expect(scoreText(null, "UNMEASURED")).toBe("UNMEASURED");
     expect(Number.parseFloat(scoreText(0, "UNMEASURED"))).toBe(0);
+  });
+});
+
+describe("knowledge pack browser boundary", () => {
+  const fetchMock = vi.fn(async () => ok(accepted));
+
+  beforeEach(() => {
+    fetchMock.mockClear();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("imports a pack ZIP as browser-managed multipart with an idempotency key", async () => {
+    const file = new File(["zip-bytes"], "pack.zip", { type: "application/zip" });
+
+    await api.importKnowledgePack(file, "pack-import-key-0001");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(url).toBe("/api/v1/knowledge-packs/import");
+    expect(headers.get("Content-Type")).toBeNull();
+    expect(headers.get("Idempotency-Key")).toBe("pack-import-key-0001");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBe(file);
+  });
+
+  it("sends an explicit pack selection but omits it for server default", async () => {
+    await api.createInterview(
+      "profile_1",
+      3,
+      { pack_release_id: "kpr_0123456789abcdef" },
+      "plan-key-pack-0001",
+    );
+    const [, explicit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(explicit.body))).toMatchObject({
+      pack_release_id: "kpr_0123456789abcdef",
+    });
+
+    await api.createInterview("profile_1", 3, {}, "plan-key-pack-0002");
+    const [, fallback] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(fallback.body))).not.toHaveProperty("pack_release_id");
+  });
+
+  it("routes the knowledge pack page and keeps detail selection in the URL", () => {
+    expect(parseRoute("/knowledge-packs", "")).toEqual({
+      page: "packs",
+      releaseId: null,
+    });
+    expect(parseRoute("/knowledge-packs", "?release=kpr_abc")).toEqual({
+      page: "packs",
+      releaseId: "kpr_abc",
+    });
+    expect(knowledgePacksPath("kpr a")).toBe("/knowledge-packs?release=kpr%20a");
+  });
+
+  it("stores only the pack identifier as the next-interview intent", () => {
+    installSessionStorage();
+    expect(loadPackSelection()).toBeNull();
+    savePackSelection("kpr_0123456789abcdef");
+    expect(loadPackSelection()).toBe("kpr_0123456789abcdef");
+    clearPackSelection();
+    expect(loadPackSelection()).toBeNull();
   });
 });

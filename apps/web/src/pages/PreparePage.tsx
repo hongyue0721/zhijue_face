@@ -8,6 +8,7 @@ import {
   type CreateInterviewOptions,
   type CoverageEntryView,
   type InterviewView,
+  type KnowledgePackList,
   type OperationView,
   type ProfileView,
 } from "../api";
@@ -17,7 +18,7 @@ import { InterviewPlan } from "../components/prepare/InterviewPlan";
 import { JDInput } from "../components/prepare/JDInput";
 import { JDSourceBadge } from "../components/prepare/JDSourceBadge";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
-import { interviewPath, preparePath, startPath } from "../routing";
+import { interviewPath, knowledgePacksPath, preparePath, startPath } from "../routing";
 import {
   coverageExplanation,
   coverageStatusText,
@@ -27,6 +28,7 @@ import {
 import {
   clearOperationId, loadOperationId, saveOperationId,
   clearRecoverableCommand, loadRecoverableCommand, saveRecoverableCommand,
+  loadPackSelection,
   type RecoverableCommand,
 } from "../storage";
 
@@ -144,6 +146,12 @@ export function PreparePage({
     const stored = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
     return stored?.kind === "prepare-start" ? stored : null;
   });
+  // 选择只影响新创建的面试；不阻塞列表/详情等其它入口（§6.4）。
+  const [packs, setPacks] = useState<KnowledgePackList | null>(null);
+  const [packsError, setPacksError] = useState<unknown>(null);
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(
+    () => loadPackSelection(),
+  );
   const requestInFlight = useRef(false);
 
   const applyInterview = useCallback((next: InterviewView) => {
@@ -173,6 +181,27 @@ export function PreparePage({
       throw nextError;
     }
   }, [applyInterview, interviewId, navigate, profileId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api.listKnowledgePacks(controller.signal)
+      .then((next) => {
+        setPacks(next);
+        setPacksError(null);
+      })
+      .catch((nextError) => {
+        if (nextError instanceof DOMException && nextError.name === "AbortError") return;
+        setPacksError(nextError);
+      });
+    return () => controller.abort();
+  }, []);
+
+  // 选择的包被删除/未通过审核时回落到“服务端默认”，不静默用不可用包。
+  useEffect(() => {
+    if (!packs || !selectedPackId) return;
+    const hit = packs.items.find((item) => item.pack_release_id === selectedPackId);
+    if (!hit || !hit.selectable) setSelectedPackId(null);
+  }, [packs, selectedPackId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -276,7 +305,13 @@ export function PreparePage({
   const createPlan = async (options: CreateInterviewOptions) => {
     if (!profile || requestInFlight.current || (!pendingPlan && !profileReady)) return;
     const command = pendingPlan ?? {
-      profileId: profile.id, revision: profile.revision, options, key: newCommandKey("plan"),
+      profileId: profile.id, revision: profile.revision,
+      options: {
+        ...options,
+        // 省略 = 服务端解析默认包；服务器受理时冻结实际 release。
+        pack_release_id: selectedPackId ?? undefined,
+      },
+      key: newCommandKey("plan"),
     };
     pendingPlans.set(profile.id, command);
     setPendingPlan(command);
@@ -369,6 +404,17 @@ export function PreparePage({
               {" · "}{interview.root_plan.slots.length} 个主问题方向
               {" · "}后续追问按回答动态决定
             </p>
+            {/* 本场包摘要来自冻结字段，不从“当前列表默认项”倒推（U7）。 */}
+            <p className="interview-pack-line">
+              {interview.knowledge_pack.binding === "frozen" ? (
+                <>岗位知识包：{interview.knowledge_pack.name} v{interview.knowledge_pack.version}
+                  （本场冻结 · {(interview.knowledge_pack.content_digest ?? "").slice(0, 23)}…）</>
+              ) : interview.knowledge_pack.binding === "frozen_unavailable" ? (
+                <>本场冻结的岗位知识包当前不可用（内容缺失或损坏）；开始面试会被明确拒绝，不会换包顶替。</>
+              ) : (
+                <>历史绑定未确定：这场面试创建时没有可证实的岗位包绑定；报告仍完整可读，继续练习请重新创建计划。</>
+              )}
+            </p>
           </div>
           {interview.status === "ready" ? (
             <Button
@@ -401,6 +447,44 @@ export function PreparePage({
             重试{pendingPlan ? "生成计划" : "开始面试"}
           </Button>
         </Alert>
+      ) : null}
+      {!interview || editing ? (
+        <section className="pack-selector" aria-label="岗位知识包选择">
+          <label className="field-label">
+            本场新面试使用岗位知识包
+            <select
+              value={selectedPackId ?? ""}
+              disabled={Boolean(pendingPlan || pendingStart)}
+              onChange={(event) => setSelectedPackId(event.target.value || null)}
+            >
+              <option value="">
+                服务端默认（
+                {packs?.items.find((item) => item.pack_release_id === packs?.default_pack_release_id)?.name
+                  ?? (packsError ? "读取失败" : "读取中…")}
+                ）
+              </option>
+              {(packs?.items ?? [])
+                .filter((item) => item.selectable && item.pack_release_id !== packs?.default_pack_release_id)
+                .map((item) => (
+                  <option key={item.pack_release_id} value={item.pack_release_id}>
+                    {item.name} v{item.version}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <small>
+            选择只影响新创建的面试；已创建的面试永远使用它当时冻结的包。
+            {" "}
+            <Button size="small" type="text" onClick={() => navigate(knowledgePacksPath())}>
+              管理岗位知识包
+            </Button>
+          </small>
+          {packsError ? (
+            <Alert type="warn" title="岗位知识包列表读取失败">
+              无法确认哪些包可选；仍可尝试用服务端默认包生成，服务器受理时会再次校验。
+            </Alert>
+          ) : null}
+        </section>
       ) : null}
       {!interview || editing ? (
         <JDInput

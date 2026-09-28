@@ -179,3 +179,56 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); ou
   .resume-workspace { display: block; }
   .resume-paper { width: 100%; padding: 0; border: 0; box-shadow: none; }
 }
+
+/* 岗位知识页（Phase 5 增量）：白底、蓝色主操作、渐进式披露，不改五页布局。 */
+.header-packs-link {
+  border: 0; background: transparent; color: var(--blue);
+  font-size: 14px; cursor: pointer; padding: 6px 4px;
+}
+.packs-loading { color: var(--muted); }
+.packs-layout {
+  display: grid; grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 24px; align-items: start;
+}
+.pack-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pack-list-item {
+  width: 100%; text-align: left; cursor: pointer;
+  display: grid; gap: 6px; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+}
+.pack-list-item.selected { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-soft); }
+.pack-list-name { font-weight: 600; color: var(--ink); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pack-list-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.pack-detail {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; padding: 24px 28px; display: grid; gap: 14px;
+}
+.pack-detail-header h2 { margin: 0 0 6px; }
+.pack-detail-meta { display: flex; gap: 10px; align-items: center; margin: 4px 0; color: var(--muted); }
+.pack-detail-meta code, .pack-digest-line code { background: var(--blue-soft); border-radius: 6px; padding: 2px 6px; }
+.pack-detail-tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.pack-scope p { margin: 6px 0; }
+.pack-scope strong { margin-right: 8px; }
+.pack-scope-counts { color: var(--muted); }
+.pack-capability-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.pack-capability-list li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
+.pack-source-list, .pack-validation-list { margin: 8px 0; padding-left: 20px; display: grid; gap: 6px; }
+.pack-source-list a { color: var(--blue); }
+.pack-validation-list li { display: flex; gap: 8px; align-items: baseline; }
+.pack-limitations-note, .pack-review-note { color: var(--muted); font-size: 13px; }
+.pack-digest-line { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.pack-detail-actions { display: grid; gap: 6px; }
+.pack-detail-actions small { color: var(--muted); }
+.pack-copied { color: var(--green); font-size: 13px; }
+.pack-import-limits { color: var(--muted); font-size: 13px; }
+.pack-import-file { color: var(--ink); font-size: 14px; }
+.pack-selector {
+  display: grid; gap: 6px; margin: 0 0 20px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.pack-selector select { max-width: 420px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.pack-selector small { color: var(--muted); }
+.interview-pack-line { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+@media (max-width: 860px) {
+  .packs-layout { grid-template-columns: 1fr; }
+}

@@ -338,6 +338,14 @@ export function InterviewPage({
         <div>
           <h1>{interviewRoleText(interview)}</h1>
           <InterviewProgress total={total} question={question} started={interviewStarted} />
+          {/* 本场冻结包摘要；不从“当前列表默认项”倒推。 */}
+          <p className="interview-pack-line">
+            {interview.knowledge_pack?.binding === "frozen"
+              ? `岗位知识包：${interview.knowledge_pack.name} v${interview.knowledge_pack.version}（本场冻结）`
+              : interview.knowledge_pack?.binding === "frozen_unavailable"
+                ? "岗位知识包：本场冻结的包当前不可用；恢复请重新创建计划。"
+                : "岗位知识包：历史绑定未确定；本场题目与报告保持原样。"}
+          </p>
         </div>
       </header>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />

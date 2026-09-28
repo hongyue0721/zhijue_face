@@ -8,6 +8,7 @@ import { PreparePage } from "./pages/PreparePage";
 import { StartPage } from "./pages/StartPage";
 import { ReportPage } from "./pages/ReportPage";
 import { ResumeDraftPage } from "./pages/ResumeDraftPage";
+import { KnowledgePacksPage } from "./pages/KnowledgePacksPage";
 import { parseRoute } from "./routing";
 
 function browserLocation(): string {
@@ -76,7 +77,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader currentStep={currentStep} />
+      <AppHeader currentStep={currentStep} onOpenPacks={() => navigate("/knowledge-packs")} />
       <ServiceNotice state={service} onRetry={checkService} />
       {invalidRoute ? (
         <div className="global-notice">
@@ -108,6 +109,8 @@ export default function App() {
         />
       ) : route.page === "resume" ? (
         <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} navigate={navigate} />
+      ) : route.page === "packs" ? (
+        <KnowledgePacksPage releaseId={route.releaseId} navigate={navigate} />
       ) : null}
     </div>
   );

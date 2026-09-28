@@ -102,3 +102,21 @@
 可由正文和主动作直接推导的就绪、等待、草稿标签不得重复常驻；题型由进度区单点表达。Planner/Seed 等实现明细不得进入用户主流程。字符计数在达到字段上限 80% 后才出现；报告限制默认折叠，总分不使用独立卡片容器。
 
 负责人明确要求移除模式徽章、fixture 提示条和文件要求说明，作为本轮界面规则覆盖旧版全局明示要求。后端 run_mode/data_mode/readiness 不变，不自动切模式；服务不可用仍显示真实错误。验收环境模式由测试记录说明，不将 fixture 结果当生产模型结果。
+
+## 2026-09-25 岗位知识页（KnowledgePacksPage）与集成
+
+| 路由/元素 | 唯一数据来源 | 行为与禁用条件 | 禁止的客户端推断 |
+|---|---|---|---|
+| `/knowledge-packs` 列表 | `GET /api/v1/knowledge-packs` | 真实 items；请求中显示文本加载态，不显示“0 条” | 不补假卡片；API 不可达显示“无法连接服务+重试连接”，不伪装空列表 |
+| 包详情 | `GET /api/v1/knowledge-packs/{release_id}` | 与列表 ID 同源；快速切换用序号守卫丢弃旧响应 | 不从“当前默认项”倒推详情 |
+| 三状态标签 | item `validation_status / review_status / selectable+blocked_reasons` | 格式通过、负责人审核、可用于新面试分开显示 | 不得由格式通过推导审核或可用 |
+| 导入按钮 | `POST /api/v1/knowledge-packs/import`（multipart+Idempotency-Key） | 防双击；202 后先受理再观察 Operation | 202 不显示“导入完成”；只有 succeeded result 才展示完成 |
+| 导入进度 | 复用 `useOperationMonitor`（SSE+polling） | 关闭对话框后台继续；刷新用 sessionStorage operation id 恢复；404 清键 | 不造第二套轮询；无精确进度不模拟百分比 |
+| 失败恢复 | Operation `error.retryable` | retryable=true 提供“重试导入”（parent 链）；格式/安全/版本类错误只引导换修正后的文件 | 不可重试错误不放“重试”按钮 |
+| 用于新面试 | 前端下一次创建意图（sessionStorage 只存 release id） | 仅 `selectable=true` 可点；无全局激活写接口 | 不影响任何已创建面试；提交时服务器再确认可用性 |
+| 来源外链 | detail `sources[].url` | 仅 http(s) 渲染链接、用户主动点击、`rel=noopener noreferrer` | 不自动抓取、不渲染不安全协议 |
+| 复制标识 | 当前已取得的 DTO | 本地 clipboard 动作，失败给友好提示 | 不为此新增后端接口 |
+| 准备页选择器 | `GET /api/v1/knowledge-packs`（selectable 项） | 默认“服务端默认”；选择经 `pack_release_id` 随创建提交；包被删/失选自动回落默认 | 列表读取失败只警告，仍可用默认包生成（服务器受理时校验）；不禁用其它入口 |
+| 本场包摘要 | `InterviewView.knowledge_pack`（冻结字段） | 准备/面试/报告三页显示 frozen / frozen_unavailable / legacy_unresolved 三种真实状态 | 绝不从当前列表默认项倒推历史绑定 |
+
+能力就绪分离：岗位包列表/详情/导入不依赖模型或候选人 embedding；`serviceReady=false` 只锁模型相关流程（生成计划、开始面试、回答分析），知识页不因它整体禁用。候选人接口面（列表/详情/面试视图）不返回参考答案、rubric 明细或评分细则。

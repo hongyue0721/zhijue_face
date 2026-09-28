@@ -98,6 +98,106 @@ export interface ReadinessView {
   knowledge: string;
   model: string;
   seed_bank_version: string;
+  // §6.4：包管理可用性与面试生成就绪分开报告；连接失败 ≠ 面试未就绪。
+  knowledge_packs?: {
+    status: string;
+    default_pack_release_id: string | null;
+  };
+}
+
+// 岗位知识包 DTO（api.md §9）。字段与后端 _item_dict/detail_view 一一对应，
+// 不复制第二套契约；候选人可见面绝不包含参考答案/评分细则。
+export type PackReviewStatus = "unreviewed" | "approved" | "rejected";
+
+export interface PackBlockedReason {
+  code: string;
+  message: string;
+}
+
+export interface PackCapability {
+  competency_id: string;
+  label: string;
+  technical_seed_available: boolean;
+}
+
+export interface KnowledgePackItem {
+  pack_release_id: string;
+  pack_id: string;
+  name: string;
+  version: string;
+  content_digest: string;
+  format_version: string;
+  competency_profile_id: string;
+  scope_summary: string;
+  unsupported_scope: string;
+  validation_status: string;
+  review_status: PackReviewStatus;
+  selectable: boolean;
+  blocked_reasons: PackBlockedReason[];
+  seed_count: number;
+  approved_seed_count: number;
+  source_count: number;
+  capabilities: PackCapability[];
+  review_summary: {
+    decision: PackReviewStatus;
+    reviewer_role: string;
+    reviewed_at: string;
+    review_basis: string;
+  } | null;
+}
+
+export interface KnowledgePackSource {
+  source_id: string;
+  title?: string;
+  url?: string;
+  publisher?: string;
+  retrieved_at?: string;
+  [key: string]: unknown;
+}
+
+export interface KnowledgePackValidationCheck {
+  check: string;
+  status: string;
+  detail: string;
+}
+
+export interface KnowledgePackDetail extends KnowledgePackItem {
+  sources: KnowledgePackSource[];
+  validation_checks: KnowledgePackValidationCheck[];
+  limitations_note: string;
+}
+
+export interface KnowledgePackList {
+  items: KnowledgePackItem[];
+  default_pack_release_id: string | null;
+  import_limits: {
+    max_upload_bytes: number;
+    max_extracted_total_bytes: number;
+    max_single_file_bytes: number;
+    max_entries: number;
+    max_path_depth: number;
+  };
+}
+
+export interface InterviewPackSummary {
+  binding: "frozen" | "frozen_unavailable" | "legacy_unresolved";
+  pack_release_id: string | null;
+  pack_id?: string | null;
+  name?: string | null;
+  version?: string | null;
+  content_digest?: string | null;
+  competency_profile_id?: string | null;
+  note?: string;
+}
+
+export interface KnowledgePackImportResult {
+  release_id: string;
+  pack_id: string;
+  version: string;
+  content_digest: string;
+  reused: boolean;
+  review_status: PackReviewStatus;
+  selectable_for_new_interview: boolean;
 }
 
 export interface JDSourceView {
@@ -247,6 +347,8 @@ export interface InterviewView {
   stop_requested: boolean;
   report_id: string | null;
   limitations: string[];
+  // 本场冻结摘要：不从“当前列表默认项”倒推（U7）。
+  knowledge_pack: InterviewPackSummary;
 }
 
 export type RootAssessmentStatus =
@@ -390,6 +492,7 @@ export interface ResumeDraftView {
 export interface CreateInterviewOptions {
   jd_text?: string;
   jd_source_name?: string;
+  pack_release_id?: string;
 }
 
 export const JD_TEXT_MAX_LENGTH = 8_000;
@@ -574,6 +677,24 @@ export const api = {
         ...options,
       }),
     }),
+
+  listKnowledgePacks: (signal?: AbortSignal) =>
+    request<KnowledgePackList>("/knowledge-packs", { signal }),
+
+  getKnowledgePack: (releaseId: string, signal?: AbortSignal) =>
+    request<KnowledgePackDetail>(`/knowledge-packs/${pathSegment(releaseId)}`, {
+      signal,
+    }),
+
+  importKnowledgePack: (file: File, idempotencyKey: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<OperationAccepted>("/knowledge-packs/import", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: form,
+    });
+  },
 
   getInterview: (interviewId: string, signal?: AbortSignal) =>
     request<InterviewView>(`/interviews/${pathSegment(interviewId)}`, { signal }),

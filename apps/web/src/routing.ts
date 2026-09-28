@@ -4,6 +4,7 @@ export type AppRoute =
   | { page: "interview"; interviewId: string }
   | { page: "report"; interviewId: string }
   | { page: "resume"; draftId: string }
+  | { page: "packs"; releaseId: string | null }
   | { page: "redirect"; path: string };
 
 function readQuery(search: string, name: string): string | null {
@@ -51,6 +52,9 @@ export function parseRoute(pathname: string, search: string): AppRoute {
       ? { page: "resume", draftId }
       : { page: "redirect", path: "/start?notice=invalid_route" };
   }
+  if (pathname === "/knowledge-packs") {
+    return { page: "packs", releaseId: readQuery(search, "release") };
+  }
   return { page: "redirect", path: "/start?notice=invalid_route" };
 }
 
@@ -73,4 +77,10 @@ export function reportPath(interviewId: string): string {
 
 export function resumeDraftPath(draftId: string): string {
   return `/resume-drafts/${encodeURIComponent(draftId)}`;
+}
+
+export function knowledgePacksPath(releaseId?: string): string {
+  return releaseId
+    ? `/knowledge-packs?release=${encodeURIComponent(releaseId)}`
+    : "/knowledge-packs";
 }

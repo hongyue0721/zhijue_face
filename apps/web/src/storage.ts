@@ -1,4 +1,4 @@
-export type OperationScope = "profile" | "prepare" | "interview" | "interview-control" | "report" | "resume";
+export type OperationScope = "profile" | "prepare" | "interview" | "interview-control" | "report" | "resume" | "packs";
 
 function storageKey(scope: OperationScope, resourceId: string): string {
   return `zhijue:${scope}:operation:${resourceId}`;
@@ -29,6 +29,34 @@ export function clearOperationId(scope: OperationScope, resourceId: string): voi
     window.sessionStorage.removeItem(storageKey(scope, resourceId));
   } catch {
     // The resource snapshot still recovers every server-exposed active operation.
+  }
+}
+
+// “用于新面试”只是前端下一次创建意图：保存允许的命令标识
+// （release ID），绝不写服务端全局激活状态；提交时由服务器再确认可用性。
+const PACK_SELECTION_KEY = "zhijue:packs:new-interview-selection";
+
+export function loadPackSelection(): string | null {
+  try {
+    return window.sessionStorage.getItem(PACK_SELECTION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function savePackSelection(releaseId: string): void {
+  try {
+    window.sessionStorage.setItem(PACK_SELECTION_KEY, releaseId);
+  } catch {
+    // 存储不可用时回落到默认包即可；不影响任何已创建面试。
+  }
+}
+
+export function clearPackSelection(): void {
+  try {
+    window.sessionStorage.removeItem(PACK_SELECTION_KEY);
+  } catch {
+    // 忽略：下一次读取会自然回落。
   }
 }
 

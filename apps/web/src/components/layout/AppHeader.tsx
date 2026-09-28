@@ -2,8 +2,10 @@ import { StepProgress } from "./StepProgress";
 
 export function AppHeader({
   currentStep,
+  onOpenPacks,
 }: {
   currentStep: 1 | 2 | 3 | 4 | null;
+  onOpenPacks: () => void;
 }) {
   return (
     <header className="app-header">
@@ -16,6 +18,10 @@ export function AppHeader({
           </span>
         </div>
         <div className="header-right">
+          {/* 岗位知识入口独立于五步主流程；不占用步骤编号。 */}
+          <button type="button" className="header-packs-link" onClick={onOpenPacks}>
+            岗位知识
+          </button>
           {currentStep ? <StepProgress current={currentStep} /> : null}
         </div>
       </div>

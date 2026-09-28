@@ -613,6 +613,14 @@ export function ReportPage({
               <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
             </details>
           ) : null}
+          {/* 本场包摘要来自 Interview 冻结字段，不受“当前默认包”影响。 */}
+          <p className="interview-pack-line">
+            {interview.knowledge_pack?.binding === "frozen"
+              ? `岗位知识包：${interview.knowledge_pack.name} v${interview.knowledge_pack.version}（本场冻结）`
+              : interview.knowledge_pack?.binding === "frozen_unavailable"
+                ? "岗位知识包：本场冻结的包当前不可用（内容缺失或损坏）。"
+                : "岗位知识包：历史绑定未确定，报告不追认版本。"}
+          </p>
         </div>
         <Button
           type="secondary"
