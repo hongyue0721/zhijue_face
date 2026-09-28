@@ -1,5 +1,32 @@
 # CHANGELOG
 
+
+## Unreleased — 2026-09-27｜live 模型端到端验收与网关兼容修复（VERIFIED，负责人授权真实调用）
+
+- chat `API_BASE` 契约修复：允许 origin 或 origin+`/v1`（OpenAI 兼容网关惯例，与 embedding 口径对称；其余路径/query/fragment 仍拒绝）。
+- 实测网关 SSE 通道不落实 `response_format=json_object`：新增 `MODEL_STREAM` 策略开关（默认流式；缺陷网关显式非流），两条路径共享同一严格校验；`unwrap_code_fence` 只剥整体 Markdown 栅栏不做尽力抽取；四个系统提示词禁止字符串值内裸 ASCII 双引号。
+- openJiuwen 会话 `_execute_timeout` 与业务 `timeout_seconds` 同源对齐；SDK 包装超时还原为裸 `TimeoutError` → `UPSTREAM_TIMEOUT`；新增 `ZHIJUE_ANSWER_WORKFLOW_TIMEOUT_SECONDS` 配置。
+- qwen3.8-flash：抽取/分析链通过（M3-01 smoke passed）；coach/resume 长输出 3 次预算内全败于语义防线（编造断言/非逐字引文/改 report_id 全部被拦），不适合生成链，如实记录。deepseek-v4.1-flash 同网关全链 live E2E 通过（冻结绑定→5 题真实分析→45 分报告→优化 ready→草稿全绑定），浏览器 live 报告页实拍。embedding 网关无 `/embeddings`，Knowledge 腿用本地 ONNX shim（隔离验收基础设施，不宣称等价 BGE-M3）。
+- 后端 395 passed / 0 failed、前端 29/29、`make check` 全绿、bundle 复验 PASS。真实模型调用发生但成本由 provider 计量（cost 字段 null/NOT_MEASURED，不估造）。
+
+## Unreleased — 2026-09-25｜AIC 收口 Phase 2–6：结构化岗位知识包、真实接口、知识页与发行工具（VERIFIED 本地离线 / live NOT_RUN）
+
+- 新增 `domain/competency_profiles.py` 单一真源（`embedded-junior-v1` 携带历史 JD 关键词、证据关键词与 RTOS 家族借用规则）；`domain/requisition.py`、`application/requisition.py`、`domain/questions.py` 改为消费 profile，行为逐条不变。知识包 `competencies.json` 只是声明镜像，不一致拒绝导入（R03）。
+- 岗位包契约：`domain/knowledge_packs.py`（manifest/competencies/sources 严格解析、canonical JSON 归一、内容摘要、ZIP 安全解压上限：路径/符号链接/加密/压缩比/条目/单文件/总量）+ `contracts/knowledge_pack.schema.json` + 内置 `knowledge_packs/embedded_software_junior/`（六条 Seed 字节原样搬移、NOTICE 许可登记、来源目录）。
+- 存储与信任：迁移 `a7c4e1f29b58` 建 `knowledge_pack_release/review/import` 三表并给 `interview` 增加三个可空绑定列；`application/knowledge_packs.py` 实现不可变 release 登记（同摘要复用/异摘要 409）、每次解析重算摘要、损坏显式失败不回落、包外审核记录绑定 `content_digest` 且逐条 Seed 内容 hash、`ensure_builtin` 以固定白名单迁移 M2-01 六条批准（新增 Seed 不自动获批）。负责人审核 CLI：`scripts/manage_knowledge_pack.py`（需 `--confirm-content-reviewed`，runtime 目录与业务库同实例推导）。
+- 面试链：`POST /interviews` 受理时冻结 `pack_release_id+content_digest+competency_profile_id`（幂等重放先找回原操作，服务端默认变化不误报冲突）；start/恢复只按冻结绑定解析，legacy 行显示 `legacy_unresolved` 不捏造；`InterviewView.knowledge_pack` 摘要；候选人面不返回参考答案/评分细则。
+- HTTP：`GET /knowledge-packs`、`GET /knowledge-packs/{release_id}`、`POST /knowledge-packs/import`（202+Operation+上传回执持久+parent-linked retry+预算上限）；`/runtime/info` 增量 `knowledge_packs`；无全局激活接口。`scripts/export_openapi.py` 成为契约导出真源。
+- 前端：新增 `/knowledge-packs` 知识页（列表/详情/三状态分离/导入对话框/复制标识/来源安全外链）、准备页岗位包选择器（只影响新面试，失选自动回落默认）与准备/面试/报告三页冻结摘要；沿用白底蓝色与 useOperationMonitor，不重写五页。`docs/ui-contract.md` 登记组件→API→禁用条件→失败恢复映射。
+- 启动与发行：`make setup/demo-fixture/demo-live/competition-bundle/verify-bundle/openapi/checksums`；`zhijue.api.demo_fixture` 合成演示实例（内存 Knowledge+脚本分析，剥离模型 env）；`web` 目标改用 PATH 中真实 node。ADR-014 记录决策边界。
+- 验证：后端离线 386 passed / 0 failed（新增包契约/安全/HTTP 33 项）；Ruff 全范围通过；`validate_spec.py` 48/48；前端 29/29 + tsc + build；真实 Chromium fixture 纵切面（导入→unreviewed→CLI 负责人批准→冻结出题→页面摘要）通过，截图存 `runtime/browser-shots/`（gitignored）。live 模型端到端、远端 CI、真实业务库迁移、公网发布、发行包正式对外发布均 NOT_RUN。
+
+## Unreleased — 2026-09-25｜AIC 收口 Phase 0–1：可复现离线基线（VERIFIED 本地）
+
+- 接手审计确认审查基线即当前 HEAD `d91023a`，干净 checkout 离线回归原本 2 failed：doctor 测试读取真实 `.env.local`、缺失开发者 `toolchain/` 目录导致 doctor FAIL。计划与 R01–R10 核对结论登记 `docs/aic/IMPLEMENTATION_PLAN.md`。
+- doctor 分档：offline 源码/依赖完整性（缺私密 env、缺前端工具链只 WARN）；toolchain 要求 node/pnpm 实测与锁一致；live 要求私密 env 就绪否则 not_ready。工具版本一律实测，`toolchain/VERSIONS.txt` 仅为开发机声明。
+- doctor 测试改用 tmp 假工作区与确定性假密钥，断言完整值与长片段都不外泄，不再以开发者私密环境为测试前提；未削弱任何既有断言。
+- CI 与本地检查语义统一：Ruff 覆盖 `src tests smoke migrations`，pytest 显式排除 `integration_live`，新增规范校验与 CHECKSUMS 完整性步骤；Makefile 新增 `spec/integrity`。修复后本地：后端 329 passed / 0 failed、前端 25/25 + build、validate_spec 47/47、doctor offline 0 FAIL。远端 CI 未推送触发，REMOTE_CI_PENDING。API/数据库/迁移/模型调用均无变化。
+
 ## Unreleased — 2026-09-22｜openEuler 容器兼容性冒烟（VERIFIED，容器范围）
 
 - 使用官方 openEuler 24.03 LTS-SP2 x86_64 镜像，在容器内重新安装锁定 Python/Node 依赖，openJiuwen 锁定 commit、五段 Alembic migration、FastAPI、Vite 与 `/api` 代理均成功启动。

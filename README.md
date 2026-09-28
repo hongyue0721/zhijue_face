@@ -5,7 +5,7 @@
 这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答→评分报告→回答优化→简历草稿的 React 纵切面。M4-02 已实现受事实约束的生成 Workflow、Operation/恢复、五页首屏收口和确认后打印；生产内容模型已用 synthetic 输入分别跑通 coaching/resume，但不把单样本外推为质量、稳定性、成本或负责人验收，也尚未部署。
 
 
-## 当前工程快照（2026-09-20，桌面闭环整改后）
+## 当前工程快照（2026-09-25，岗位知识包轮次后）
 
 - `M0-02`：真实 openJiuwen Workflow/WorkflowAgent smoke 已实现并完成本地回归，状态 `IMPLEMENTED`；额外官方 Base Agent/starter 要求仍 `BLOCKED / UNCONFIRMED`。
 - `M0-03 / M0-03-DEL`：真实 Knowledge 四进程生命周期 `VERIFIED`，覆盖解析、入库、检索、provenance、重启、删除和删除后重启零命中。项目临时锁定到基于 openJiuwen v0.1.18 和官方 PR #1344 的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；不得描述成官方新发布版。
@@ -22,8 +22,9 @@
 - `M4-02`：`report.coach` 与 `resume.compose` 通过真实 openJiuwen Workflow 编排和确定性来源校验；Report/Resume API、持久化、事件、retry、五页 Product Polish 与打印均完成。生产 `deepseek-flash` 首轮暴露 Prompt 没有实际下发 Schema 结构，服务端正确拒绝；明确精确字段后，synthetic coaching/resume 均通过原 Schema 和事实校验。负责人独立验收仍 `NOT_RUN`，状态保持 `IMPLEMENTED`。
 - `M4-02-DESKTOP`：快照代次激活门禁/恢复、无简历与独立简历入口、批量事实核对、岗位修改、skip/end、报告原题/原答和桌面浅色布局已实现。负责人 live 上传暴露的 P-EXTRACT 模型 HTTP 超时已与模型返回后的来源校验失败分型；按负责人要求，所有业务模型请求现显式发送 `reasoning_effort=low`。最新后端回归为 299 passed / 2 deselected / 78 warnings，Ruff 78 files。前端仍为 9/9、TypeScript 和 Vite 112 modules 通过；三个桌面尺寸/light-dark 实际浏览器证据与静态完整性结果见 process §43，本次 live 超时与低思考配置见 §44—§45。负责人须重新上传原文件才能验证上游恢复，不宣称本轮移动端或生产模型质量通过。
 - 模型实测：BGE-M3 embedding 已 live；`deepseek-flash` Answer Analyzer 成功样本为 10.650749 秒、usage 1156/2544/3700；Content Generator 成功 coaching/resume 分别为 27.727351/10.839200 秒、usage 669/6377/7046 与 535/2325/2860。provider 未返回价格，cost 均为 null / NOT_MEASURED；不估造费用。
+- `AIC-PACKS`：结构化岗位知识包契约（manifest/competencies 声明镜像/sources/内容摘要）、不可变 release 与包外负责人审核（CLI 登记，逐条绑定 Seed 内容 hash）、ZIP 安全解压上限、`GET/POST /knowledge-packs*` 异步导入（202+Operation+回执持久）、面试受理时冻结 `pack_release_id+content_digest+competency_profile_id`、`/knowledge-packs` 知识页与准备页选择器已实现；ADR-014 记录决策边界。离线回归 395 passed / 0 failed，前端 29/29 + build，真实浏览器 fixture 纵切面（导入→unreviewed→负责人批准→冻结出题）通过。2026-09-27 负责人授权后 live 模型端到端已 VERIFIED（见 process.md §63：真实 P-EXTRACT/分析/评分/优化/草稿全链通过，浏览器实拍 live 报告页；embedding 腿为本地隔离 shim，非 BGE-M3 等价声明）。负责人对审核 CLI 结论与本批网关兼容变更的独立复核仍 NOT_RUN。
 
-当前事实、证据和唯一下一任务以 [process.md §43](process.md#43-2026-09-20m4-02-desktop-桌面业务闭环整改implemented) 的桌面交接为准；历史生产模型记录见 [Content Generator live handoff](docs/handoffs/2026-09-20-m4-02-content-live.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。现有业务库部署前须明确选择数据库并执行新迁移；本轮没有迁移或重启负责人真实 runtime。
+当前事实、证据和唯一下一任务以 [process.md §62](process.md) 的岗位知识包交接为准；上一轮桌面交接见 [process.md §43](process.md#43-2026-09-20m4-02-desktop-桌面业务闭环整改implemented)，历史生产模型记录见 [Content Generator live handoff](docs/handoffs/2026-09-20-m4-02-content-live.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。现有业务库部署前须明确选择数据库并执行新迁移（`a7c4e1f29b58` 增加岗位包三表与 interview 三个可空绑定列，旧行保持 null，不回填）；本轮没有迁移或重启负责人真实 runtime。
 
 ## 项目一句话
 
@@ -33,11 +34,11 @@
 
 - 两个入口：**整理简历**、**直接面试**；共用一份版本化资料，不强制先生成简历。
 - 一个主演示岗位：嵌入式软件实习/校招初级岗位。五道主问题，每题最多一次补充追问或澄清。
-- 初期六条题目种子打通流程；发布目标二十四条经审核种子。数量不是发布成绩。
+- 初期六条题目种子打通流程；发布目标二十四条经审核种子。数量不是发布成绩。六条种子现以 `embedded-software-junior` 内置岗位知识包登记（M2-01 负责人批准范围逐条内容 hash 迁移映射，见 ADR-014）。
 - 核心：材料确认 → Knowledge 入库检索 → 五题计划 → 作答 → 分析与规则决策 → 评分 → 优化回答。
 - PDF/文本上传先落不可变 SourceBlock，再由真实 P-EXTRACT Workflow 选择可逐字回查的待确认事实；上传不会自动确认候选事实。
 - OCR、跨场次训练记忆属于 P1。P0 必须识别扫描 PDF 并提供粘贴文本的降级路径，不能把降级说成 OCR 已实现。
-- 不做招聘录用判断、岗位爬虫、联网全知问答、语音、多人 Agent 协商、复杂概率能力模型、完整简历编辑平台。
+- 不做招聘录用判断、岗位爬虫、联网全知问答、语音、多人 Agent 协商、复杂概率能力模型、完整简历编辑平台。岗位知识包只支持已注册能力配置（当前一个领域包）；不宣称任意职业换包即用，也不做影响历史面试的全局切换。
 
 ## 和前期讨论的明确调整
 

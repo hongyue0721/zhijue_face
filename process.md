@@ -49,6 +49,7 @@
 | M4-02 | M4-01 | IMPLEMENTED | 受事实约束回答优化/简历草稿、Operation/retry、迁移/API、五页 Product Polish 已通过 fixture；生产 `deepseek-flash` coaching/resume synthetic live 经 Prompt 根因修复后均通过原 Schema 与事实校验。负责人独立验收仍待做 |
 | M4-02-DESKTOP | M4-02 实现与本轮审查 | IMPLEMENTED | 快照代次门禁/恢复、两入口、批量核对、更正、岗位修改、skip/end、报告上下文与桌面浅色布局已通过后端回归及真实浏览器 fixture；负责人独立验收 NOT_RUN |
 | OS-SMOKE | M4-02 | VERIFIED（openEuler 容器范围） | 官方 openEuler 24.03 LTS-SP2 用户空间内完成锁定依赖安装、迁移、前后端启动、健康检查及一条 synthetic 资料写入；统信 UOS 原生环境 NOT_RUN |
+| AIC-KP | M4-02 | IN_PROGRESS | 依据 `ZhiJue_AIC_AGENT_MASTER.md`：离线基线修复（Phase 1 完成）、结构化岗位知识包契约/导入/审核、面试冻结绑定、`/knowledge-packs` 页与集成、发行包复验；详见 `docs/aic/IMPLEMENTATION_PLAN.md` 与 §61 |
 | M5-01 | M4-02 | PLANNED | 题库扩充/对照记录 |
 | M5-02 | M5-01 | PLANNED | P0 综合验收 |
 | M5-03 | M5-02 | PLANNED | 演示与提交物 |
@@ -1241,3 +1242,41 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - `OS-SMOKE` 在“openEuler 24.03 LTS-SP2 x86_64 容器用户空间”范围内记为 `VERIFIED`：锁定依赖、数据库迁移、API、前端、代理和最小 synthetic 写入均实际通过。
 - 统信 UOS、麒麟、鸿蒙、国产 CPU、完整桌面/打印、live Knowledge、真实模型和正式比赛指定环境均 `NOT_RUN`。若赛事明确要求统信 UOS，必须在对应 UOS 版本和架构上重新执行同一启动与纵切面，不得复用本节标题替代。
 - 验证完成后已停止容器，并删除临时容器镜像、openEuler 基础镜像、数据卷、缓存卷和仓库外构建目录。`git status --short --branch` 为干净 `main...origin/main`；本轮验证阶段没有修改业务代码、API、OpenAPI、Schema、迁移、依赖或运行配置。
+
+## 61. 2026-09-25｜AIC 收口：离线基线修复（Phase 0–1，VERIFIED 本地 / REMOTE_CI_PENDING）
+
+- 任务 AIC-KP；规格 `ZhiJue_AIC_AGENT_MASTER.md`，接手审计见 `docs/aic/IMPLEMENTATION_PLAN.md`。接手 HEAD 与审查基线一致 `d91023a`，工作区干净；接手实测复现 R01：离线 pytest **324 passed / 2 failed**（doctor 测试读真实 `.env.local`；缺失 `toolchain/VERSIONS.txt` 使 doctor 判 FAIL），本机确无 `.env.local` 与 `toolchain/`。
+- `scripts/doctor.py` 改为三档 profile：`offline`（默认，源码/依赖完整性；缺私密 env 与缺前端工具链只 WARN）、`toolchain`（node/pnpm 必须实测可用且与锁一致，否则 FAIL）、`live`（再要求 `.env.local` 存在、≤0600、被 Git 忽略、必需键齐备，缺失即 not_ready FAIL）。`toolchain/` 目录降级为开发机声明：不一致只 WARN，实际版本一律重测 PATH 或 `toolchain/node24/bin` 中的可用工具，版本漂移如实 WARN/FAIL，不无条件放行。
+- `tests/test_doctor.py` 不再读取真实私密配置：新增假工作区（tmp git repo + 复制锁/配置 + 0600 假 `.env.local`）覆盖 A02 脱敏（完整假值与 12 字前缀都不出现在输出）、离线档不依赖私密资产、live 档缺 env 明确 FAIL。假密钥字面量刻意不匹配 doctor 自身扫描规则，避免测试资产触发现实扫描器（该次触发恰好证明扫描有效）。
+- CI 与本地语义对齐：`ci.yml` Ruff 范围扩为 `src tests smoke migrations`，pytest 显式 `-m 'not integration_live'`，新增 `tools/validate_spec.py` 与 `sha256sum -c CHECKSUMS.sha256` 完整性步骤，清理过时“尚未推送 NOT_RUN”头注释；`Makefile` 的 `lint/test` 同范围，新增 `spec/integrity` 并纳入 `check`。未删任何既有断言、未加 skip/`|| true`。
+- 修复后本地实测：pytest **329 passed / 2 deselected / 0 failed**；Ruff check/format 全范围通过（80 files）；`validate_spec.py` 47/47；doctor offline exit 0（10 PASS/5 WARN/0 FAIL，WARN 均为本机事实）；前端 `pnpm install --frozen-lockfile`、`pnpm test` 25/25、`pnpm build` 通过；`CHECKSUMS.sha256` 收尾重建 246 项一致。注：`tools/validate_spec.py` 每次运行会重生成 `validation-report.md`（生成物，本轮已随清单一并落盘）。
+- HTTP/API/OpenAPI/数据库/迁移无变化；模型调用 0，usage/cost 为 null。远端 CI 未推送未触发：REMOTE_CI_PENDING。下一阶段：Phase 2 冻结岗位包契约（manifest/competency profile/sources/content digest/审核信任/ZIP 上限）。
+
+## 62. 2026-09-25｜AIC 收口：结构化岗位知识包全链（Phase 2–6，VERIFIED 本地离线 / live NOT_RUN）
+
+- 任务 AIC-KP Phase 2–6；规格 `ZhiJue_AIC_AGENT_MASTER.md`，决策记录 ADR-014，契约 api.md §9，界面映射 docs/ui-contract.md。接手基线 `d91023a` 未回退任何新改动。
+- **契约冻结（Phase 2）**：`domain/knowledge_packs.py` 实现 manifest/competencies/sources 严格解析（重复键、NaN、BOM、声明外文件、路径穿越、符号链接、加密 ZIP、压缩比/条目/大小上限全部显式拒绝）、canonical 归一与 `content_digest`；`contracts/knowledge_pack.schema.json` 描述包格式；内置 `knowledge_packs/embedded_software_junior/` 由 `data/seeds` 六条字节原样搬移（`test_builtin_seeds_bytes_moved_not_rewritten` 逐 hash 证明），NOTICE 登记许可边界。`domain/competency_profiles.py` 成为 JD→competency、证据关键词与家族借用规则单一真源，`requisition.py`/`questions.py` 改为消费 profile，嵌入式行为逐条不变。
+- **存储与信任（Phase 3）**：迁移 `a7c4e1f29b58`（release/review/import 三表 + interview 三个可空绑定列，旧行不回填）；`application/knowledge_packs.py`：不可变 release、同摘要复用/同版本异内容 409、每次解析重算摘要、损坏显式失败不回落；有效审核 = 绑定当前摘要的包外记录 ∩ 逐条 Seed 内容 hash ∩ 声明门槛；`ensure_builtin_release` 以 `BUILTIN_APPROVED_SEED_IDS` 固定白名单迁移 M2-01 六条批准，数量不符直接拒绝启动该能力。负责人审核 CLI `scripts/manage_knowledge_pack.py` 需 `--confirm-content-reviewed`，runtime 目录与目标库同实例推导。
+- **面试链（Phase 3/4）**：`POST /interviews` 受理时 `freeze_for_new_plan` 解析并落库绑定；幂等重放先 `find_by_key` 找回原操作（服务端默认包变化不把重放误判冲突，D05）；start 只按冻结绑定解析，legacy → `legacy_unresolved` 明确失败不捏造；`InterviewView.knowledge_pack` 冻结摘要；候选人面不含参考答案/评分细则（契约测试断言字段不外泄）。
+- **HTTP 与异步（Phase 4）**：`GET /knowledge-packs`、`GET /knowledge-packs/{release_id}`、`POST /knowledge-packs/import`（202；上传字节按回执持久，刷新不丢；parent-linked retry 复用回执，attempts 预算硬上限；格式类错误 `retryable=false`）；`/runtime/info` 增量 `knowledge_packs`；无全局激活接口；`scripts/export_openapi.py` 导出契约，OpenAPI 快照测试含包路径与 multipart 断言。
+- **前端（Phase 5）**：`/knowledge-packs` 页（列表加载态/空态/断连态分离、三状态标签、能力覆盖事实、来源安全外链、复制标识、导入对话框复用 useOperationMonitor、"用于新面试"仅存前端意图）；准备页选择器 + 失选回落；准备/面试/报告页冻结摘要行；样式沿用白底蓝色渐进披露，未重写五页。
+- **启动与发行（Phase 6）**：`make setup / demo-fixture / demo-live / competition-bundle / verify-bundle / openapi / checksums`；`zhijue.api.demo_fixture` 为隔离合成实例（内存 Knowledge + 脚本分析端口，显式剥离模型 env，内容生成不提供）；`scripts/demo.sh` 独立 runtime 目录、端口占用友好失败、只清理自身子进程；`web` 目标改用 PATH 中真实 node（R01 的 `toolchain/` 硬编码移除）。
+- **验证证据（全部本地离线，模型调用 0）**：后端 `pytest -m 'not integration_live'` **386 passed / 0 failed**（新增 `test_knowledge_pack_contract.py`、`test_knowledge_pack_security.py`、`test_knowledge_packs_api.py` 共 33 项）；Ruff check+format 全范围通过；`validate_spec.py` 48/48；前端 vitest **29/29**、`tsc --noEmit`、`vite build` 通过；真实 Chromium（headless CDP）fixture 纵切面：包列表/详情渲染 → 导入 `browser-demo-pack` → 202+Operation succeeded + "尚不可用于新面试" → 未审核包"用于新面试"禁用 → CLI 负责人批准 → 可选 → 显式选包创建计划 → 冻结摘要 sha 一致 → start 出题（唯一 Seed 不匹配时按契约回退经历题）→ 面试页摘要行；截图 7 张存 `runtime/browser-shots/`。
+- **迁移与回滚**：新库直接 `upgrade`；已有业务库执行 `alembic upgrade head` 仅增表/增可空列，无数据改写；回滚 `alembic downgrade e62a9f8c10bd` 删除新表与三列，既有面试行为不受影响。本轮未触碰负责人真实 runtime。
+- **NOT_RUN（不阻塞开发，未伪造）**：live 模型端到端（无预算授权）；远端 CI 触发；统信 UOS/麒麟等赛事指定 OS；`make demo-live` 真实上游启动；负责人对 `review_browser_owner_20260925` 与内置迁移映射之外的新批准；公网发布与正式发行物对外提交（bundle 已可生成并自证校验）。
+
+## 63. 2026-09-27｜live 模型端到端验收（负责人授权真实调用；VERIFIED）
+
+- 授权范围：负责人提供 OpenAI 兼容网关（hyper.charm.land/v1）与预算，指定 qwen3.8-flash。真实模型调用本轮实际发生；未推送、未发布、未迁移真实业务库。
+- 私密配置：`.env.local`（chat）与 `.env.embedding.local`（embedding）分离、0600、gitignored；密钥不落任何证据文件（smoke/验收脚本自带密钥外泄断言）。
+- **契约缺口修复（永久代码）**：
+  1. chat `API_BASE` 只允许裸 origin，与 OpenAI 兼容网关惯例（`/v1` 挂载）冲突——改为 origin 或 origin+`/v1`（与 knowledge 适配器口径对称，其余路径/query/fragment 仍拒绝，新增正/负例测试）。
+  2. 实测该网关 **SSE 通道不落实 `response_format=json_object` 强制**（非流 6/6 合法、流式 2/6 破坏：Markdown 栅栏/非法转义）。新增 `MODEL_STREAM` 策略开关（默认 true 保持长思考 stall 保护；缺陷网关显式 false），非流路径共享同一严格校验；env 模板、api.md §4 表述与测试同步。
+  3. 模型输出偶发整体包裹 ```json 栅栏：`application/model_output.py::unwrap_code_fence` 只剥外层包装，正文仍走完整 schema/逐字引用/ID 校验，栅栏内非法照样失败（回归测试钉住"不做尽力抽取"）。
+  4. 四个系统提示词增加字符串内 ASCII 双引号禁令（实测 qwen3.8-flash 在中文解释里裸写 `"词"` 破坏 JSON）。
+  5. openJiuwen 会话级 `_execute_timeout` 默认 60s 与业务 `timeout_seconds` 脱钩：现在会话 env 与业务预算同源对齐，SDK 包装的 `ExecutionError(TimeoutError)` 还原为裸 `TimeoutError` → 服务层正确映射 `UPSTREAM_TIMEOUT`；新增 `ZHIJUE_ANSWER_WORKFLOW_TIMEOUT_SECONDS` 配置（拒绝非正值）。doctor 增 `bundle` 档、`make checksums` 修非 ASCII 文件名引号、bundler 修 stdout 捕获（上一段 §62 的收尾补丁）。
+- **qwen3.8-flash 实测边界（事实，不粉饰）**：P-EXTRACT 逐字抽取 4 次全过（6–16 条候选、usage 604/1589 量级）；M3-01 回答分析 smoke `runtime/live-accept/answer-smoke-4.json` **passed**（20.8s、1 次调用、usage 1172/1241、cost null/NOT_MEASURED，level 3 supported→NEXT）；HTTP live 链前 3 题真实分析通过（1 次 flake 被预算内 retry 吸收）。但 coach/resume 长输出契约合规率低：3 次预算内全败，失败模式=编造未绑定断言（被拦）、引文不逐字（被拦）、改写 report_id（被拦）——**全部被语义防线正确拒绝，无一条未达标内容入库**；该模型不适合改写/生成链，如实记录。
+- **deepseek-v4.1-flash（同网关同授权）全链 live E2E 通过**：`runtime/live-accept/live-e2e-deepseek.json`——上传→P-EXTRACT 6 条逐字候选（1 调用）→确认→真实 openJiuwen Knowledge 激活 ready（本地 ONNX embedding shim，见下）→显式选包受理冻结（digest 与 runtime 一致）→5 题作答全部真实分析一次通过→报告 45 分/3 roots scored/completion=incomplete（如实，答案预算用尽未强凑）→候选人视图无 rubric 泄漏断言过→回答优化 ready（3 items，usage 1515/8085）→简历草稿 4 sections/7 items 全部 claim 绑定。零 retry、总 310s。浏览器实际渲染 live 报告页（`runtime/live-accept/live-report-ui.png`）：总分、逐题原答、评分依据等级、"岗位知识包：嵌入式软件初级岗 v1.0.0（本场冻结）"。
+- **embedding 事实边界**：该网关无 `/embeddings`（8 个模型名全 404）。Knowledge 腿用负责人本机隔离的 OpenAI 兼容 HTTPS 本地 shim（fastembed `bge-small-zh-v1.5`，512 维，自签证书经 `SSL_CERT_FILE` 固定信任，loopback only，验收基础设施而非产品代码，全部在 gitignored `runtime/live-accept/`）。真实 openJiuwen 索引/检索/激活生命周期为真；**embedding 模型质量非 BGE-M3，不宣称等价**，赛事提交前需按原契约接真实 embedding 供应商。
+- 离线回归同步增长：后端 **395 passed / 0 failed**（+9：/v1 正负例、非流契约、fence 边界、bundle 档、SDK 超时还原、会话预算同源、配置解析），前端 29/29 不变；`make check` 全绿；CHECKSUMS 重建后 bundle/verify-bundle 复验。
+- 仍未授权/未做：真实简历材料（M2-02 私有件）live 复验、统信 UOS/麒麟 OS、公网发布、远端 CI 触发、负责人对本轮提示词与网关策略变更的独立复核。
