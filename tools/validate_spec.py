@@ -316,7 +316,9 @@ def main() -> int:
     dangling: list[str] = []
     seeds_checked = 0
     seed_payloads: dict[str, dict] = {}
-    for seed_path in sorted((ROOT / "data" / "seeds").glob("*.json")):
+    for seed_path in sorted(
+        (ROOT / "knowledge_packs" / "embedded_software_junior" / "seeds").glob("*.json")
+    ):
         seed = json.loads(seed_path.read_text(encoding="utf-8"))
         seeds_checked += 1
         seed_payloads[seed["id"]] = seed

@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""M0-04 doctor：启动前只读就绪检查。
+"""M0-04 doctor：只读就绪检查，按四档 profile 划分业务事实。
 
-检查 OS/架构、实测版本锁一致性、openJiuwen 安装来源、配置键、私密文件
-权限、Git 跟踪文件中的密钥泄漏。绝不联网、绝不打印任何密钥值或文件正文，
-只输出变量名、状态与可复核计数。
+profile 语义（互不锁死）：
+  bundle    源码发行物自检：清单完整性 + 密钥扫描 + 配置存在性；不假设
+            解包目录已安装 Python 依赖或 node/pnpm 工具链。
+  offline   干净源码/依赖完整性 + 密钥扫描 + 锁校验。缺私密 env、缺
+            node/pnpm 只 WARN：离线开发回归不依赖它们，不算业务失败。
+  toolchain 在 offline 之上要求 node/pnpm 实测可用且与实测锁一致，
+            否则 FAIL；仍不要求私密 env。
+  live      在 toolchain 之上要求 .env.local 存在、权限 ≤0600、
+            被 Git 忽略且必需键名齐备，缺失即 FAIL（live not_ready）。
+
+绝不联网、绝不打印任何密钥值或文件正文，只输出变量名、状态与可复核计数。
+toolchain/ 目录只是开发者本机声明，不作为所有机器的必要条件；
+实际工具版本一律重测，不信任声明文件。
 
 运行方式（必须使用项目锁定 venv）：
-    services/api/.venv/bin/python scripts/doctor.py [--json]
+    services/api/.venv/bin/python scripts/doctor.py [--json] [--profile bundle|offline|toolchain|live]
 
 退出码：0 = 无 FAIL（允许 WARN）；1 = 存在 FAIL；2 = doctor 自身无法完成检查。
 """
@@ -16,8 +26,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -29,6 +41,15 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 # 私密权限要求：owner-only。
 SECRET_FILE_MAX_MODE = 0o600
 PRIVATE_DIR_MAX_MODE = 0o700
+
+# 四档检查 profile；默认 offline 供 CI 与干净工作区使用。
+# bundle 只验源码发行物自身的完整性（清单/密钥/配置存在性），不假设解包
+# 目录已安装依赖或工具链——那是 `make setup` 之后的 offline 档职责。
+PROFILES = ("bundle", "offline", "toolchain", "live")
+DEFAULT_PROFILE = "offline"
+
+# 实测版本与 PATH 工具都不匹配时的强校验档位；offline 只 WARN。
+STRICT_TOOLCHAIN_PROFILES = ("toolchain", "live")
 
 # .env.local 必须出现的键名（只查名字，绝不读取/输出值）。
 REQUIRED_ENV_KEYS = (
@@ -208,13 +229,21 @@ def read_env_names(path: Path) -> set[str]:
     return names
 
 
-def check_private_env(report: Report, root: Path) -> None:
+def check_private_env(
+    report: Report, root: Path, profile: str = DEFAULT_PROFILE
+) -> None:
     env_file = root / ".env.local"
     if not env_file.is_file():
+        status = FAIL if profile == "live" else WARN
         report.add(
             "secret:env.local",
-            WARN,
-            ".env.local 不存在：live 模式 readiness 应为 not_ready（fixture 开发可接受）",
+            status,
+            ".env.local 不存在"
+            + (
+                "：live readiness = not_ready"
+                if profile == "live"
+                else "：offline/toolchain 检查不依赖私密 env；live 档将判 not_ready"
+            ),
         )
         return
     mode = stat.S_IMODE(env_file.stat().st_mode)
@@ -235,10 +264,13 @@ def check_private_env(report: Report, root: Path) -> None:
     names = read_env_names(env_file)
     missing = [key for key in REQUIRED_ENV_KEYS if key not in names]
     if missing:
+        status = FAIL if profile == "live" else WARN
         report.add(
             "secret:env.keys",
-            WARN,
-            "缺少键名：" + ", ".join(missing) + "（live 前需补齐）",
+            status,
+            "缺少键名："
+            + ", ".join(missing)
+            + ("（live not_ready）" if status == FAIL else "（live 前需补齐）"),
         )
     else:
         report.add("secret:env.keys", PASS, f"必需 {len(REQUIRED_ENV_KEYS)} 个键名齐备")
@@ -323,38 +355,65 @@ def check_no_committed_secrets(report: Report, root: Path) -> None:
         report.add("scan:secrets", PASS, f"{len(files)} 个 Git 跟踪文件密钥扫描 0 命中")
 
 
-def check_toolchain_versions(report: Report, root: Path, lock: dict) -> None:
+def check_toolchain_versions(
+    report: Report, root: Path, lock: dict, profile: str = DEFAULT_PROFILE
+) -> None:
+    """工具链按“实测”判定：开发者 toolchain/ 目录不是所有机器的必要条件，
+    但版本漂移与档位要求的缺失工具必须如实报告，不能无条件放行。"""
+    strict = profile in STRICT_TOOLCHAIN_PROFILES
     versions_file = root / "toolchain" / "VERSIONS.txt"
-    if not versions_file.is_file():
-        report.add("toolchain", FAIL, "toolchain/VERSIONS.txt 缺失")
-        return
-    recorded = dict(
-        line.split(" ", 1)
-        for line in (
-            l.strip() for l in versions_file.read_text(encoding="utf-8").splitlines()
+    if versions_file.is_file():
+        # 声明清单只是开发机事实记录：与锁不一致记 WARN，不作为 FAIL 依据。
+        recorded = dict(
+            line.split(" ", 1)
+            for line in (
+                l.strip()
+                for l in versions_file.read_text(encoding="utf-8").splitlines()
+            )
+            if line and not line.startswith("#") and " " in line
         )
-        if line and not line.startswith("#") and " " in line
-    )
-    ok = True
+        for tool in ("node", "pnpm"):
+            want, have = lock[tool], recorded.get(tool, "未记录")
+            if want.lstrip("v") != str(have).lstrip("v"):
+                report.add(
+                    f"toolchain:declared:{tool}",
+                    WARN,
+                    f"toolchain/VERSIONS.txt={have}，实测锁={want}（仅声明，判定以下方实测为准）",
+                )
     for tool in ("node", "pnpm"):
-        want, have = lock[tool], recorded.get(tool, "未记录")
-        if want.lstrip("v") != str(have).lstrip("v"):
-            ok = False
-            report.add(f"toolchain:{tool}", WARN, f"VERSIONS.txt={have}，实测锁={want}")
-    if ok:
-        report.add("toolchain", PASS, "VERSIONS.txt 与实测锁一致（node/pnpm）")
-    node_bin = root / "toolchain" / "node24" / "bin" / "node"
-    if node_bin.is_file():
+        exe = shutil.which(tool)
+        pinned = root / "toolchain" / "node24" / "bin" / tool
+        if pinned.is_file() and os.access(pinned, os.X_OK):
+            exe = str(pinned)
+        if not exe:
+            report.add(
+                f"toolchain:{tool}",
+                FAIL if strict else WARN,
+                f"未找到 {tool}（PATH 与 toolchain/ 均无）"
+                + ("" if strict else "；offline 完整性检查不要求前端工具链"),
+            )
+            continue
         actual = subprocess.run(
-            [str(node_bin), "--version"],
+            [exe, "--version"],
             capture_output=True,
             text=True,
-            check=False,  # 启动失败时按空版本报告，不中断 doctor
+            check=False,  # 启动失败按空版本报告，不中断 doctor
         ).stdout.strip()
-        status = PASS if actual == lock["node"] else WARN
-        report.add(
-            "toolchain:node:installed", status, f"本地 Node {actual or '启动失败'}"
-        )
+        want = lock[tool]
+        if not actual:
+            report.add(
+                f"toolchain:{tool}",
+                FAIL if strict else WARN,
+                f"{tool} 无法执行 --version",
+            )
+        elif actual.lstrip("v") == str(want).lstrip("v"):
+            report.add(f"toolchain:{tool}", PASS, f"实测 {actual} == 锁 {want}")
+        else:
+            report.add(
+                f"toolchain:{tool}",
+                FAIL if strict else WARN,
+                f"实测 {actual}，实测锁 {want}（版本漂移，未经验证）",
+            )
 
 
 def check_lock_integrity(report: Report, root: Path) -> None:
@@ -385,18 +444,20 @@ def check_lock_integrity(report: Report, root: Path) -> None:
         report.add("lock:checksums", PASS, f"完整性清单 {total}/{total} 一致")
 
 
-def run_checks(root: Path) -> Report:
+def run_checks(root: Path, profile: str = DEFAULT_PROFILE) -> Report:
     report = Report()
     lock = load_version_lock(root)
     check_platform(report, root)
-    check_python(report, lock)
-    check_package_versions(report, lock)
-    check_openjiuwen_source(report, lock)
+    if profile != "bundle":
+        check_python(report, lock)
+        check_package_versions(report, lock)
+        check_openjiuwen_source(report, lock)
     check_config_files(report, root)
-    check_private_env(report, root)
+    check_private_env(report, root, profile)
     check_runtime_dirs(report, root)
     check_no_committed_secrets(report, root)
-    check_toolchain_versions(report, root, lock)
+    if profile != "bundle":
+        check_toolchain_versions(report, root, lock, profile)
     check_lock_integrity(report, root)
     return report
 
@@ -404,10 +465,16 @@ def run_checks(root: Path) -> Report:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="输出机器可读结果")
+    parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        default=DEFAULT_PROFILE,
+        help="offline=源码/依赖完整性；toolchain=+前端工具链实测；live=+私密 env 就绪",
+    )
     args = parser.parse_args(argv)
     root = workspace_root()
     try:
-        report = run_checks(root)
+        report = run_checks(root, args.profile)
     except subprocess.CalledProcessError as exc:
         print(
             f"doctor 无法完成：git 子命令失败（exit {exc.returncode}）", file=sys.stderr

@@ -3,7 +3,9 @@ and the promise that doctor never echoes secret values."""
 
 import importlib.util
 import json
+import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,25 +27,97 @@ def statuses(report_items, check):
     return [item for item in report_items if item["check"].startswith(check)]
 
 
-# --- 真实工作区：无 FAIL 且绝不外泄密钥 -------------------------------------
+# --- 真实工作区：干净 checkout 的 offline 档不得依赖开发者私密资产 ----------
 
 
-def test_doctor_real_workspace_passes_and_leaks_no_secret(doctor, capsys):
-    key_value = None
-    env_file = WORKSPACE / ".env.local"
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        if line.strip().startswith("EMBEDDING_API_KEY="):
-            key_value = line.split("=", 1)[1].strip().strip('"').strip("'")
-    assert key_value, "测试前提：本地私密配置存在"
-
+def test_doctor_real_workspace_offline_passes_without_developer_extras(doctor, capsys):
+    """干净 checkout（无 .env.local、无 toolchain/）也必须通过离线完整性检查。"""
     exit_code = doctor.main(["--json"])
     captured = capsys.readouterr().out
-    assert exit_code == 0, "锁定环境里 doctor 不得报 FAIL"
     payload = json.loads(captured)
+    assert exit_code == 0, f"offline 档出现 FAIL：{payload['items']}"
     assert payload["counts"]["FAIL"] == 0
-    # 密钥值及其任何长片段都不得出现在输出里。
-    assert key_value not in captured
-    assert key_value[:12] not in captured
+
+
+# --- 假工作区 + 假密钥：live 档脱敏与 not_ready 语义 --------------------------
+
+# 假密钥故意不匹配 doctor 自身扫描规则（sk-前缀/24 长连续值），
+# 它是测试夹具而非资产；泄露断言只依赖“值不出现在输出”。
+FAKE_KEY = "fake-embed-key.dot-0123456789abcdefGHIJ"
+
+
+def _fake_workspace(tmp_path) -> Path:
+    """构造可独立运行 doctor 的最小假工作区；密钥为确定假值，绝不发真实请求。"""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".env.local\nruntime/\n", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    shutil.copy(WORKSPACE / "config" / "versions.lock.json", config)
+    shutil.copy(WORKSPACE / "config" / "demo.yaml", config)
+    shutil.copy(WORKSPACE / "config" / "environment.env.example", config)
+    (tmp_path / "api.md").write_text("# fake api doc\n", encoding="utf-8")
+    env = tmp_path / ".env.local"
+    env.write_text(
+        "EMBEDDING_PROVIDER=fake-provider\n"
+        "EMBEDDING_MODEL=fake-embedding-v0\n"
+        "EMBEDDING_API_BASE=https://example.invalid/v1\n"
+        f"EMBEDDING_API_KEY={FAKE_KEY}\n",
+        encoding="utf-8",
+    )
+    env.chmod(0o600)
+    return tmp_path
+
+
+def test_live_profile_with_fake_env_leaks_no_secret_value(
+    doctor, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(doctor, "workspace_root", lambda: _fake_workspace(tmp_path))
+    doctor.main(["--json", "--profile", "live"])
+    captured = capsys.readouterr().out
+    payload = json.loads(captured)
+    env_items = [i for i in payload["items"] if i["check"].startswith("secret:env")]
+    assert [i["status"] for i in env_items] == ["PASS", "PASS", "PASS"]
+    # 完整假密钥与任何长片段都不得出现在输出（stdout/JSON 明细）里。
+    assert FAKE_KEY not in captured
+    assert FAKE_KEY[:12] not in captured
+
+
+def test_offline_profile_passes_without_private_env_or_pinned_toolchain(
+    doctor, tmp_path, monkeypatch, capsys
+):
+    root = _fake_workspace(tmp_path)
+    (root / ".env.local").unlink()
+    monkeypatch.setattr(doctor, "workspace_root", lambda: root)
+    assert doctor.main(["--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"]["FAIL"] == 0
+
+
+def test_bundle_profile_skips_installed_environment_checks(
+    doctor, tmp_path, monkeypatch, capsys
+):
+    """发行包复验不假设解包目录装过依赖：环境类检查必须整体缺席。"""
+    root = _fake_workspace(tmp_path)
+    monkeypatch.setattr(doctor, "workspace_root", lambda: root)
+    assert doctor.main(["--json", "--profile", "bundle"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    names = {item["check"] for item in payload["items"]}
+    assert "lock:checksums" in names
+    assert not [name for name in names if name.startswith(("pkg:", "openjiuwen"))]
+    assert "python" not in names
+    assert not [name for name in names if name.startswith("toolchain:")]
+
+
+def test_live_profile_is_not_ready_without_private_env(
+    doctor, tmp_path, monkeypatch, capsys
+):
+    root = _fake_workspace(tmp_path)
+    (root / ".env.local").unlink()
+    monkeypatch.setattr(doctor, "workspace_root", lambda: root)
+    assert doctor.main(["--json", "--profile", "live"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    missing = [i for i in payload["items"] if i["check"] == "secret:env.local"]
+    assert [i["status"] for i in missing] == ["FAIL"]
 
 
 def test_doctor_exit_2_when_version_lock_missing(doctor, tmp_path, monkeypatch, capsys):

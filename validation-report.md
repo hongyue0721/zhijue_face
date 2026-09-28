@@ -2,7 +2,7 @@
 
 校验性质：规范资产检查，不是业务软件验收。
 
-结果：**47/47 项通过；0 项失败。**
+结果：**48/48 项通过；0 项失败。**
 
 实际命令：`python tools/validate_spec.py`
 
@@ -13,8 +13,8 @@
 | 检查 | 结果 | 说明 |
 |---|---|---|
 | 关键文件存在 | PASS | 11 项存在 |
-| UTF-8 与 LF | PASS | 190 文件检查通过 |
-| Markdown 本地链接 | PASS | 23 条路径存在 |
+| UTF-8 与 LF | PASS | 208 文件检查通过 |
+| Markdown 本地链接 | PASS | 24 条路径存在 |
 | 来源编号 | PASS | 引用 14 种；登记 30 种；未登记 [] |
 | 需求和测试编号 | PASS | 需求 19，测试 34；未知 [] |
 | 任务依赖无悬空/环 | PASS | 18 个任务，无环 |
@@ -23,6 +23,7 @@
 | Schema: claim.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: coaching-result.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: interview-slot.schema.json | PASS | Draft 2020-12 结构合法 |
+| Schema: knowledge_pack.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: observation.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: operation-event.schema.json | PASS | Draft 2020-12 结构合法 |
 | Schema: policy-decision.schema.json | PASS | Draft 2020-12 结构合法 |

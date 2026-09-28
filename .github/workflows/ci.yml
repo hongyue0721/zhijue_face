@@ -1,6 +1,7 @@
-# M0-04 CI 骨架：仓库尚未推送到远端，本工作流为 NOT_RUN。
-# 设计约束：默认不花模型费用——不调用任何 embedding/LLM 端点，不跑
-# integration_live（该标记的用例必须显式提供私密 env 文件才会执行）。
+# CI：仓库已推送 origin/main，本工作流在 push/PR 实际执行。
+# 设计约束：默认不花模型费用——不调用任何 embedding/LLM 端点；
+# integration_live 用例在本地与 CI 都被显式 deselect，只能由负责人
+# 用私密 env 与预算授权后通过 make test-live 单独执行。
 name: ci
 
 on:
@@ -28,15 +29,20 @@ jobs:
       - name: Sync from lock (fails on drift)
         run: uv sync --frozen --python 3.11
 
-      - name: Lint and format check
+      - name: Lint and format check (src tests smoke migrations)
         run: |
-          .venv/bin/ruff check smoke tests
-          .venv/bin/ruff format --check smoke tests
+          .venv/bin/ruff check src tests smoke migrations
+          .venv/bin/ruff format --check src tests smoke migrations
 
-      - name: Tests (no model spend; live cases gated)
-        run: .venv/bin/python -m pytest tests -q
+      - name: Tests (no model spend; live cases deselected like local make test)
+        run: .venv/bin/python -m pytest tests -q -m 'not integration_live'
 
-      - name: Doctor (readiness + secret scan; no network)
+      - name: Spec and repo integrity (offline profile)
+        run: |
+          .venv/bin/python ../../tools/validate_spec.py
+          sha256sum -c ../../CHECKSUMS.sha256
+
+      - name: Doctor offline readiness (source + locked deps; no network, no secrets)
         run: .venv/bin/python ../../scripts/doctor.py
 
   frontend:
