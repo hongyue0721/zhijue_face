@@ -10,6 +10,7 @@ run_mode 契约（config/demo.yaml + api.md §7）：live 模式下 embedding �
 
 from __future__ import annotations
 
+import math
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -35,18 +36,21 @@ from zhijue.adapters.model import (
 )
 from zhijue.api.errors import RequestContext, install_error_handlers
 from zhijue.api.events import router as events_router
+from zhijue.api.knowledge_pack_routes import router as knowledge_pack_router
 from zhijue.api.routes import router
 from zhijue.application.answer_workflow import AnswerAnalyzer
 from zhijue.application.content_generation import ContentGenerationService
 from zhijue.application.content_workflow import ContentGenerator
 from zhijue.application.documents import DocumentService
 from zhijue.application.interviews import InterviewService
+from zhijue.application.knowledge_packs import KnowledgePackService
 from zhijue.application.operations_runner import OperationRunner
 from zhijue.application.profiles import KnowledgeGateway, ProfileService
 from zhijue.application.reporting import ReportingService
 from zhijue.application.requisition import JDPlanningService
-from zhijue.application.seed_bank import load_seed_bank
+from zhijue.domain.errors import DomainError
 from zhijue.domain.extraction import ExtractionLimits
+from zhijue.domain.knowledge_packs import PackLimits
 
 REPO_ROOT = next(
     (
@@ -56,6 +60,35 @@ REPO_ROOT = next(
     ),
     None,
 )
+
+
+def _packs_settings() -> dict[str, Any]:
+    """岗位包运行参数来自 config/demo.yaml；缺失即启动失败，不猜默认。
+
+    live 审核门槛与 seed_bank 节同源：包只是把同一信任门槛搬到
+    release 维度，不引入第二套状态语义。
+    """
+    import yaml
+
+    if REPO_ROOT is None:
+        raise RuntimeError("无法定位仓库根目录，knowledge_packs 配置不可用。")
+    payload = yaml.safe_load(
+        (REPO_ROOT / "config" / "demo.yaml").read_text(encoding="utf-8")
+    )
+    section = payload.get("knowledge_packs") or {}
+    if "default_pack_id" not in section:
+        raise RuntimeError("config/demo.yaml 缺少 knowledge_packs.default_pack_id")
+    limits = PackLimits(
+        **{key: int(value) for key, value in (section.get("limits") or {}).items()}
+    )
+    threshold = str(
+        (payload.get("seed_bank") or {}).get("live_allowed_review_status", "approved")
+    )
+    return {
+        "limits": limits,
+        "default_pack_id": str(section["default_pack_id"]),
+        "live_allowed_review_status": threshold,
+    }
 
 
 @dataclass
@@ -94,6 +127,9 @@ class AppConfig:
             model_env_file=Path(model_env) if model_env else None,
             api_workers=int(env.get("ZHIJUE_API_WORKERS", "1")),
             data_mode=env.get("ZHIJUE_DATA_MODE", "synthetic"),
+            answer_workflow_timeout_seconds=_positive_float(
+                env, "ZHIJUE_ANSWER_WORKFLOW_TIMEOUT_SECONDS", 60.0
+            ),
         )
 
     def ensure_directories(self) -> None:
@@ -109,6 +145,20 @@ class AppConfig:
         self.milvus_uri.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _positive_float(env: dict[str, str], key: str, default: float) -> float:
+    """超时是部署策略值：允许显式配置，但拒绝非正/非数，不静默兜底。"""
+    raw = env.get(key)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a finite positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{key} must be a finite positive number")
+    return value
+
+
 @dataclass
 class Services:
     """进程内唯一服务容器；HTTP 层只从这里取依赖。"""
@@ -120,6 +170,7 @@ class Services:
     interviews: InterviewService
     reports: ReportingService
     content: ContentGenerationService
+    knowledge_packs: KnowledgePackService
     operations: OperationRepository
     runner: OperationRunner
     _ready: bool = False
@@ -177,11 +228,25 @@ def build_services(
     else:
         ready = True
     planner = JDPlanningService(engine=engine)
-    seed_bank = load_seed_bank(
-        (REPO_ROOT or Path(".")) / "data" / "seeds",
-        live_only=True,
+    packs_settings = _packs_settings()
+    packs = KnowledgePackService(
+        engine,
+        runtime_dir=config.runtime_dir,
+        repo_root=REPO_ROOT or Path("."),
+        limits=packs_settings["limits"],
+        default_pack_id=packs_settings["default_pack_id"],
+        live_allowed_review_status=packs_settings["live_allowed_review_status"],
     )
-    readiness["seed_bank_version"] = seed_bank.version_fingerprint()
+    try:
+        builtin = packs.ensure_builtin_release()
+        readiness["knowledge_packs"] = "ready"
+        readiness["default_pack_release_id"] = builtin.id
+        # 兼容既有 runtime/info 字段：值现在是冻结内置 release 的题库指纹。
+        readiness["seed_bank_version"] = builtin.content_digest
+    except DomainError as exc:
+        # 内置资产缺失只阻塞“生成面试”；列表/详情/导入入口仍可用（§6.4）。
+        readiness["knowledge_packs"] = f"not_ready:{exc.code}"
+        readiness["seed_bank_version"] = "pack_unavailable"
     reporting = ReportingService(engine=engine, operations=operation_repo)
     generator_metadata = (
         generator.public_summary()
@@ -205,7 +270,7 @@ def build_services(
             planner=planner,
             operations=operation_repo,
             reporting=reporting,
-            seed_bank=seed_bank,
+            packs=packs,
             analyzer=analyzer,
             workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
             model_attempt_limit=getattr(analyzer, "max_total_attempts", 3),
@@ -221,6 +286,7 @@ def build_services(
         profiles=ProfileService(repo=profile_repo, knowledge=knowledge),
         operations=operation_repo,
         content=content,
+        knowledge_packs=packs,
         reports=reporting,
         runner=OperationRunner(
             engine=engine,
@@ -285,6 +351,9 @@ def create_app(
         services.profiles.recover_interrupted_operations()
         services.interviews.recover_interrupted_operations(interrupted)
         services.content.recover_interrupted_operations(interrupted)
+        # 上传字节只在导入 operation 存续期需要；重启后遗留的孤儿上传
+        # （受理前崩溃）在这里清理，导入重试会要求重新上传文件。
+        services.knowledge_packs.sweep_orphan_uploads()
         yield
         gateway = app.state.knowledge
         if gateway is not None and hasattr(gateway, "close"):
@@ -302,6 +371,7 @@ def create_app(
     install_error_handlers(app)
     app.include_router(router)
     app.include_router(events_router)
+    app.include_router(knowledge_pack_router)
     return app
 
 

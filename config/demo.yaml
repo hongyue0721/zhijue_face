@@ -53,6 +53,18 @@ seed_bank:
   bootstrap_approved_count: 6
   release_target_approved_count: 24
   live_allowed_review_status: approved
+knowledge_packs:
+  # 结构化岗位包导入资源上限（Phase 4.6）：集中声明，不散落魔法数字。
+  # 依据：内置 embedded 包实测约 24 KiB 解压总量，上限留出一个数量级的余量。
+  limits:
+    max_upload_bytes: 5242880
+    max_extracted_total_bytes: 20971520
+    max_single_file_bytes: 1048576
+    max_entries: 256
+    max_path_depth: 5
+    max_compression_ratio: 50
+    ratio_check_from_bytes: 8192
+  default_pack_id: embedded-software-junior
 scoring:
   minimum_root_coverage: 0.60
   minimum_scored_roots_for_overall: 3

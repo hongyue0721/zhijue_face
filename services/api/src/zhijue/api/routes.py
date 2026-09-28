@@ -50,6 +50,7 @@ from zhijue.api.schemas import (
 from zhijue.application.documents import DocumentService
 from zhijue.application.operations_runner import OperationJob
 from zhijue.application.profiles import ProfileService
+from zhijue.domain.errors import CapacityLimitedError
 from zhijue.domain.ids import new_id
 from zhijue.domain.requisition import JDSourceType
 
@@ -405,6 +406,12 @@ def runtime_info(request: Request) -> dict[str, Any]:
                 "pymilvus": version("pymilvus"),
                 "seed_bank_version": readiness.get("seed_bank_version"),
             },
+            "knowledge_packs": {
+                # 增量 capabilities/details（§6.4）：包管理可用性与面试生成
+                # 就绪分开报告，不再被单一 serviceReady 一把锁死。
+                "status": readiness.get("knowledge_packs", "unknown"),
+                "default_pack_release_id": readiness.get("default_pack_release_id"),
+            },
             "feature_flags": {
                 "ocr_enabled": False,
                 "memory_enabled": False,
@@ -640,6 +647,14 @@ def create_interview(
     # 客户端可据此 GET /interviews/{id}（操作进行中为 404，完成后为 ready）。
     interview_id = new_id("interview")
     scope = canon_scope(WORKSPACE_ID, "POST", "/api/v1/interviews")
+    # D05：幂等重放必须原样返回受理结果。服务端默认包可能在两次尝试之间
+    # 变化，所以先按键找回原操作，只有新受理才解析冻结绑定。
+    replay = services.operations.find_by_key(scope=scope, idempotency_key=key)
+    if replay is not None:
+        return envelope(_accepted(replay).model_dump(), _ctx(request).request_id)
+    # 受理时冻结（主文件 §3）：release + 内容摘要 + 能力配置随本场落库；
+    # 不可选择（未审核/损坏/未注册 profile）在这里同步拒绝，不进入后台。
+    binding = services.knowledge_packs.freeze_for_new_plan(payload.pack_release_id)
     accepted = services.interviews.accept_plan(
         profile_id=payload.profile_id,
         expected_revision=payload.profile_revision,
@@ -656,6 +671,9 @@ def create_interview(
                 "jd_sha256": hashlib.sha256(jd_text.encode("utf-8")).hexdigest(),
                 "jd_source_name": source_name,
                 "jd_source_type": jd_source_type.value,
+                # 只存客户端显式选择（省略=None）；解析出的默认值不进哈希，
+                # 避免“默认变化导致重放误报冲突”。
+                "pack_release_id": payload.pack_release_id,
             },
         ),
     )
@@ -672,9 +690,7 @@ def create_interview(
             jd_text=jd_text,
             jd_source_name=source_name,
             jd_source_type=jd_source_type,
-            seed_bank_version=services.readiness_details().get(
-                "seed_bank_version", "seed_bank_unavailable"
-            ),
+            binding=binding,
             run_mode=services.config.run_mode,
         )
 
@@ -1056,6 +1072,26 @@ def retry_operation(
         return envelope(
             _accepted(accepted.operation).model_dump(), _ctx(request).request_id
         )
+    if original is not None and original.kind == "knowledge_pack.import":
+        # 导入重试：parent-linked 新操作复用同一回执取回字节（有限预算由
+        # repo.retry 的 attempts 上限保证）；格式/安全/版本冲突类失败在
+        # 这里重试也只是再次显式失败，不会被包装成“重试即可修好”。
+        from zhijue.api.knowledge_pack_routes import _schedule_import
+
+        if not services.runner.capacity_available:
+            raise CapacityLimitedError()
+        try:
+            operation = services.operations.retry(
+                operation_id, idempotency_key=key, request_input=request_input
+            )
+        except ValueError as exc:
+            raise ApiError(
+                status_code=409,
+                code="RETRY_NOT_ALLOWED",
+                message=f"导入操作不可重试（{exc}）；请修正包内容后重新上传。",
+            ) from exc
+        _schedule_import(services, background, operation)
+        return envelope(_accepted(operation).model_dump(), _ctx(request).request_id)
     if content_operation:
         accepted = services.content.accept_retry(
             operation_id,

@@ -459,7 +459,7 @@ def test_app_bootstraps_missing_runtime_directories(tmp_path):
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-    assert revision == ("e62a9f8c10bd",)
+    assert revision == ("a7c4e1f29b58",)
 
 
 def test_document_upload_accepts_202_and_imports_text(client):
@@ -815,6 +815,20 @@ def test_openapi_exposes_report_coaching_and_resume_contracts(client):
         "expected_revision",
         "profile_snapshot_id",
     }
+    # 岗位知识包契约（api.md §9）：只有列表/详情/导入，没有全局“激活”写接口。
+    packs_path = document["paths"]["/api/v1/knowledge-packs"]
+    pack_detail_path = document["paths"]["/api/v1/knowledge-packs/{release_id}"]
+    import_path = document["paths"]["/api/v1/knowledge-packs/import"]
+    assert set(packs_path) == {"get"}
+    assert set(pack_detail_path) == {"get"}
+    assert set(import_path) == {"post"}
+    assert "multipart/form-data" in import_path["post"]["requestBody"]["content"]
+    create_schema = document["components"]["schemas"]["CreateInterviewRequest"]
+    assert "pack_release_id" in create_schema["properties"]
+    # 岗位包没有“全局激活”写接口：选择只影响新创建面试（profile activate 除外）。
+    assert not any(
+        "knowledge-pack" in path and "activate" in path for path in document["paths"]
+    )
     assert exported == document
 
 

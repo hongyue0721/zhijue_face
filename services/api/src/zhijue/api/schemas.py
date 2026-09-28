@@ -118,6 +118,9 @@ class CreateInterviewRequest(BaseModel):
     memory_enabled: bool = False
     observer_mode: bool = False
     jd_source_name: str | None = Field(default=None, min_length=1, max_length=200)
+    # 受理时冻结的岗位包 release（api.md §6 增量）；省略 = 服务端解析默认，
+    # 但解析结果不进幂等哈希（D05），也不影响任何已创建面试。
+    pack_release_id: str | None = Field(default=None, pattern=r"^kpr_[0-9a-f]{16}$")
 
 
 class StartInterviewRequest(BaseModel):

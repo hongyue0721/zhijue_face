@@ -31,6 +31,20 @@
         "title": "ActivateProfileRequest",
         "type": "object"
       },
+      "Body_import_knowledge_pack_api_v1_knowledge_packs_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_knowledge_pack_api_v1_knowledge_packs_import_post",
+        "type": "object"
+      },
       "Body_upload_document_api_v1_profiles__profile_id__documents_post": {
         "properties": {
           "expected_revision": {
@@ -141,6 +155,18 @@
             "default": false,
             "title": "Observer Mode",
             "type": "boolean"
+          },
+          "pack_release_id": {
+            "anyOf": [
+              {
+                "pattern": "^kpr_[0-9a-f]{16}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack Release Id"
           },
           "profile_id": {
             "minLength": 1,
@@ -1042,6 +1068,137 @@
           }
         },
         "summary": "Start Interview"
+      }
+    },
+    "/api/v1/knowledge-packs": {
+      "get": {
+        "description": "真实 items；不补假卡片。默认项只影响新创建面试（无全局激活）。",
+        "operationId": "list_knowledge_packs_api_v1_knowledge_packs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Knowledge Packs Api V1 Knowledge Packs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Knowledge Packs",
+        "tags": [
+          "knowledge-packs"
+        ]
+      }
+    },
+    "/api/v1/knowledge-packs/import": {
+      "post": {
+        "description": "接收 ZIP → 受控保存回执 → 受理 Operation → 202。\n\n浏览器刷新不丢后台输入：字节按回执落在 runtime，恢复用 operation ID\n观察既有 SSE/polling；重试从回执取回同一份字节，不要求重新上传。",
+        "operationId": "import_knowledge_pack_api_v1_knowledge_packs_import_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_knowledge_pack_api_v1_knowledge_packs_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Knowledge Pack Api V1 Knowledge Packs Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Knowledge Pack",
+        "tags": [
+          "knowledge-packs"
+        ]
+      }
+    },
+    "/api/v1/knowledge-packs/{release_id}": {
+      "get": {
+        "description": "详情与列表 ID 同源；含来源登记与校验明细，不含参考答案/评分细则。",
+        "operationId": "get_knowledge_pack_api_v1_knowledge_packs__release_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "title": "Release Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Knowledge Pack Api V1 Knowledge Packs  Release Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Pack",
+        "tags": [
+          "knowledge-packs"
+        ]
       }
     },
     "/api/v1/operations/{operation_id}": {
