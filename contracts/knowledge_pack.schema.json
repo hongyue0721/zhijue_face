@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zhijue/knowledge_pack.schema.json",
+  "title": "ZhiJue 结构化岗位知识包文件契约",
+  "description": "约束包内 manifest.json / competencies.json / sources.json 三个声明文件。这里的一切字段都是作者声明：服务端必须重算摘要、按已注册能力配置比对规则，并把审核状态存在包外。本文件不声明任何审核授权。",
+  "$defs": {
+    "pack_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "relative_path": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._/-]{1,160}$"
+    },
+    "competency_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "keyword": {
+      "type": "string",
+      "pattern": "^[^\\x00-\\x1f]{1,40}$",
+      "minLength": 1
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format_version",
+        "pack_id",
+        "version",
+        "name",
+        "description",
+        "competency_profile_id",
+        "seeds",
+        "competencies_file",
+        "sources_file",
+        "supported_scope",
+        "unsupported_scope",
+        "source_kind"
+      ],
+      "properties": {
+        "format_version": { "const": "1.0" },
+        "pack_id": { "$ref": "#/$defs/pack_id" },
+        "version": { "$ref": "#/$defs/version" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "description": { "type": "string", "minLength": 2, "maxLength": 400 },
+        "competency_profile_id": { "$ref": "#/$defs/competency_id" },
+        "seeds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^seeds/[A-Za-z0-9._-]{1,64}\\.json$"
+          }
+        },
+        "competencies_file": { "const": "competencies.json" },
+        "sources_file": { "const": "sources.json" },
+        "example_jd_file": { "const": "examples/jd.txt" },
+        "supported_scope": { "type": "string", "minLength": 2, "maxLength": 300 },
+        "unsupported_scope": { "type": "string", "minLength": 2, "maxLength": 300 },
+        "source_kind": {
+          "enum": ["official_document_registry", "author_written_reviewed", "mixed"]
+        }
+      }
+    },
+    "keyword_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["competency_id", "keywords"],
+      "properties": {
+        "competency_id": { "$ref": "#/$defs/competency_id" },
+        "keywords": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/keyword" }
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["competency_id", "label"],
+      "properties": {
+        "competency_id": { "$ref": "#/$defs/competency_id" },
+        "label": { "type": "string", "minLength": 2, "maxLength": 40 }
+      }
+    },
+    "family_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root_competency", "target_prefix"],
+      "properties": {
+        "root_competency": { "$ref": "#/$defs/competency_id" },
+        "target_prefix": { "$ref": "#/$defs/competency_id" }
+      }
+    },
+    "competencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "声明式镜像：服务端与自身注册表逐字段比对；包不能借本文件改写规则。只承载有限数据结构，不含脚本、正则引擎或动态导入。",
+      "required": [
+        "competency_profile_id",
+        "profile_version",
+        "capabilities",
+        "jd_keyword_rules",
+        "direct_evidence_rules",
+        "related_context_rules",
+        "seed_family_rules"
+      ],
+      "properties": {
+        "competency_profile_id": { "$ref": "#/$defs/competency_id" },
+        "profile_version": { "$ref": "#/$defs/version" },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/capability" }
+        },
+        "jd_keyword_rules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/keyword_rule" }
+        },
+        "direct_evidence_rules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/keyword_rule" }
+        },
+        "related_context_rules": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/keyword_rule" }
+        },
+        "seed_family_rules": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/family_rule" }
+        }
+      }
+    },
+    "source_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "可追溯登记，不是真实性认证。字段存在只说明定位信息齐全；没有存原文时 content_sha256 必须为 null，不得伪造。",
+      "required": [
+        "source_id",
+        "title",
+        "publisher",
+        "recorded_at",
+        "redistribution_boundary"
+      ],
+      "properties": {
+        "source_id": { "$ref": "#/$defs/competency_id" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "publisher": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "edition": { "type": ["string", "null"], "maxLength": 80 },
+        "locator": { "type": ["string", "null"], "maxLength": 200 },
+        "recorded_at": { "type": "string", "minLength": 8, "maxLength": 40 },
+        "url": { "type": ["string", "null"], "maxLength": 300 },
+        "local_identifier": { "type": ["string", "null"], "maxLength": 200 },
+        "content_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "redistribution_boundary": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "review_record_id": { "type": ["string", "null"], "maxLength": 80 },
+        "note": { "type": ["string", "null"], "maxLength": 400 }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources"],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/source_record" }
+        }
+      }
+    }
+  }
+}

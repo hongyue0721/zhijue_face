@@ -19,10 +19,10 @@ def seeds_dir():
 
     here = Path(__file__).resolve()
     for candidate in here.parents:
-        path = candidate / "data" / "seeds"
+        path = candidate / "knowledge_packs" / "embedded_software_junior" / "seeds"
         if path.is_dir():
             return path
-    raise RuntimeError("未找到 data/seeds")
+    raise RuntimeError("未找到内置岗位包 seeds 目录")
 
 
 def test_loads_all_seeds_and_reports_competencies(seeds_dir):

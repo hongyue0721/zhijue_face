@@ -152,3 +152,22 @@ P0 运行时不做任意网页抓取、不接受自动跟随简历 URL。GitHub/
 来源边界：UART/DMA 与 SPI/I2C 已同时引用 F4 的 RM0090、G4 的 RM0440 和 H7 的 RM0433，并显式隔离位名、DMA 映射与 I2C 速率差异；NVIC 架构规则引用 Cortex-M4 的 PM0214，型号通道数另引对应 RM。以后新增平台仍必须登记该系列官方来源，不得沿用其它系列结论。
 
 live 门禁只认 `config/demo.yaml` 的 `seed_bank.live_allowed_review_status`，当前值为 `approved`。`SeedBank` 加载时读取该权威配置；当前六条可由 `live_only=True` 加载，降级为 technical_review/draft 时显式失败，混合题库只返回 approved 条目。
+
+## 14. 结构化岗位知识包（2026-09-25，ADR-014）
+
+上述六条 Seed 与能力映射、来源登记现以不可变 release 形式打包：内置包
+`knowledge_packs/embedded_software_junior/`（pack_id `embedded-software-junior`
+v1.0.0），Seed 文件字节与 `data/seeds` 历史内容逐 hash 一致，不是重写。
+
+- 包只是**加载与信任边界**，不是第二套 Knowledge：候选人资料仍走 openJiuwen
+  原路径；结构化 Seed 不强制向量化。
+- 内容摘要 `sha256(规范化文件集)` 是版本事实；同内容不同打包复用同一 release，
+  同版本异内容拒绝覆盖。每次解析重算摘要，损坏显式失败，绝不回落其他包。
+- 包内 `approved` 声明不构成批准：服务端有效审核 = 绑定当前摘要的包外负责人
+  记录 ∩ 逐条 Seed 内容 hash。内置六条的批准范围是 M2-01 记录
+  `review_m2_01_level2_owner_20260919` 的可审计迁移映射；新增 Seed 必须经
+  `scripts/manage_knowledge_pack.py` 由负责人重新核对后登记。
+- 面试在计划受理时冻结 `pack_release_id + content_digest + competency_profile_id`；
+  换包只影响新创建的面试，历史面试与报告按冻结摘要读取。
+- 服务端只注册 `embedded-junior-v1` 能力配置；未注册 profile 的包不可选择，
+  不宣称任意职业换包即用。

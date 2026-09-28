@@ -1,0 +1,11 @@
+ZhiJue 嵌入式软件初级岗位知识包（embedded-software-junior v1.0.0）
+
+来源与授权边界：
+- sources.json 中的 FreeRTOS Reference Manual V10.0.0 版权归 Amazon.com, Inc.
+  （© 2017）；STM32 参考手册/编程手册版权归 STMicroelectronics。
+- 本包只登记官方文档的标题、版次、章节定位与公开 URL；未搬运任何手册全文，
+  Seed 内引用为项目自写技术要点与逐条核对结论（见
+  docs/reviews/review_m2_01_level2_owner_20260919.md）。
+- 展示 URL 不构成内容真实性认证；登记字段仅说明可追溯定位信息齐全。
+- 能力映射规则以内嵌服务端注册表 embedded-junior-v1 为唯一真源；
+  competencies.json 是声明镜像，服务端逐字段比对后才接受。

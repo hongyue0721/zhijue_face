@@ -1,0 +1,250 @@
+{
+  "competency_profile_id": "embedded-junior-v1",
+  "profile_version": "1.0.0",
+  "capabilities": [
+    {
+      "competency_id": "embedded.c.basics",
+      "label": "C/嵌入式基础"
+    },
+    {
+      "competency_id": "embedded.mcu.interrupt",
+      "label": "中断与 NVIC"
+    },
+    {
+      "competency_id": "embedded.peripheral.uart_dma",
+      "label": "UART/DMA 排障"
+    },
+    {
+      "competency_id": "embedded.peripheral.serial_bus",
+      "label": "SPI/I2C/CAN 串口总线"
+    },
+    {
+      "competency_id": "embedded.rtos.fundamentals",
+      "label": "RTOS 基础与并发"
+    },
+    {
+      "competency_id": "embedded.rtos.queue",
+      "label": "RTOS 队列机制"
+    },
+    {
+      "competency_id": "embedded.rtos.synchronization",
+      "label": "RTOS 同步与互斥"
+    },
+    {
+      "competency_id": "embedded.rtos.scheduling",
+      "label": "RTOS 任务调度与周期"
+    },
+    {
+      "competency_id": "embedded.linux.basics",
+      "label": "嵌入式 Linux 基础"
+    },
+    {
+      "competency_id": "engineering.tooling.version_control",
+      "label": "版本控制与回归"
+    },
+    {
+      "competency_id": "project.ownership",
+      "label": "个人贡献边界"
+    },
+    {
+      "competency_id": "engineering.verification",
+      "label": "调试与验证方法"
+    }
+  ],
+  "jd_keyword_rules": [
+    {
+      "competency_id": "embedded.c.basics",
+      "keywords": [
+        "c 程序",
+        "c 语言",
+        "c语言",
+        "基础 c",
+        "指针",
+        "内存"
+      ]
+    },
+    {
+      "competency_id": "embedded.mcu.interrupt",
+      "keywords": [
+        "中断",
+        "nvic",
+        "isr"
+      ]
+    },
+    {
+      "competency_id": "embedded.peripheral.uart_dma",
+      "keywords": [
+        "uart",
+        "串口",
+        "dma"
+      ]
+    },
+    {
+      "competency_id": "embedded.peripheral.serial_bus",
+      "keywords": [
+        "spi",
+        "i2c",
+        "can",
+        "总线"
+      ]
+    },
+    {
+      "competency_id": "embedded.rtos.fundamentals",
+      "keywords": [
+        "rtos",
+        "freertos",
+        "任务",
+        "共享资源",
+        "任务间通信"
+      ]
+    },
+    {
+      "competency_id": "engineering.tooling.version_control",
+      "keywords": [
+        "git",
+        "版本控制",
+        "回归"
+      ]
+    },
+    {
+      "competency_id": "project.ownership",
+      "keywords": [
+        "本人工作",
+        "个人贡献",
+        "团队",
+        "主要负责"
+      ]
+    },
+    {
+      "competency_id": "engineering.verification",
+      "keywords": [
+        "验证方法",
+        "验证",
+        "测量",
+        "定位",
+        "调试"
+      ]
+    }
+  ],
+  "direct_evidence_rules": [
+    {
+      "competency_id": "embedded.c.basics",
+      "keywords": [
+        "c 程序",
+        "c 语言",
+        "c语言",
+        "基础 c",
+        "指针",
+        "结构体",
+        "位运算",
+        "内存"
+      ]
+    },
+    {
+      "competency_id": "embedded.mcu.interrupt",
+      "keywords": [
+        "中断",
+        "nvic",
+        "isr",
+        "exti"
+      ]
+    },
+    {
+      "competency_id": "embedded.peripheral.uart_dma",
+      "keywords": [
+        "uart",
+        "串口",
+        "dma",
+        "错帧",
+        "波特率"
+      ]
+    },
+    {
+      "competency_id": "embedded.peripheral.serial_bus",
+      "keywords": [
+        "spi",
+        "i2c",
+        "ic",
+        "can",
+        "总线"
+      ]
+    },
+    {
+      "competency_id": "embedded.rtos.fundamentals",
+      "keywords": [
+        "rtos",
+        "freertos",
+        "任务",
+        "队列",
+        "queue",
+        "互斥",
+        "mutex",
+        "信号量",
+        "semaphore"
+      ]
+    },
+    {
+      "competency_id": "engineering.tooling.version_control",
+      "keywords": [
+        "git",
+        "cmake",
+        "版本管理",
+        "版本控制",
+        "回归"
+      ]
+    },
+    {
+      "competency_id": "project.ownership",
+      "keywords": [
+        "主要负责",
+        "负责",
+        "个人项目",
+        "分工",
+        "团队完成",
+        "本人",
+        "我负责",
+        "个人贡献"
+      ]
+    },
+    {
+      "competency_id": "engineering.verification",
+      "keywords": [
+        "示波器",
+        "逻辑分析仪",
+        "调试",
+        "排查",
+        "定位",
+        "复现",
+        "联调",
+        "消抖",
+        "测量",
+        "验证"
+      ]
+    },
+    {
+      "competency_id": "embedded.linux.basics",
+      "keywords": [
+        "linux",
+        "驱动"
+      ]
+    }
+  ],
+  "related_context_rules": [
+    {
+      "competency_id": "embedded.mcu.interrupt",
+      "keywords": [
+        "tim",
+        "定时器",
+        "输入捕获",
+        "状态机",
+        "周期任务"
+      ]
+    }
+  ],
+  "seed_family_rules": [
+    {
+      "root_competency": "embedded.rtos.fundamentals",
+      "target_prefix": "embedded.rtos."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "format_version": "1.0",
+  "pack_id": "embedded-software-junior",
+  "version": "1.0.0",
+  "name": "嵌入式软件初级岗位",
+  "description": "嵌入式软件工程师（实习/初级）面试陪练的已审核岗位知识：六条两级审核 Seed、评分参考、能力映射与官方来源登记。不包含任何候选人资料。",
+  "competency_profile_id": "embedded-junior-v1",
+  "seeds": [
+    "seeds/seed_embedded_freertos_queue_mechanism.json",
+    "seeds/seed_embedded_interrupt_priority.json",
+    "seeds/seed_embedded_mutex_vs_semaphore.json",
+    "seeds/seed_embedded_rtos_task_period.json",
+    "seeds/seed_embedded_spi_i2c_selection.json",
+    "seeds/seed_embedded_uart_dma_debug.json"
+  ],
+  "competencies_file": "competencies.json",
+  "sources_file": "sources.json",
+  "supported_scope": "C/嵌入式基础、STM32 中断与 NVIC、UART/DMA 排障、SPI/I2C/CAN 选型、FreeRTOS 队列/同步/调度与 RTOS 基础家族；以登记来源与已审 Seed 文本为限。",
+  "unsupported_scope": "非嵌入式职业领域；任意 PDF 自动生成面试官；候选人履历真实性认证；招聘录用结论；未覆盖主题的技术掌握判定。",
+  "source_kind": "official_document_registry"
+}

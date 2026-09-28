@@ -1,0 +1,74 @@
+{
+  "sources": [
+    {
+      "source_id": "freertos_reference_manual_v10",
+      "title": "The FreeRTOS Reference Manual V10.0.0",
+      "publisher": "Amazon / Real Time Engineers Ltd (FreeRTOS)",
+      "edition": "Reference Manual for FreeRTOS version 10.0.0 issue 1",
+      "locator": "Chapter 3 Queue/Semaphore；Chapter 2 Task and Scheduler；Chapter 4 Mutex；Chapter 7 Kernel Configuration",
+      "recorded_at": "2026-09-19",
+      "url": "https://www.freertos.org/media/2018/FreeRTOS_Reference_Manual_V10.0.0.pdf",
+      "local_identifier": null,
+      "content_sha256": null,
+      "redistribution_boundary": "仅登记官方链接与章节定位；手册全文不搬运进本包。",
+      "review_record_id": "review_m2_01_level2_owner_20260919",
+      "note": "2026-09-19 本机实际下载并逐条定位 Queue/Semaphore/Task 段落；工程推导与手册逐字事实在审核包中分开标注。"
+    },
+    {
+      "source_id": "rm0433_stm32h7",
+      "title": "STM32H742/743/753/750 参考手册 RM0433",
+      "publisher": "STMicroelectronics",
+      "edition": "Rev 8",
+      "locator": "Chapter 15 DMA；Chapter 19 NVIC；Chapter 47 I2C；Chapter 48 USART；Chapter 50 SPI；Chapter 56 FDCAN",
+      "recorded_at": "2026-09-19",
+      "url": "https://www.st.com/resource/en/reference_manual/rm0433-stm32h742-stm32h743-753-and-750-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+      "local_identifier": null,
+      "content_sha256": null,
+      "redistribution_boundary": "仅登记官方链接与章节定位；不适用于 F4/G4 特有行为。",
+      "review_record_id": "review_m2_01_level2_owner_20260919",
+      "note": "实测下载 40,711,860 字节并确认章节存在；不得外推到 Demo Resume 的 STM32F407/G431。"
+    },
+    {
+      "source_id": "rm0090_stm32f4",
+      "title": "STM32F405/407/415/417/427/437/429/439 参考手册 RM0090",
+      "publisher": "STMicroelectronics",
+      "edition": "Rev 22",
+      "locator": "Chapter 10 DMA；Chapter 12 Interrupts and events；Chapter 27 I2C；Chapter 28 SPI；Chapter 30 USART",
+      "recorded_at": "2026-09-19",
+      "url": "https://www.st.com/resource/en/reference_manual/dm00031020-stm32f405-415-stm32f407-417-stm32f427-437-and-stm32f429-439-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf",
+      "local_identifier": null,
+      "content_sha256": null,
+      "redistribution_boundary": "仅登记官方链接与章节定位；NVIC 优先级位宽属 Cortex-M4 内核，须引用 PM0214。",
+      "review_record_id": "review_m2_01_level2_owner_20260919",
+      "note": "实测下载 21,385,881 字节并提取目录确认章节存在。"
+    },
+    {
+      "source_id": "rm0440_stm32g4",
+      "title": "STM32G4 系列参考手册 RM0440",
+      "publisher": "STMicroelectronics",
+      "edition": "Rev 9",
+      "locator": "Chapter 12 DMA；Chapter 14 NVIC；Chapter 39 I2C；Chapter 40 USART；Chapter 42 SPI/I2S；Chapter 44 FDCAN",
+      "recorded_at": "2026-09-19",
+      "url": "https://www.st.com/resource/en/reference_manual/dm00355726-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+      "local_identifier": null,
+      "content_sha256": null,
+      "redistribution_boundary": "仅登记官方链接与章节定位；G4 通道数 102 与 H7 的 150 不得混用。",
+      "review_record_id": "review_m2_01_level2_owner_20260919",
+      "note": "实测下载 39,045,335 字节并核对正文（手册 p.436）。"
+    },
+    {
+      "source_id": "pm0214_cortex_m4",
+      "title": "STM32 Cortex-M4 MCUs and MPUs 编程手册 PM0214",
+      "publisher": "STMicroelectronics",
+      "edition": "Rev 10",
+      "locator": "§2.3.5 Exception priorities（p.41）；§2.3.6 Interrupt priority grouping（p.41）",
+      "recorded_at": "2026-09-19",
+      "url": "https://www.st.com/resource/en/programming_manual/pm0214-stm32-cortexm4-mcus-and-mpus-programming-manual-stmicroelectronics.pdf",
+      "local_identifier": null,
+      "content_sha256": null,
+      "redistribution_boundary": "仅登记官方链接与章节定位；Cortex-M4 架构级规则与型号级通道数分开引用。",
+      "review_record_id": "review_m2_01_level2_owner_20260919",
+      "note": "实测下载 2,732,268 字节并读取正文；支持 F407/G431（均为 M4）的优先级与分组事实。"
+    }
+  ]
+}
