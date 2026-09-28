@@ -13,14 +13,12 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
 from zhijue.domain.planning import InterviewSlot
 from zhijue.domain.requisition import CoverageStatus
 
 if TYPE_CHECKING:
     from zhijue.application.seed_bank import Seed, SeedBank
-
-_RTO_FUNDAMENTALS = "embedded.rtos.fundamentals"
-_RTO_FAMILY_PREFIX = "embedded.rtos."
 
 
 @dataclass(frozen=True)
@@ -42,12 +40,15 @@ def instantiate_root_questions(
     seed_bank: SeedBank,
     *,
     interview_id: str,
+    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
 ) -> tuple[QuestionDraft, ...]:
     """Instantiate exactly one deterministic root question per input slot.
 
-    Exact competency matches are allocated before the one permitted family
-    mapping.  This prevents an early generic RTOS slot from consuming a seed
-    needed by a later exact slot.  A seed is never reused within one plan.
+    Exact competency matches are allocated before the family mappings
+    declared by the interview's frozen CompetencyProfile.  This prevents an
+    early generic slot from consuming a seed needed by a later exact slot.
+    A seed is never reused within one plan.  Embedded behaviour is unchanged:
+    ``embedded-junior-v1`` carries the historical RTOS family rule.
     """
 
     ordered_slots = tuple(slots)
@@ -68,20 +69,26 @@ def instantiate_root_questions(
             assigned[index] = seed
             used_seed_ids.add(seed.id)
 
-    # Only the explicitly approved broad RTOS slot may borrow within its family.
-    family_candidates = tuple(
-        sorted(
-            (
-                seed
-                for seed in eligible
-                if seed.competency_id.startswith(_RTO_FAMILY_PREFIX)
-            ),
-            key=lambda seed: (seed.competency_id, seed.id, seed.version),
-        )
-    )
+    # 家族借用只允许 profile.seed_family_rules 显式声明的根槽位；
+    # embedded-junior-v1 即原“RTOS fundamentals → embedded.rtos.*”规则。
     for index, slot in enumerate(ordered_slots):
-        if assigned[index] is not None or slot.competency != _RTO_FUNDAMENTALS:
+        if assigned[index] is not None:
             continue
+        prefixes = tuple(
+            rule[1] for rule in profile.seed_family_rules if rule[0] == slot.competency
+        )
+        if not prefixes:
+            continue
+        family_candidates = tuple(
+            sorted(
+                (
+                    seed
+                    for seed in eligible
+                    if any(seed.competency_id.startswith(prefix) for prefix in prefixes)
+                ),
+                key=lambda seed: (seed.competency_id, seed.id, seed.version),
+            )
+        )
         seed = _first_unused(family_candidates, used_seed_ids)
         if seed is not None:
             assigned[index] = seed

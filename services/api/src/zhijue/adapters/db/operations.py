@@ -166,6 +166,21 @@ class OperationRepository:
         with Session(self._engine, expire_on_commit=False) as session:
             return session.get(Operation, operation_id)
 
+    def find_by_key(self, *, scope: str, idempotency_key: str) -> Operation | None:
+        """幂等重放预检：受理路径先找到原操作，再决定是否解析新输入。
+
+        用于“服务端默认值可能在两次尝试之间变化”的 POST（如省略
+        pack_release_id 的计划请求）：重放必须返回原受理结果，
+        而不是用新默认值重算输入哈希后误报冲突（D05）。
+        """
+        with Session(self._engine, expire_on_commit=False) as session:
+            return session.scalar(
+                select(Operation).where(
+                    Operation.scope == scope,
+                    Operation.idempotency_key == idempotency_key,
+                )
+            )
+
     def retry(
         self,
         operation_id: str,

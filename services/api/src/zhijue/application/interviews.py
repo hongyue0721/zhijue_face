@@ -38,9 +38,12 @@ from zhijue.application.answer_workflow import (
     ModelRequestTimeoutError,
     run_handle_answer_workflow,
 )
+from zhijue.application.knowledge_packs import (
+    InterviewPackBinding,
+    KnowledgePackService,
+)
 from zhijue.application.reporting import ReportingService
 from zhijue.application.requisition import JDPlanningError, JDPlanningService
-from zhijue.application.seed_bank import SeedBank
 from zhijue.domain.errors import (
     CapacityLimitedError,
     DomainError,
@@ -140,7 +143,7 @@ class InterviewService:
         engine: Engine,
         planner: JDPlanningService,
         operations: OperationRepository,
-        seed_bank: SeedBank,
+        packs: KnowledgePackService,
         reporting: ReportingService,
         analyzer: AnswerAnalyzer | None,
         workflow_timeout_seconds: float = 60,
@@ -149,7 +152,7 @@ class InterviewService:
         self._engine = engine
         self._planner = planner
         self._operations = operations
-        self._seed_bank = seed_bank
+        self._packs = packs
         self._reporting = reporting
         self._analyzer = analyzer
         self._workflow_timeout_seconds = workflow_timeout_seconds
@@ -215,7 +218,7 @@ class InterviewService:
         jd_text: str,
         jd_source_name: str,
         jd_source_type: JDSourceType,
-        seed_bank_version: str,
+        binding: InterviewPackBinding,
         run_mode: str,
     ) -> dict[str, Any]:
         with Session(self._engine, expire_on_commit=False) as session:
@@ -237,7 +240,7 @@ class InterviewService:
                 snapshot=jd,
                 evidence_index=direct_ev,
                 profile_snapshot_id=snapshot.id,
-                seed_bank_version=seed_bank_version,
+                seed_bank_version=binding.seed_bank_version,
                 related_context_index=related_ctx,
                 relation_index=rel_map,
             )
@@ -301,7 +304,7 @@ class InterviewService:
                 id=interview_id,
                 profile_snapshot_id=snapshot.id,
                 jd_snapshot=root_plan["jd_snapshot"],
-                seed_bank_version=seed_bank_version,
+                seed_bank_version=binding.seed_bank_version,
                 rubric_version="0.0.0",  # 尚无题目，故无 rubric
                 prompt_versions={},
                 policy_version="1.0.0",
@@ -316,6 +319,11 @@ class InterviewService:
                 stop_requested=False,
                 report_id=None,
                 limitations=list(result.plan.limitations),
+                # 冻结绑定在受理时已解析；这里落库同一结果，
+                # 后续 start/重启/retry 只从它解析，不再看全局默认。
+                pack_release_id=binding.release_id,
+                pack_content_digest=binding.content_digest,
+                competency_profile_id=binding.competency_profile_id,
                 created_at=utc_now_rfc3339(),
                 updated_at=utc_now_rfc3339(),
             )
@@ -327,7 +335,7 @@ class InterviewService:
             "profile_snapshot_id": snapshot.id,
             "slot_count": len(result.plan.slots),
             "competencies": list(result.plan.competency_coverage()),
-            "seed_bank_version": seed_bank_version,
+            "seed_bank_version": binding.seed_bank_version,
         }
 
     def _existing_operation(
@@ -404,6 +412,24 @@ class InterviewService:
     def start_interview(
         self, *, interview_id: str, operation_id: str
     ) -> dict[str, Any]:
+        # 岗位包必须从本场冻结绑定解析（R05/D01–D03/D06）；绝不按“当前默认包”
+        # 重解析，也不在损坏/缺失时回落其他包。
+        with Session(self._engine) as session:
+            binding_row = session.get(Interview, interview_id)
+            if binding_row is None:
+                raise ResourceNotFoundError("面试不存在。")
+            pack_release_id = binding_row.pack_release_id
+            pack_digest = binding_row.pack_content_digest
+        if pack_release_id is None or pack_digest is None:
+            raise InvalidStateError(
+                "该会话为旧记录，无可证实的岗位包绑定（legacy_unresolved）。"
+                "原报告与冻结题目仍可读；需要继续练习请重新创建计划。"
+            )
+        resolved = self._packs.resolve(pack_release_id)
+        if resolved.content_digest != pack_digest:
+            raise InvalidStateError(
+                "冻结岗位包与登记摘要不一致；已中止开始，不会用其他包顶替。"
+            )
         with Session(self._engine) as session, session.begin():
             interview = session.get(Interview, interview_id)
             if interview is None:
@@ -425,8 +451,9 @@ class InterviewService:
                 raise InvalidStateError("面试计划没有可实例化的题目。")
             drafts = instantiate_root_questions(
                 slots,
-                self._seed_bank,
+                resolved.seed_bank,
                 interview_id=interview.id,
+                profile=resolved.profile,
             )
             for draft in drafts:
                 session.add(
@@ -1545,4 +1572,9 @@ class InterviewService:
                 "stop_requested": interview.stop_requested,
                 "report_id": interview.report_id,
                 "limitations": list(interview.limitations or []),
+                "knowledge_pack": self._packs.summary_for_interview(
+                    pack_release_id=interview.pack_release_id,
+                    pack_content_digest=interview.pack_content_digest,
+                    competency_profile_id=interview.competency_profile_id,
+                ),
             }

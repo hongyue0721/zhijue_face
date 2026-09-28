@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import urlparse
 
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1
 from zhijue.domain.errors import JdRejected
 
 
@@ -220,18 +221,10 @@ _NON_REQUIREMENT_MARKERS = (
     "role:",
 )
 
+# 单一真源：JD→competency 映射属于 embedded-junior-v1 能力配置
+# （domain/competency_profiles.py）。知识包只能声明镜像，不能改写规则（R03）。
 _COMPETENCY_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("c 程序", "c 语言", "c语言", "基础 c", "指针", "内存"), "embedded.c.basics"),
-    (("中断", "nvic", "isr"), "embedded.mcu.interrupt"),
-    (("uart", "串口", "dma"), "embedded.peripheral.uart_dma"),
-    (("spi", "i2c", "can", "总线"), "embedded.peripheral.serial_bus"),
-    (
-        ("rtos", "freertos", "任务", "共享资源", "任务间通信"),
-        "embedded.rtos.fundamentals",
-    ),
-    (("git", "版本控制", "回归"), "engineering.tooling.version_control"),
-    (("本人工作", "个人贡献", "团队", "主要负责"), "project.ownership"),
-    (("验证方法", "验证", "测量", "定位", "调试"), "engineering.verification"),
+    EMBEDDED_JUNIOR_V1.jd_keyword_rules
 )
 
 

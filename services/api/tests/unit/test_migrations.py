@@ -425,7 +425,7 @@ def test_unversioned_create_all_database_upgrades_without_data_loss(tmp_path):
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "e62a9f8c10bd"
+    assert revision == "a7c4e1f29b58"
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
 

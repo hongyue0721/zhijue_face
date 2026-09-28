@@ -150,6 +150,11 @@ class Interview(TimestampMixin, Base):
     stop_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     report_id: Mapped[str | None] = mapped_column(String(128))
     limitations: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    # 岗位知识包冻结绑定（受理计划请求时写入；一经创建不随全局默认变化）。
+    # 旧行允许 null：标记为 legacy_unresolved，读取路径保留原报告/冻结题目。
+    pack_release_id: Mapped[str | None] = mapped_column(String(64))
+    pack_content_digest: Mapped[str | None] = mapped_column(String(80))
+    competency_profile_id: Mapped[str | None] = mapped_column(String(64))
 
 
 class Question(TimestampMixin, Base):
@@ -337,3 +342,83 @@ class OperationEvent(Base):
     __table_args__ = (
         Index("ix_operation_event_op_seq", "operation_id", "seq", unique=True),
     )
+
+
+class KnowledgePackRelease(TimestampMixin, Base):
+    """不可变岗位包 release：内容身份 = pack_id + version + content_digest。
+
+    同一 (pack_id, version) 唯一：相同摘要幂等复用，不同摘要冲突拒覆盖。
+    审核状态不存这里——审核在包外、绑定摘要（KnowledgePackReview）。
+    """
+
+    __tablename__ = "knowledge_pack_release"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), default="local")
+    pack_id: Mapped[str] = mapped_column(String(64))
+    version: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(String(800), default="")
+    format_version: Mapped[str] = mapped_column(String(16))
+    competency_profile_id: Mapped[str] = mapped_column(String(64))
+    content_digest: Mapped[str] = mapped_column(String(80))
+    # 本次上传 ZIP 字节 hash：追踪/幂等用，不是包内容身份。
+    upload_sha256: Mapped[str] = mapped_column(String(64), default="")
+    storage_kind: Mapped[str] = mapped_column(
+        String(16), default="runtime"
+    )  # runtime|builtin
+    storage_root: Mapped[str] = mapped_column(String(300))
+    manifest_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    file_index: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    validation_status: Mapped[str] = mapped_column(String(16), default="not_run")
+    validation_checks: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    seed_count: Mapped[int] = mapped_column(Integer, default=0)
+    approved_seed_count: Mapped[int] = mapped_column(Integer, default=0)
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    supported_scope: Mapped[str] = mapped_column(String(640), default="")
+    unsupported_scope: Mapped[str] = mapped_column(String(640), default="")
+    source_kind: Mapped[str] = mapped_column(String(48), default="")
+    import_operation_id: Mapped[str | None] = mapped_column(String(128))
+
+    __table_args__ = (UniqueConstraint("pack_id", "version"),)
+
+
+class KnowledgePackReview(Base):
+    """负责人审核记录（包外存储、绑定完整内容摘要）。
+
+    只有 content_digest 与所属 release 当前摘要一致的记录才生效；
+    伪造包内 approved/复制 review_record_id 不产生服务端授权。
+    """
+
+    __tablename__ = "knowledge_pack_review"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    release_id: Mapped[str] = mapped_column(ForeignKey("knowledge_pack_release.id"))
+    content_digest: Mapped[str] = mapped_column(String(80))
+    decision: Mapped[str] = mapped_column(String(16))  # approved/rejected
+    reviewer_id: Mapped[str] = mapped_column(String(120))
+    reviewer_role: Mapped[str] = mapped_column(String(48))
+    note: Mapped[str] = mapped_column(String(600), default="")
+    # [{seed_id, seed_version, seed_content_sha256}]：批准范围逐条绑定内容。
+    approved_seed_scope: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    reviewed_at: Mapped[str] = mapped_column(String(32), default=utc_now_rfc3339)
+
+    __table_args__ = (
+        Index("ix_knowledge_pack_review_release", "release_id", "reviewed_at"),
+    )
+
+
+class KnowledgePackImportReceipt(Base):
+    """异步导入回执：Operation 只存输入 hash，原始 ZIP 字节由回执在受控
+    runtime 目录内持有，保证刷新/重启后可以恢复执行或明确清理。"""
+
+    __tablename__ = "knowledge_pack_import"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    upload_sha256: Mapped[str] = mapped_column(String(64))
+    # 相对 ZHIJUE_RUNTIME_DIR 的路径；API 永不返回服务器绝对路径。
+    storage_path: Mapped[str] = mapped_column(String(300))
+    release_id: Mapped[str | None] = mapped_column(String(64))
+    reused_release: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[str] = mapped_column(String(32), default=utc_now_rfc3339)
+    updated_at: Mapped[str] = mapped_column(String(32), default=utc_now_rfc3339)

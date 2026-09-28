@@ -20,6 +20,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Claim, Profile
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1
 from zhijue.domain.errors import DomainError, ResourceNotFoundError
 from zhijue.domain.ids import new_id
 from zhijue.domain.planning import (
@@ -45,72 +46,13 @@ from zhijue.domain.requisition import (
 # 直接证据关键词：候选人明确自述或描述具体项目使用/排障经历。
 # 严格遵守：TIM / 状态机 / 周期任务不等于明确声明了 interrupt/NVIC/ISR！
 _DIRECT_EVIDENCE_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
-    (
-        ("c 程序", "c 语言", "c语言", "基础 c", "指针", "结构体", "位运算", "内存"),
-        "embedded.c.basics",
-    ),
-    (
-        ("中断", "nvic", "isr", "exti"),
-        "embedded.mcu.interrupt",
-    ),
-    (("uart", "串口", "dma", "错帧", "波特率"), "embedded.peripheral.uart_dma"),
-    (("spi", "i2c", "ic", "can", "总线"), "embedded.peripheral.serial_bus"),
-    (
-        (
-            "rtos",
-            "freertos",
-            "任务",
-            "队列",
-            "queue",
-            "互斥",
-            "mutex",
-            "信号量",
-            "semaphore",
-        ),
-        "embedded.rtos.fundamentals",
-    ),
-    (
-        ("git", "cmake", "版本管理", "版本控制", "回归"),
-        "engineering.tooling.version_control",
-    ),
-    (
-        (
-            "主要负责",
-            "负责",
-            "个人项目",
-            "分工",
-            "团队完成",
-            "本人",
-            "我负责",
-            "个人贡献",
-        ),
-        "project.ownership",
-    ),
-    (
-        (
-            "示波器",
-            "逻辑分析仪",
-            "调试",
-            "排查",
-            "定位",
-            "复现",
-            "联调",
-            "消抖",
-            "测量",
-            "验证",
-        ),
-        "engineering.verification",
-    ),
-    (("linux", "驱动"), "embedded.linux.basics"),
+    EMBEDDED_JUNIOR_V1.direct_evidence_rules
 )
 
 # 相关上下文关键词：材料涉及相关外设/任务机制，但没有直接机制自述或排障经历。
 # RELATED_CONTEXT 只能帮助 Planner 识别验证价值，严禁自动升级为 unverified！
 _RELATED_CONTEXT_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
-    (
-        ("tim", "定时器", "输入捕获", "状态机", "周期任务"),
-        "embedded.mcu.interrupt",
-    ),
+    EMBEDDED_JUNIOR_V1.related_context_rules
 )
 
 _EVIDENCE_KEYWORDS = _DIRECT_EVIDENCE_KEYWORDS
