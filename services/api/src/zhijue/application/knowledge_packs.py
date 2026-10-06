@@ -68,18 +68,35 @@ from zhijue.domain.knowledge_packs import (
 # “可审计映射”：同一批字节内容、同一记录 ID，不新增批准范围。
 BUILTIN_REVIEW_RECORD_ID = "review_m2_01_level2_owner_20260919"
 BUILTIN_PACK_STORAGE_ROOT = "knowledge_packs/embedded_software_junior"
-# 历史批准白名单：内置迁移只继承这六条 ID（docs/reviews/review_m2_01_*）。
-# 内置目录新增 Seed 不会自动获批——那需要负责人经 CLI 走新一轮审核。
-BUILTIN_APPROVED_SEED_IDS = frozenset(
-    {
-        "seed_embedded_freertos_queue_mechanism",
-        "seed_embedded_interrupt_priority",
-        "seed_embedded_mutex_vs_semaphore",
-        "seed_embedded_rtos_task_period",
-        "seed_embedded_spi_i2c_selection",
-        "seed_embedded_uart_dma_debug",
-    }
-)
+# Fixed canonical-byte baseline from the six unchanged 0.2.1 assets approved in
+# docs/reviews/review_m2_01_level2_owner_20260919.md. Never derive this allowlist
+# from the files being registered: doing so would approve their replacements.
+BUILTIN_APPROVED_SEEDS = {
+    "seed_embedded_freertos_queue_mechanism": (
+        "0.2.1",
+        "bf8418d609b34518a3c62d39c78e11598c1fad374ec8833eccd4cae689bdb1e0",
+    ),
+    "seed_embedded_interrupt_priority": (
+        "0.2.1",
+        "153f0b4525fdfb0d3d078b2252dcca182abd4890d5efa5ae32ee1a878d7d8fdc",
+    ),
+    "seed_embedded_mutex_vs_semaphore": (
+        "0.2.1",
+        "944acbf4cb293b93bfc048f65d5bb3d8526c52fc107efc643c8eed66266c4260",
+    ),
+    "seed_embedded_rtos_task_period": (
+        "0.2.1",
+        "2c333fc37a49af4f1aa35e3d2190b588307cea8a15997abb9a57b81da57992ca",
+    ),
+    "seed_embedded_spi_i2c_selection": (
+        "0.2.1",
+        "33c2d1a915435fa53c66cdba98642397193c7049ccd06848a82a4124f9994e18",
+    ),
+    "seed_embedded_uart_dma_debug": (
+        "0.2.1",
+        "f800aab47840c5328d8e1fa2068ccfe89e95e99f4ac0711d7e34c51c5754c919",
+    ),
+}
 
 
 class PackDomainError(DomainError):
@@ -96,6 +113,7 @@ class InterviewPackBinding:
     content_digest: str
     competency_profile_id: str
     seed_bank_version: str
+    review_snapshot: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +158,7 @@ class KnowledgePackService:
         self._repo_root = Path(repo_root)
         self._limits = limits or PackLimits()
         self._default_pack_id = default_pack_id
+        self._default_release_id: str | None = None
         if live_allowed_review_status not in REVIEW_RANK:
             raise ValueError("未知的 live 审核门槛")
         self._live_allowed_review_status = live_allowed_review_status
@@ -457,9 +476,10 @@ class KnowledgePackService:
                     }
                     for entry in row.manifest_snapshot.get("seed_index", [])
                     if entry["declared_review_status"] == "approved"
-                    and entry["seed_id"] in BUILTIN_APPROVED_SEED_IDS
+                    and BUILTIN_APPROVED_SEEDS.get(entry["seed_id"])
+                    == (entry["seed_version"], entry["content_sha256"])
                 ]
-                if len(scope) != len(BUILTIN_APPROVED_SEED_IDS):
+                if len(scope) != len(BUILTIN_APPROVED_SEEDS):
                     raise _error(
                         "PACK_BUILTIN_MIGRATION_INVALID",
                         "内置迁移必须且只能继承 M2-01 六条原内容；"
@@ -484,6 +504,14 @@ class KnowledgePackService:
                     )
                 )
                 row.approved_seed_count = self._recompute_approved_count(session, row)
+        if row.pack_id != self._default_pack_id:
+            raise _error(
+                "PACK_DEFAULT_NOT_REGISTERED",
+                "配置的默认包与本次核验的内置资产不一致；请明确选择已审核 release。",
+                503,
+            )
+        # 默认身份来自启动时核验的资产，不按上传时间推导；同摘要的上传复用也成立。
+        self._default_release_id = row.id
         return row
 
     # ---------------------------------------------------------------- 审核信任
@@ -615,13 +643,50 @@ class KnowledgePackService:
 
     # ---------------------------------------------------------------- 解析边界
 
-    def resolve(self, release_id: str) -> ResolvedKnowledgePack:
-        """加载边界：重算摘要、应用服务端审核范围，返回只读资源包。"""
+    def resolve(
+        self, release_id: str, *, binding: InterviewPackBinding | None = None
+    ) -> ResolvedKnowledgePack:
+        """Validate bytes on every load; existing interviews use admission review facts."""
         with Session(self._engine, expire_on_commit=False) as session:
             row = session.get(KnowledgePackRelease, release_id)
             if row is None:
                 raise ResourceNotFoundError("岗位包 release 不存在。")
-            review = self.effective_review(session, row)
+            if binding is None:
+                review = self.effective_review(session, row)
+                review_status = self._live_allowed_review_status
+            else:
+                if (
+                    binding.release_id != row.id
+                    or binding.pack_id != row.pack_id
+                    or binding.version != row.version
+                    or binding.content_digest != row.content_digest
+                    or binding.competency_profile_id != row.competency_profile_id
+                ):
+                    raise _error(
+                        "PACK_BINDING_MISMATCH",
+                        "冻结的岗位包身份与 release 不符。",
+                        409,
+                    )
+                snapshot = binding.review_snapshot
+                if snapshot is None:
+                    raise _error(
+                        "PACK_REVIEW_SNAPSHOT_MISSING",
+                        "历史面试没有受理时审核快照；保留既有题目与报告，请新建面试。",
+                        409,
+                    )
+                review = snapshot.get("review")
+                review_status = snapshot.get("live_allowed_review_status")
+                if (
+                    snapshot.get("schema_version") != 1
+                    or not isinstance(review, dict)
+                    or review.get("decision") != "approved"
+                    or review.get("content_digest") != row.content_digest
+                    or review_status not in REVIEW_RANK
+                    or not isinstance(review.get("approved_seed_scope"), list)
+                ):
+                    raise _error(
+                        "PACK_REVIEW_SNAPSHOT_INVALID", "冻结审核快照无效。", 409
+                    )
         files = self._load_canonical_files(row)
         profile = get_registered_profile(row.competency_profile_id)
         manifest = parse_manifest(files)
@@ -653,23 +718,33 @@ class KnowledgePackService:
                 raise _error("PACK_SEED_SCHEMA_INVALID", str(exc), 503) from exc
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-        scope_hashes: set[str] = set()
+        scope: set[tuple[str, str, str]] = set()
         if review is not None and review["decision"] == "approved":
-            scope_hashes = {
-                entry["seed_content_sha256"] for entry in review["approved_seed_scope"]
+            scope = {
+                (
+                    entry["seed_id"],
+                    entry["seed_version"],
+                    entry["seed_content_sha256"],
+                )
+                for entry in review["approved_seed_scope"]
             }
-        threshold = REVIEW_RANK[self._live_allowed_review_status]
+        threshold = REVIEW_RANK[review_status]
         eligible = [
             seed
             for seed in full_bank.seeds
-            if hash_by_seed_id.get(seed.id) in scope_hashes
+            if (seed.id, seed.version, hash_by_seed_id.get(seed.id)) in scope
             and REVIEW_RANK.get(seed.review_status, -1) >= threshold
         ]
         bank = SeedBank(
             eligible,
             schema_version=full_bank.schema_version,
-            live_allowed_review_status=self._live_allowed_review_status,
+            live_allowed_review_status=review_status,
         )
+        if (
+            binding is not None
+            and binding.seed_bank_version != bank.version_fingerprint()
+        ):
+            raise _error("PACK_BINDING_MISMATCH", "冻结审核范围与题库指纹不符。", 409)
         binding = InterviewPackBinding(
             release_id=row.id,
             pack_id=row.pack_id,
@@ -677,6 +752,11 @@ class KnowledgePackService:
             content_digest=row.content_digest,
             competency_profile_id=row.competency_profile_id,
             seed_bank_version=bank.version_fingerprint(),
+            review_snapshot={
+                "schema_version": 1,
+                "review": review,
+                "live_allowed_review_status": review_status,
+            },
         )
         return ResolvedKnowledgePack(
             release_id=row.id,
@@ -695,22 +775,17 @@ class KnowledgePackService:
         self, requested_release_id: str | None
     ) -> InterviewPackBinding:
         """计划请求受理时的冻结解析（主文件 5.1）：只接受 selectable 的 release。"""
-        release_id = requested_release_id
+        release_id = (
+            self._default_release_id
+            if requested_release_id is None
+            else requested_release_id
+        )
         if release_id is None:
-            with Session(self._engine) as session:
-                row = session.scalar(
-                    select(KnowledgePackRelease)
-                    .where(KnowledgePackRelease.pack_id == self._default_pack_id)
-                    .order_by(KnowledgePackRelease.created_at.desc())
-                )
-                if row is None:
-                    raise _error(
-                        "SERVICE_NOT_READY",
-                        "没有可解析的内置岗位包；面试计划能力未就绪，"
-                        "岗位包管理仍可用。",
-                        503,
-                    )
-                release_id = row.id
+            raise _error(
+                "SERVICE_NOT_READY",
+                "没有可解析的内置岗位包；面试计划能力未就绪，岗位包管理仍可用。",
+                503,
+            )
         resolved = self.resolve(release_id)
         selectable, reasons = self.selectability(resolved)
         if not selectable:
@@ -756,17 +831,12 @@ class KnowledgePackService:
                 )
             )
             items = [
-                self._item_dict(row, self.effective_review(session, row))
+                self._verified_item(row, self.effective_review(session, row))[0]
                 for row in rows
             ]
-            default = session.scalar(
-                select(KnowledgePackRelease)
-                .where(KnowledgePackRelease.pack_id == self._default_pack_id)
-                .order_by(KnowledgePackRelease.created_at.desc())
-            )
         return {
             "items": items,
-            "default_pack_release_id": default.id if default is not None else None,
+            "default_pack_release_id": self._default_release_id,
             "import_limits": {
                 "max_upload_bytes": self._limits.max_upload_bytes,
                 "max_extracted_total_bytes": self._limits.max_extracted_total_bytes,
@@ -782,44 +852,67 @@ class KnowledgePackService:
             if row is None:
                 raise ResourceNotFoundError("岗位包 release 不存在。")
             review = self.effective_review(session, row)
-            base = self._item_dict(row, review)
-        detail = dict(base)
-        integrity_error: str | None = None
-        files: dict[str, bytes] = {}
-        try:
-            files = self._load_canonical_files(row)
-        except DomainError as exc:
-            integrity_error = exc.code
+            detail, files, integrity_error = self._verified_item(row, review)
         if files:
             try:
                 sources = parse_sources(files)
                 detail["sources"] = [_safe_source(record) for record in sources]
             except PackValidationError as exc:
                 detail["sources"] = []
-                integrity_error = integrity_error or exc.code
+                integrity_error = exc.code
+                detail["selectable"] = False
+                detail["validation_status"] = str(ValidationStatus.FAILED)
+                detail["blocked_reasons"].insert(
+                    0,
+                    {
+                        "code": exc.code,
+                        "message": "来源目录校验失败，该 release 不可用。",
+                    },
+                )
         else:
             detail["sources"] = []
         detail["validation_checks"] = list(row.validation_checks)
         if integrity_error:
-            detail["validation_checks"] = detail["validation_checks"] + [
+            detail["validation_checks"].append(
                 {
                     "check": "storage_integrity",
                     "status": "failed",
                     "detail": f"内容完整性异常：{integrity_error}",
                 }
-            ]
+            )
         detail["limitations_note"] = (
             "格式通过、负责人审核与可用于新面试是三个独立状态；"
             "来源登记字段完整不代表内容已实查认证。"
         )
         return detail
 
-    def _item_dict(
+    def _verified_item(
         self, row: KnowledgePackRelease, review: dict[str, Any] | None
+    ) -> tuple[dict[str, Any], dict[str, bytes], str | None]:
+        files: dict[str, bytes] = {}
+        integrity_error = None
+        try:
+            files = self._load_canonical_files(row)
+        except DomainError as exc:
+            integrity_error = exc.code
+        return self._item_dict(row, review, integrity_error), files, integrity_error
+
+    def _item_dict(
+        self,
+        row: KnowledgePackRelease,
+        review: dict[str, Any] | None,
+        integrity_error: str | None,
     ) -> dict[str, Any]:
         """裁剪展示视图：绝不包含 rubric/reference_points/参考答案/Seed 正文。"""
         review_status = ReviewStatus.UNREVIEWED
         blocked: list[dict[str, str]] = []
+        if integrity_error is not None:
+            blocked.append(
+                {
+                    "code": integrity_error,
+                    "message": f"内容完整性校验失败（{integrity_error}），该 release 不可用。",
+                }
+            )
         if review is None:
             blocked.append(
                 {
@@ -836,7 +929,11 @@ class KnowledgePackService:
             review_status = ReviewStatus.APPROVED
         selectable = row.validation_status == ValidationStatus.PASSED and not blocked
         scope_hashes: set[str] = set()
-        if review is not None and review["decision"] == "approved":
+        if (
+            review is not None
+            and review["decision"] == "approved"
+            and not integrity_error
+        ):
             scope_hashes = {
                 entry["seed_content_sha256"] for entry in review["approved_seed_scope"]
             }
@@ -896,7 +993,9 @@ class KnowledgePackService:
             "competency_profile_id": row.competency_profile_id,
             "scope_summary": row.supported_scope,
             "unsupported_scope": row.unsupported_scope,
-            "validation_status": row.validation_status,
+            "validation_status": str(ValidationStatus.FAILED)
+            if integrity_error
+            else row.validation_status,
             "review_status": str(review_status),
             "selectable": selectable,
             "blocked_reasons": blocked,

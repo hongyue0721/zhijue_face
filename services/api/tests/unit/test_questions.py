@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
 from zhijue.application.seed_bank import Seed, SeedBank
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, Capability
+from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.planning import InterviewSlot, SlotReason
 from zhijue.domain.questions import QuestionDraft, instantiate_root_questions
 from zhijue.domain.requisition import CoverageStatus
@@ -111,8 +113,10 @@ def test_exact_live_competency_match_wins_and_non_live_seed_is_ignored():
 def test_rtos_family_mapping_is_deterministic_nonduplicating_and_reserves_exact_match():
     broad_slot = _slot(1, "embedded.rtos.fundamentals")
     exact_slot = _slot(2, "embedded.rtos.scheduling")
-    queue = _seed("seed_queue", "embedded.rtos.queue")
-    scheduling = _seed("seed_scheduling", "embedded.rtos.scheduling")
+    queue = _seed("seed_queue", "embedded.rtos.queue", stem="请说明队列传递的经历。")
+    scheduling = _seed(
+        "seed_scheduling", "embedded.rtos.scheduling", stem="请说明任务调度的经历。"
+    )
 
     questions = instantiate_root_questions(
         (broad_slot, exact_slot),
@@ -255,3 +259,40 @@ def test_unrelated_approved_seed_is_never_bound_to_non_rtos_slot():
 
     assert question.seed_id is None
     assert question.rubric_snapshot["source"] == "bounded_fallback"
+
+
+def test_fallback_uses_frozen_chinese_label_and_addresses_candidate():
+    profile = replace(
+        EMBEDDED_JUNIOR_V1,
+        capabilities=(Capability("embedded.c.basics", "C 指针与内存管理"),),
+    )
+    slot = replace(
+        _slot(1, "embedded.c.basics"),
+        verification_goal="请候选人说明 embedded.c.basics 的具体做法与边界",
+    )
+    (question,) = instantiate_root_questions(
+        (slot,), _bank(), interview_id="frozen_label", profile=profile
+    )
+    assert "C 指针与内存管理" in question.wording
+    assert "请说明" in question.wording
+    assert "请候选人" not in question.wording
+    assert "这项岗位相关能力" not in question.wording
+    assert slot.competency not in question.wording
+    assert question.rubric_snapshot["source"] == "bounded_fallback"
+
+
+def test_duplicate_approved_stems_are_rejected_not_renumbered_or_rewritten():
+    slots = (_slot(1, "embedded.mcu.interrupt"), _slot(2, "embedded.c.basics"))
+    bank = _bank(
+        _seed("same_stem_a", slots[0].competency),
+        _seed("same_stem_b", slots[1].competency),
+    )
+    with pytest.raises(PlanningRejected, match="主问题存在重复"):
+        instantiate_root_questions(slots, bank, interview_id="duplicate_stems")
+
+
+def test_duplicate_fallback_slots_are_rejected_even_with_different_ids():
+    slot = _slot(1, "embedded.c.basics")
+    duplicate = replace(slot, slot_id="different_id")
+    with pytest.raises(PlanningRejected, match="主问题存在重复"):
+        instantiate_root_questions((slot, duplicate), _bank(), interview_id="duplicate")

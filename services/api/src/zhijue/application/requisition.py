@@ -20,7 +20,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Claim, Profile
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
 from zhijue.domain.errors import DomainError, ResourceNotFoundError
 from zhijue.domain.ids import new_id
 from zhijue.domain.planning import (
@@ -40,22 +40,6 @@ from zhijue.domain.requisition import (
     extract_requirements,
     make_snapshot,
 )
-
-# 能力维度 → 判定关键词：把已确认的候选人文本映射到岗位能力维度。
-# 只做映射，不判断能力高低（那属于面试验证阶段）。
-# 直接证据关键词：候选人明确自述或描述具体项目使用/排障经历。
-# 严格遵守：TIM / 状态机 / 周期任务不等于明确声明了 interrupt/NVIC/ISR！
-_DIRECT_EVIDENCE_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
-    EMBEDDED_JUNIOR_V1.direct_evidence_rules
-)
-
-# 相关上下文关键词：材料涉及相关外设/任务机制，但没有直接机制自述或排障经历。
-# RELATED_CONTEXT 只能帮助 Planner 识别验证价值，严禁自动升级为 unverified！
-_RELATED_CONTEXT_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
-    EMBEDDED_JUNIOR_V1.related_context_rules
-)
-
-_EVIDENCE_KEYWORDS = _DIRECT_EVIDENCE_KEYWORDS
 
 
 @dataclass(frozen=True)
@@ -129,7 +113,10 @@ class JDPlanningService:
     # ---- 候选证据 ----
 
     def evidence_indices(
-        self, *, profile_id: str
+        self,
+        *,
+        profile_id: str,
+        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
     ) -> tuple[
         dict[str, list[str]],
         dict[str, list[str]],
@@ -154,7 +141,7 @@ class JDPlanningService:
             for claim in claims:
                 text = claim.text.lower()
                 # 1. 检查直接证据
-                for keywords, competency in _DIRECT_EVIDENCE_KEYWORDS:
+                for keywords, competency in profile.direct_evidence_rules:
                     if any(keyword in text for keyword in keywords):
                         direct_index.setdefault(competency, []).append(claim.id)
                         is_exp = any(
@@ -178,7 +165,7 @@ class JDPlanningService:
                                 else EvidenceRelation.DIRECT_CLAIM
                             )
                 # 2. 检查相关上下文
-                for keywords, competency in _RELATED_CONTEXT_KEYWORDS:
+                for keywords, competency in profile.related_context_rules:
                     if any(keyword in text for keyword in keywords):
                         context_index.setdefault(competency, []).append(claim.id)
 
@@ -186,9 +173,14 @@ class JDPlanningService:
         clean_context = {k: sorted(set(v)) for k, v in context_index.items()}
         return clean_direct, clean_context, relation_map
 
-    def evidence_index(self, *, profile_id: str) -> dict[str, list[str]]:
-        """向后兼容接口：仅返回直接证据映射。"""
-        direct, _, _ = self.evidence_indices(profile_id=profile_id)
+    def evidence_index(
+        self,
+        *,
+        profile_id: str,
+        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+    ) -> dict[str, list[str]]:
+        """仅返回所选能力配置的直接证据映射。"""
+        direct, _, _ = self.evidence_indices(profile_id=profile_id, profile=profile)
         return direct
 
     # ---- 全链路 ----
@@ -204,8 +196,9 @@ class JDPlanningService:
         min_competencies: int = MIN_COMPETENCIES,
         related_context_index: dict[str, list[str]] | None = None,
         relation_index: dict[str, EvidenceRelation] | None = None,
+        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
     ) -> JDPlanResult:
-        requirements = extract_requirements(snapshot)
+        requirements = extract_requirements(snapshot, profile=profile)
         if not requirements:
             raise JDPlanningError(
                 "INVALID_REQUEST: JD 中没有可识别的岗位要求（需要显式标记如「必要项：」「加分项：」）"
@@ -224,6 +217,7 @@ class JDPlanningService:
             slot_count=slot_count,
             min_competencies=min_competencies,
             evidence_index=evidence_index,
+            profile=profile,
         )
         return JDPlanResult(
             snapshot=snapshot,

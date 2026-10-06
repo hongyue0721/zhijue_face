@@ -37,6 +37,8 @@ class OperationJob:
     kind: str
     resource_id: str
     run: Callable[[], Awaitable[dict[str, Any]]]
+    on_failure: Callable[[Exception, dict[str, Any]], OperationJob | None] | None = None
+    delay_seconds: float = 0
 
 
 class OperationRunner:
@@ -66,48 +68,61 @@ class OperationRunner:
         操作行保持非终态（如实表示"状态未知"），不伪造成功。
         """
         self._pending += 1
+        current: OperationJob | None = job
         try:
-            # 串行：同一时刻只有一个业务 operation 推进（单机单 worker 语义）。
+            # Automatic successors reuse this slot; never recursively submit.
             async with self._lock:
-                await self._execute(job)
+                while current is not None:
+                    if current.delay_seconds:
+                        await asyncio.sleep(current.delay_seconds)
+                    successor = await self._execute(current)
+                    current = successor
         except Exception as exc:  # noqa: BLE001 - terminal bookkeeping boundary.
+            failed_job = current or job
             logger.critical(
                 "operation %s bookkeeping failed: %s",
-                job.operation_id,
+                failed_job.operation_id,
                 type(exc).__name__,
             )
             try:
-                self._mark_failed(job, RuntimeError("INTERNAL_ERROR"))
+                self._mark_failed(failed_job, RuntimeError("INTERNAL_ERROR"))
             except Exception as mark_exc:  # noqa: BLE001 - no exception may escape.
                 logger.critical(
                     "operation %s could not record failure: %s",
-                    job.operation_id,
+                    failed_job.operation_id,
                     type(mark_exc).__name__,
                 )
         finally:
             self._pending -= 1
 
-    async def _execute(self, job: OperationJob) -> None:
-        self._mark_running(job)
+    async def _execute(self, job: OperationJob) -> OperationJob | None:
+        if not self._repo.start(job.operation_id):
+            return None
         try:
             result = await job.run()
-        except Exception as exc:  # noqa: BLE001 - 必须落 failed，不能静默
+        except Exception as exc:  # noqa: BLE001 - every failure must be durable.
             logger.warning(
                 "operation %s failed: %s", job.operation_id, type(exc).__name__
             )
+            if job.on_failure is not None:
+                try:
+                    return job.on_failure(exc, _failure_payload(job, exc))
+                except Exception as bookkeeping_error:  # noqa: BLE001
+                    logger.critical(
+                        "operation %s failure admission failed: %s",
+                        job.operation_id,
+                        type(bookkeeping_error).__name__,
+                    )
+                    # Preserve the original public failure if the atomic
+                    # resource/automatic-admission transaction rolled back.
+                    self._mark_failed(job, exc)
+                    return None
             self._mark_failed(job, exc)
-            return
+            return None
         self._mark_succeeded(job, result)
+        return None
 
     # ---- 状态推进（每次一个短事务，避免长事务占写锁） ----
-
-    def _mark_running(self, job: OperationJob) -> None:
-        self._repo.transition(job.operation_id, OperationStatus.RUNNING)
-        self._repo.append_event(
-            job.operation_id,
-            "operation.started",
-            {"kind": job.kind, "resource_id": job.resource_id},
-        )
 
     def _mark_succeeded(self, job: OperationJob, result: dict[str, Any]) -> None:
         # 顺序不可颠倒：终态事件必须在状态转终态**之前**写入，
@@ -127,48 +142,39 @@ class OperationRunner:
         self._repo.transition(job.operation_id, OperationStatus.SUCCEEDED)
 
     def _mark_failed(self, job: OperationJob, exc: Exception) -> None:
-        code = _error_code(exc)
-        # 领域异常的 message 是代码内受控、可行动文案（模型内容在应用端口已被
-        # 替换为固定错误）；有则优先于错误码的通用文案，让页面能显示真实原因。
-        message = (
-            exc.message
-            if isinstance(exc, DomainError) and exc.message
-            else PUBLIC_MESSAGES.get(code, "操作失败。")
-        )
-        declared_retryable = getattr(exc, "retryable", None)
-        retryable = (
-            bool(declared_retryable)
-            if declared_retryable is not None
-            else code
-            in {
-                "UPSTREAM_FAILED",
-                "UPSTREAM_TIMEOUT",
-                "SERVICE_NOT_READY",
-                "CAPACITY_LIMITED",
-                "INTERNAL_ERROR",
-            }
-        )
-        if job.kind == "document.import":
-            # Upload bytes live only in the accepted request's memory. Retrying
-            # this operation would have no original file to replay.
-            retryable = False
-            if isinstance(exc, DocumentRejected):
-                code = exc.code
-            message = f"{message} 请重新选择并上传文件。"
-        self._repo.append_event(
-            job.operation_id,
-            "operation.failed",
-            {"code": code, "message": message, "retryable": retryable},
-        )
         with Session(self._engine) as session, session.begin():
             operation = session.get(Operation, job.operation_id)
-            operation.error = {
-                "code": code,
-                "message": message,
-                "retryable": retryable,
-            }
-            operation.updated_at = utc_now_rfc3339()
-        self._repo.transition(job.operation_id, OperationStatus.FAILED)
+            if operation is None or operation.status not in {"queued", "running"}:
+                return
+            self._repo.fail_in_session(session, operation, _failure_payload(job, exc))
+
+
+def _failure_payload(job: OperationJob, exc: Exception) -> dict[str, Any]:
+    code = _error_code(exc)
+    message = (
+        exc.message
+        if isinstance(exc, DomainError) and exc.message
+        else PUBLIC_MESSAGES.get(code, "操作失败。")
+    )
+    declared_retryable = getattr(exc, "retryable", None)
+    retryable = (
+        bool(declared_retryable)
+        if declared_retryable is not None
+        else code
+        in {
+            "UPSTREAM_FAILED",
+            "UPSTREAM_TIMEOUT",
+            "SERVICE_NOT_READY",
+            "CAPACITY_LIMITED",
+            "INTERNAL_ERROR",
+        }
+    )
+    if job.kind == "document.import":
+        retryable = False
+        if isinstance(exc, DocumentRejected):
+            code = exc.code
+        message = f"{message} 请重新选择并上传文件。"
+    return {"code": code, "message": message, "retryable": retryable}
 
 
 def _error_code(exc: Exception) -> str:

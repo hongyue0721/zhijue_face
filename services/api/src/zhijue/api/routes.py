@@ -40,6 +40,7 @@ from zhijue.api.schemas import (
     FactsRequest,
     GenerateCoachingRequest,
     OperationAccepted,
+    OperationResponse,
     ProfileClaim,
     ProfileDocumentView,
     ProfileViewDto,
@@ -47,11 +48,12 @@ from zhijue.api.schemas import (
     StartInterviewRequest,
     SubmitAnswerRequest,
 )
-from zhijue.application.documents import DocumentService
+from zhijue.application.content_generation import AcceptedContentOperation
 from zhijue.application.operations_runner import OperationJob
 from zhijue.application.profiles import ProfileService
 from zhijue.domain.errors import CapacityLimitedError
 from zhijue.domain.ids import new_id
+from zhijue.domain.operations import canonical_input_hash
 from zhijue.domain.requisition import JDSourceType
 
 router = APIRouter(prefix="/api/v1")
@@ -92,9 +94,7 @@ async def _release_after_failure(release: Any, operation_id: str) -> None:
         )
 
 
-def _claims(
-    service: ProfileService, profile_id: str, status: str
-) -> list[ProfileClaim]:
+def _claims(claims: list[Any], status: str) -> list[ProfileClaim]:
     return [
         ProfileClaim(
             id=claim.id,
@@ -104,18 +104,16 @@ def _claims(
             source_quotes=claim.source_quotes,
             supersedes_id=claim.supersedes_id,
         )
-        for claim in service.list_claims(profile_id)
+        for claim in claims
         if claim.status.value == status
     ]
 
 
 def _profile_view(
-    request: Request,
     service: ProfileService,
-    document_service: DocumentService,
     profile_id: str,
 ) -> ProfileViewDto:
-    profile = service.get_profile(profile_id)
+    profile, claims, documents = service.get_detail(profile_id)
     return ProfileViewDto(
         id=profile.id,
         revision=profile.revision,
@@ -133,10 +131,10 @@ def _profile_view(
                 index_status=doc.index_status,
                 warnings=list(doc.warnings or []),
             )
-            for doc in document_service.list_documents(profile_id)
+            for doc in documents
         ],
-        proposed_claims=_claims(service, profile_id, "proposed"),
-        confirmed_claims=_claims(service, profile_id, "confirmed"),
+        proposed_claims=_claims(claims, "proposed"),
+        confirmed_claims=_claims(claims, "confirmed"),
         latest_snapshot_id=profile.latest_snapshot_id,
         active_operation_id=profile.active_operation_id,
         snapshot_activation=profile.snapshot_activation,
@@ -150,9 +148,7 @@ def create_profile(payload: CreateProfileRequest, request: Request) -> dict[str,
         display_name=payload.display_name, synthetic=payload.synthetic
     )
     return envelope(
-        _profile_view(
-            request, services.profiles, services.documents, profile.id
-        ).model_dump(),
+        _profile_view(services.profiles, profile.id).model_dump(),
         _ctx(request).request_id,
     )
 
@@ -160,7 +156,7 @@ def create_profile(payload: CreateProfileRequest, request: Request) -> dict[str,
 @router.get("/profiles/{profile_id}")
 def get_profile(profile_id: str, request: Request) -> dict[str, Any]:
     services = request.app.state.services
-    body = _profile_view(request, services.profiles, services.documents, profile_id)
+    body = _profile_view(services.profiles, profile_id)
     return envelope(body.model_dump(), _ctx(request).request_id)
 
 
@@ -174,7 +170,7 @@ def add_facts(
         expected_revision=payload.expected_revision,
         items=[item.model_dump() for item in payload.items],
     )
-    body = _profile_view(request, services.profiles, services.documents, profile_id)
+    body = _profile_view(services.profiles, profile_id)
     return envelope(body.model_dump(), _ctx(request).request_id)
 
 
@@ -323,7 +319,7 @@ def _schedule_profile_deletion(
     )
 
 
-@router.get("/operations/{operation_id}")
+@router.get("/operations/{operation_id}", response_model=OperationResponse)
 def get_operation(operation_id: str, request: Request) -> dict[str, Any]:
     services = request.app.state.services
     operation = services.operations.get(operation_id)
@@ -336,6 +332,15 @@ def get_operation(operation_id: str, request: Request) -> dict[str, Any]:
         # retryable 是客户端此刻能否执行恢复动作，不只是失败发生当时的快照。
         # 预算被负责人显式提高后，既有回答的安全上游失败应立即重新开放入口。
         error["retryable"] = services.interviews.can_retry_operation(operation)
+    if error is not None and operation.kind in {"report.coach", "resume.compose"}:
+        error["retryable"] = services.content.can_retry_operation(operation)
+    attempt_limit = (
+        services.content.model_attempt_limit
+        if operation.kind in {"report.coach", "resume.compose"}
+        else services.interviews.model_attempt_limit
+        if operation.kind == "interview.answer"
+        else None
+    )
     return envelope(
         {
             "id": operation.id,
@@ -344,7 +349,9 @@ def get_operation(operation_id: str, request: Request) -> dict[str, Any]:
             "resource_type": operation.resource_type,
             "resource_id": operation.resource_id,
             "parent_operation_id": operation.parent_operation_id,
+            **services.operations.retry_metadata(operation),
             "attempts": operation.attempts,
+            "attempt_limit": attempt_limit,
             "result": operation.result,
             "error": error,
             "last_event_seq": operation.last_event_seq,
@@ -647,10 +654,29 @@ def create_interview(
     # 客户端可据此 GET /interviews/{id}（操作进行中为 404，完成后为 ready）。
     interview_id = new_id("interview")
     scope = canon_scope(WORKSPACE_ID, "POST", "/api/v1/interviews")
+    request_input = {
+        "profile_id": payload.profile_id,
+        "expected_revision": payload.profile_revision,
+        "jd_sha256": hashlib.sha256(jd_text.encode("utf-8")).hexdigest(),
+        "jd_source_name": source_name,
+        "jd_source_type": jd_source_type.value,
+        # Hash the explicit selection, never the mutable server default.
+        "pack_release_id": payload.pack_release_id,
+    }
+    if payload.memory_enabled:
+        request_input["memory_enabled"] = True
+    if payload.observer_mode:
+        request_input["observer_mode"] = True
     # D05：幂等重放必须原样返回受理结果。服务端默认包可能在两次尝试之间
     # 变化，所以先按键找回原操作，只有新受理才解析冻结绑定。
     replay = services.operations.find_by_key(scope=scope, idempotency_key=key)
     if replay is not None:
+        if replay.input_hash != canonical_input_hash(request_input):
+            raise ApiError(
+                status_code=409,
+                code="IDEMPOTENCY_CONFLICT",
+                message="同一幂等键不能用于不同的面试计划输入。",
+            )
         return envelope(_accepted(replay).model_dump(), _ctx(request).request_id)
     # 受理时冻结（主文件 §3）：release + 内容摘要 + 能力配置随本场落库；
     # 不可选择（未审核/损坏/未注册 profile）在这里同步拒绝，不进入后台。
@@ -665,16 +691,7 @@ def create_interview(
             resource_id=interview_id,
             scope=scope,
             idempotency_key=key,
-            input={
-                "profile_id": payload.profile_id,
-                "expected_revision": payload.profile_revision,
-                "jd_sha256": hashlib.sha256(jd_text.encode("utf-8")).hexdigest(),
-                "jd_source_name": source_name,
-                "jd_source_type": jd_source_type.value,
-                # 只存客户端显式选择（省略=None）；解析出的默认值不进哈希，
-                # 避免“默认变化导致重放误报冲突”。
-                "pack_release_id": payload.pack_release_id,
-            },
+            input=request_input,
         ),
     )
     operation = accepted.operation
@@ -898,6 +915,15 @@ def get_interview_report(interview_id: str, request: Request) -> dict[str, Any]:
     return envelope(report, _ctx(request).request_id)
 
 
+def _schedule_content_generation(
+    services: Any, background: BackgroundTasks, accepted: AcceptedContentOperation
+) -> None:
+    if accepted.created:
+        background.add_task(
+            services.runner.submit, services.content.operation_job(accepted.operation)
+        )
+
+
 @router.post("/interviews/{interview_id}/report/improvements", status_code=202)
 def generate_report_improvements(
     interview_id: str,
@@ -926,29 +952,7 @@ def generate_report_improvements(
         ),
         capacity_available=services.runner.capacity_available,
     )
-    if accepted.created:
-
-        async def _run() -> dict[str, Any]:
-            try:
-                return await services.content.process_coaching(
-                    operation_id=accepted.operation.id
-                )
-            except Exception:
-                await _release_after_failure(
-                    services.content.release_failed_operation,
-                    accepted.operation.id,
-                )
-                raise
-
-        background.add_task(
-            services.runner.submit,
-            OperationJob(
-                operation_id=accepted.operation.id,
-                kind=accepted.operation.kind,
-                resource_id=accepted.operation.resource_id,
-                run=_run,
-            ),
-        )
+    _schedule_content_generation(services, background, accepted)
     return envelope(
         _accepted(accepted.operation).model_dump(),
         _ctx(request).request_id,
@@ -990,29 +994,7 @@ def create_resume_draft(
         command_factory=_command,
         capacity_available=services.runner.capacity_available,
     )
-    if accepted.created:
-
-        async def _run() -> dict[str, Any]:
-            try:
-                return await services.content.process_resume_draft(
-                    operation_id=accepted.operation.id
-                )
-            except Exception:
-                await _release_after_failure(
-                    services.content.release_failed_operation,
-                    accepted.operation.id,
-                )
-                raise
-
-        background.add_task(
-            services.runner.submit,
-            OperationJob(
-                operation_id=accepted.operation.id,
-                kind=accepted.operation.kind,
-                resource_id=accepted.operation.resource_id,
-                run=_run,
-            ),
-        )
+    _schedule_content_generation(services, background, accepted)
     return envelope(
         _accepted(accepted.operation).model_dump(),
         _ctx(request).request_id,
@@ -1078,6 +1060,19 @@ def retry_operation(
         # 这里重试也只是再次显式失败，不会被包装成“重试即可修好”。
         from zhijue.api.knowledge_pack_routes import _schedule_import
 
+        replay = services.operations.find_by_key(
+            scope=f"{original.scope}#retry_of_{original.id}",
+            idempotency_key=key,
+        )
+        if replay is not None:
+            if replay.input_hash != canonical_input_hash(request_input):
+                raise ApiError(
+                    status_code=409,
+                    code="IDEMPOTENCY_CONFLICT",
+                    message="同一幂等键不能用于不同的重试输入。",
+                )
+            return envelope(_accepted(replay).model_dump(), _ctx(request).request_id)
+
         if not services.runner.capacity_available:
             raise CapacityLimitedError()
         try:
@@ -1100,6 +1095,10 @@ def retry_operation(
             request_input=request_input,
             capacity_available=services.runner.capacity_available,
         )
+        _schedule_content_generation(services, background, accepted)
+        return envelope(
+            _accepted(accepted.operation).model_dump(), _ctx(request).request_id
+        )
     else:
         accepted = services.interviews.accept_retry(
             operation_id,
@@ -1112,8 +1111,6 @@ def retry_operation(
 
         async def _run() -> dict[str, Any]:
             try:
-                if content_operation:
-                    return await services.content.process_operation(accepted.operation)
                 if accepted.operation.kind == "interview.answer":
                     return await services.interviews.process_answer(
                         operation_id=accepted.operation.id
@@ -1123,12 +1120,9 @@ def retry_operation(
                     operation_id=accepted.operation.id,
                 )
             except Exception:
-                release = (
-                    services.content.release_failed_operation
-                    if content_operation
-                    else services.interviews.release_failed_operation
+                await _release_after_failure(
+                    services.interviews.release_failed_operation, accepted.operation.id
                 )
-                await _release_after_failure(release, accepted.operation.id)
                 raise
 
         background.add_task(

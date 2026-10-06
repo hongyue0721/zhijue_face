@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import (
@@ -37,6 +37,7 @@ from zhijue.application.content_workflow import (
     ContentWorkflowError,
     run_grounded_content_workflow,
 )
+from zhijue.application.operations_runner import OperationJob
 from zhijue.domain.errors import (
     CapacityLimitedError,
     InvalidStateError,
@@ -47,6 +48,7 @@ from zhijue.domain.errors import (
 )
 from zhijue.domain.grounded_content import GroundedContentValidationError
 from zhijue.domain.ids import new_id
+from zhijue.domain.operations import OperationStatus
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,25 @@ def _public_target_context(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _retry_context(exc: BaseException) -> tuple[str, dict[str, Any] | None] | None:
+    """Only typed model failures can authorize another grounded generation."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ModelRequestError):
+            return ("transient", None) if current.retryable else None
+        if isinstance(current, TimeoutError):
+            return "transient", None
+        if (
+            isinstance(current, ContentWorkflowError)
+            and current.repair_context is not None
+        ):
+            return "correction", current.repair_context
+        current = current.__cause__
+    return None
+
+
 class ContentGenerationService:
     def __init__(
         self,
@@ -104,6 +125,10 @@ class ContentGenerationService:
         self._model_attempt_limit = model_attempt_limit
         self._generator_metadata = dict(generator_metadata or {})
         self._acceptance_lock = Lock()
+
+    @property
+    def model_attempt_limit(self) -> int:
+        return self._model_attempt_limit
 
     @staticmethod
     def _existing_operation(
@@ -240,17 +265,22 @@ class ContentGenerationService:
                 original_answers=original_answers,
             )
 
+    @staticmethod
     def _upstream_error(
-        self, operation_id: str, message: str, *, timeout: bool = False
+        message: str,
+        *,
+        cause: BaseException,
+        timeout: bool = False,
     ) -> UpstreamError:
-        with Session(self._engine) as session:
-            operation = session.get(Operation, operation_id)
-            retryable = (
-                operation is not None and operation.attempts < self._model_attempt_limit
-            )
-        return UpstreamError(message, timeout=timeout, retryable=retryable)
+        # Preserve the typed cause, not the budget snapshot. Public actionability
+        # is derived separately from the current policy and resource position.
+        return UpstreamError(
+            message, timeout=timeout, retryable=_retry_context(cause) is not None
+        )
 
-    async def process_coaching(self, *, operation_id: str) -> dict[str, Any]:
+    async def process_coaching(
+        self, *, operation_id: str, repair_context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         context = self._load_coaching_context(operation_id)
         if not context.payload:
             with Session(self._engine) as session:
@@ -270,14 +300,15 @@ class ContentGenerationService:
                 task="coach_answers",
                 payload=context.payload,
                 timeout_seconds=self._workflow_timeout_seconds,
+                repair_context=repair_context,
             )
         except TimeoutError as exc:
             raise self._upstream_error(
-                operation_id, "回答改写超时。", timeout=True
+                "回答改写超时。", cause=exc, timeout=True
             ) from exc
         except ModelRequestTimeoutError as exc:
             raise self._upstream_error(
-                operation_id, "回答改写模型请求超时。", timeout=True
+                "回答改写模型请求超时。", cause=exc, timeout=True
             ) from exc
         except (
             ContentWorkflowError,
@@ -285,7 +316,7 @@ class ContentGenerationService:
             ModelRequestError,
         ) as exc:
             raise self._upstream_error(
-                operation_id, "回答改写失败，原回答和评分未改变。"
+                "回答改写失败，原回答和评分未改变。", cause=exc
             ) from exc
 
         items = []
@@ -350,6 +381,21 @@ class ContentGenerationService:
             Session(self._engine, expire_on_commit=False) as session,
             session.begin(),
         ):
+            # Scope/key lookup precedes mutable resource validation and target
+            # deduplication. The receipt belongs to the command, not its chain tail.
+            probe = command_factory("", "")
+            existing = self._existing_operation(session, probe)
+            if existing is not None:
+                draft = session.get(ResumeDraft, existing.resource_id)
+                if draft is None:
+                    raise InvalidStateError("幂等操作缺少简历草稿。")
+                original_command = command_factory(
+                    existing.resource_id, draft.target_hash
+                )
+                operation = self._operations.accept_in_session(
+                    session, original_command
+                )
+                return AcceptedContentOperation(operation, created=False)
             profile = session.get(Profile, profile_id)
             if profile is None:
                 raise ResourceNotFoundError("资料不存在。")
@@ -386,15 +432,6 @@ class ContentGenerationService:
                 raise CapacityLimitedError()
             draft_id = new_id("resume")
             command = command_factory(draft_id, target_hash)
-            existing_operation = self._existing_operation(session, command)
-            if existing_operation is not None:
-                existing_operation = self._operations.accept_in_session(
-                    session, command
-                )
-                draft = session.get(ResumeDraft, existing_operation.resource_id)
-                if draft is None:
-                    raise InvalidStateError("幂等操作缺少简历草稿。")
-                return AcceptedContentOperation(existing_operation, created=False)
             self._claims_for_snapshot(session, snapshot)
             operation = self._operations.accept_in_session(session, command)
             session.add(
@@ -518,7 +555,9 @@ class ContentGenerationService:
                 },
             )
 
-    async def process_resume_draft(self, *, operation_id: str) -> dict[str, Any]:
+    async def process_resume_draft(
+        self, *, operation_id: str, repair_context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         context = self._load_resume_context(operation_id)
         if not context.payload:
             with Session(self._engine) as session:
@@ -538,14 +577,15 @@ class ContentGenerationService:
                 task="compose_resume",
                 payload=context.payload,
                 timeout_seconds=self._workflow_timeout_seconds,
+                repair_context=repair_context,
             )
         except TimeoutError as exc:
             raise self._upstream_error(
-                operation_id, "简历生成超时。", timeout=True
+                "简历生成超时。", cause=exc, timeout=True
             ) from exc
         except ModelRequestTimeoutError as exc:
             raise self._upstream_error(
-                operation_id, "简历生成模型请求超时。", timeout=True
+                "简历生成模型请求超时。", cause=exc, timeout=True
             ) from exc
         except (
             ContentWorkflowError,
@@ -553,7 +593,7 @@ class ContentGenerationService:
             ModelRequestError,
         ) as exc:
             raise self._upstream_error(
-                operation_id, "简历生成失败，已确认事实未改变。"
+                "简历生成失败，已确认事实未改变。", cause=exc
             ) from exc
 
         candidate = result["candidate"]
@@ -679,6 +719,74 @@ class ContentGenerationService:
             draft.updated_at = utc_now_rfc3339()
         return self.get_resume_draft(draft_id)
 
+    def can_retry_operation(self, operation: Operation) -> bool:
+        """Capacity-independent public actionability, using the admission policy."""
+        with Session(self._engine) as session:
+            current = session.get(Operation, operation.id)
+            if current is None:
+                return False
+            try:
+                self._require_retry_resource(session, current)
+            except (InvalidStateError, ResourceNotFoundError, ValueError):
+                return False
+            return True
+
+    def _require_retry_resource(
+        self, session: Session, operation: Operation
+    ) -> Report | ResumeDraft:
+        if operation.kind not in {"report.coach", "resume.compose"}:
+            raise InvalidStateError("该操作不属于内容生成链路。")
+        if operation.status not in {"failed", "interrupted"}:
+            raise InvalidStateError("原操作尚未失败或中断。")
+        error = operation.error or {}
+        if not (
+            bool(error.get("retryable"))
+            or (
+                operation.status == "interrupted"
+                and error.get("code") == "PROCESS_RESTARTED"
+            )
+        ):
+            raise InvalidStateError("原操作不可重试。")
+        if (
+            session.scalar(
+                select(Operation.id).where(
+                    Operation.parent_operation_id == operation.id
+                )
+            )
+            is not None
+        ):
+            raise InvalidStateError("重试必须指向生成链尾。")
+        if (
+            self._operations.logical_attempts_in_session(session, operation)
+            >= self.model_attempt_limit
+        ):
+            raise InvalidStateError("生成重试预算已耗尽。")
+        model = Report if operation.kind == "report.coach" else ResumeDraft
+        resource = session.get(model, operation.resource_id)
+        if resource is None:
+            raise ResourceNotFoundError("生成资源不存在。")
+        status = (
+            resource.improvements_status
+            if isinstance(resource, Report)
+            else resource.status
+        )
+        expected_status = (
+            "failed" if isinstance(resource, Report) else "generation_failed"
+        )
+        owner = (
+            resource.improvements_operation_id
+            if isinstance(resource, Report)
+            else resource.generation_operation_id
+        )
+        if owner != operation.id:
+            raise InvalidStateError("当前资源不属于该生成操作。")
+        if status != expected_status or resource.active_operation_id not in {
+            None,
+            operation.id,
+        }:
+            raise InvalidStateError("当前生成状态不可重试。")
+        return resource
+
     def accept_retry(
         self,
         operation_id: str,
@@ -698,6 +806,13 @@ class ContentGenerationService:
                 raise ResourceNotFoundError("原操作不存在。")
             if original.kind not in {"report.coach", "resume.compose"}:
                 raise InvalidStateError("该操作不属于内容生成链路。")
+            resource_model = Report if original.kind == "report.coach" else ResumeDraft
+            session.execute(
+                update(resource_model)
+                .where(resource_model.id == original.resource_id)
+                .values(revision=resource_model.revision)
+            )
+            session.refresh(original)
             retry_scope = f"{original.scope}#retry_of_{original.id}"
             existing = session.scalar(
                 select(Operation).where(
@@ -714,36 +829,13 @@ class ContentGenerationService:
                     request_input=request_input,
                 )
                 return AcceptedContentOperation(existing, created=False)
-            if not bool((original.error or {}).get("retryable")):
-                raise InvalidStateError("原操作不可重试。")
+            resource = self._require_retry_resource(session, original)
             if not capacity_available:
                 raise CapacityLimitedError()
-            if original.kind == "report.coach":
-                resource: Report | ResumeDraft | None = session.get(
-                    Report, original.resource_id
-                )
-                failed_status = "failed"
-            else:
-                resource = session.get(ResumeDraft, original.resource_id)
-                failed_status = "generation_failed"
-            if resource is None:
-                raise ResourceNotFoundError("生成资源不存在。")
             if resource.revision != expected_revision:
                 raise RevisionConflictError(
                     "资源版本已更新。", current_revision=resource.revision
                 )
-            current_status = (
-                resource.improvements_status
-                if isinstance(resource, Report)
-                else resource.status
-            )
-            # failed 态允许 active_operation_id 仍指向该失败操作（恢复键语义，
-            # api.md §6）；指向其他 operation 才说明状态不一致、不可重试。
-            if current_status != failed_status or resource.active_operation_id not in (
-                None,
-                original.id,
-            ):
-                raise InvalidStateError("当前生成状态不可重试。")
             try:
                 operation = self._operations.retry_in_session(
                     session,
@@ -756,51 +848,159 @@ class ContentGenerationService:
                 raise InvalidStateError(str(exc)) from exc
             if isinstance(resource, Report):
                 resource.improvements_status = "generating"
+                resource.improvements_operation_id = operation.id
             else:
                 resource.status = "generating"
+                resource.generation_operation_id = operation.id
             resource.active_operation_id = operation.id
             resource.revision += 1
             resource.updated_at = utc_now_rfc3339()
             return AcceptedContentOperation(operation, created=True)
 
-    async def process_operation(self, operation: Operation) -> dict[str, Any]:
-        if operation.kind == "report.coach":
-            return await self.process_coaching(operation_id=operation.id)
-        if operation.kind == "resume.compose":
-            return await self.process_resume_draft(operation_id=operation.id)
-        raise InvalidStateError("不支持的内容生成操作。")
+    def operation_job(
+        self,
+        operation: Operation,
+        *,
+        repair_context: dict[str, Any] | None = None,
+        delay_seconds: float = 0,
+    ) -> OperationJob:
+        """One scheduling convention for original, automatic and manual attempts."""
+        if operation.kind not in {"report.coach", "resume.compose"}:
+            raise InvalidStateError("不支持的内容生成操作。")
 
-    def release_failed_operation(self, operation_id: str) -> None:
+        async def run() -> dict[str, Any]:
+            process = (
+                self.process_coaching
+                if operation.kind == "report.coach"
+                else self.process_resume_draft
+            )
+            return await process(
+                operation_id=operation.id, repair_context=repair_context
+            )
+
+        return OperationJob(
+            operation_id=operation.id,
+            kind=operation.kind,
+            resource_id=operation.resource_id,
+            run=run,
+            on_failure=lambda exc, error: self._finish_failed(operation, exc, error),
+            delay_seconds=delay_seconds,
+        )
+
+    def _finish_failed(
+        self, failed: Operation, exc: Exception, error: dict[str, Any]
+    ) -> OperationJob | None:
+        retry = _retry_context(exc)
+        successor: Operation | None = None
+        resource_model = Report if failed.kind == "report.coach" else ResumeDraft
+        with (
+            self._acceptance_lock,
+            Session(self._engine, expire_on_commit=False) as session,
+            session.begin(),
+        ):
+            # The same resource write lock guards manual admission. Publish the
+            # immutable failure and its successor together, never an interim
+            # terminal state that would let a client race automatic admission.
+            session.execute(
+                update(resource_model)
+                .where(resource_model.id == failed.resource_id)
+                .values(revision=resource_model.revision)
+            )
+            original = session.get(Operation, failed.id)
+            if original is None or original.status != OperationStatus.RUNNING:
+                return None
+            resource = session.get(resource_model, original.resource_id)
+            attempts = self._operations.logical_attempts_in_session(session, original)
+            self._operations.fail_in_session(session, original, error)
+            owns_resource = (
+                resource is not None
+                and resource.active_operation_id == original.id
+                and (
+                    resource.improvements_status
+                    if isinstance(resource, Report)
+                    else resource.status
+                )
+                == "generating"
+            )
+            if not owns_resource:
+                return None
+            if (
+                retry is not None
+                and original.parent_operation_id is None
+                and attempts < self._model_attempt_limit
+                and session.scalar(
+                    select(Operation.id).where(
+                        Operation.parent_operation_id == original.id
+                    )
+                )
+                is None
+            ):
+                successor = self._operations.retry_in_session(
+                    session,
+                    original,
+                    max_attempts=self._model_attempt_limit,
+                    idempotency_key=f"automatic-{original.id}",
+                )
+                self._operations.append_event_in_session(
+                    session,
+                    successor.id,
+                    "operation.retry_scheduled",
+                    {
+                        "parent_operation_id": original.id,
+                        "trigger": "automatic",
+                        "reason": retry[0],
+                    },
+                )
+                resource.active_operation_id = successor.id
+                if isinstance(resource, Report):
+                    resource.improvements_operation_id = successor.id
+                else:
+                    resource.generation_operation_id = successor.id
+            elif isinstance(resource, Report):
+                resource.improvements_status = "failed"
+            else:
+                resource.status = "generation_failed"
+            resource.revision += 1
+            resource.updated_at = utc_now_rfc3339()
+        if successor is None or retry is None:
+            return None
+        return self.operation_job(
+            successor,
+            repair_context=retry[1],
+            delay_seconds=0.25 if retry[0] == "transient" else 0,
+        )
+
+    def recover_interrupted_operations(self, _operation_ids: list[str]) -> None:
+        # A previous cleanup can fail after Operation.failed was committed. The
+        # resource pointer, not this startup's interrupted-ID list, is authoritative.
         with Session(self._engine) as session, session.begin():
-            operation = session.get(Operation, operation_id)
-            if operation is None:
-                return
-            if operation.kind == "report.coach":
-                report = session.get(Report, operation.resource_id)
-                # failed 态保留 active_operation_id 作为跨刷新恢复键（api.md §6）；
-                # 只有 succeeded 落库时才清 null。
-                if (
-                    report is not None
-                    and report.active_operation_id == operation_id
-                    and report.improvements_status == "generating"
-                ):
-                    report.improvements_status = "failed"
-                    report.revision += 1
-                    report.updated_at = utc_now_rfc3339()
-            elif operation.kind == "resume.compose":
-                draft = session.get(ResumeDraft, operation.resource_id)
-                if (
-                    draft is not None
-                    and draft.active_operation_id == operation_id
-                    and draft.status == "generating"
-                ):
-                    draft.status = "generation_failed"
-                    draft.revision += 1
-                    draft.updated_at = utc_now_rfc3339()
-
-    def recover_interrupted_operations(self, operation_ids: list[str]) -> None:
-        for operation_id in operation_ids:
-            self.release_failed_operation(operation_id)
+            reports = session.scalars(
+                select(Report).where(Report.improvements_status == "generating")
+            )
+            drafts = session.scalars(
+                select(ResumeDraft).where(ResumeDraft.status == "generating")
+            )
+            for resource in [*reports, *drafts]:
+                operation = (
+                    session.get(Operation, resource.active_operation_id)
+                    if resource.active_operation_id is not None
+                    else None
+                )
+                if operation is not None and operation.status not in {
+                    "failed",
+                    "interrupted",
+                    "cancelled",
+                    "succeeded",
+                }:
+                    continue
+                # Successful content commits clear the pointer and generating
+                # state atomically; a terminal pointer here cannot resume work.
+                if isinstance(resource, Report):
+                    resource.improvements_status = "failed"
+                else:
+                    resource.status = "generation_failed"
+                resource.revision += 1
+                resource.updated_at = utc_now_rfc3339()
 
     def _generation_metadata(self, usage: dict[str, Any]) -> dict[str, Any]:
         return {

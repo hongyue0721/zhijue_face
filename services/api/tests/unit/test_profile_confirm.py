@@ -194,3 +194,58 @@ def test_facts_validation_bounds(profiles):
         )
     # 校验失败不推进 revision
     assert service.get_profile(profile.id).revision == 0
+
+
+def test_profile_detail_keeps_revision_claims_and_documents_in_one_snapshot(tmp_path):
+    from sqlalchemy import event
+
+    from zhijue.adapters.db.engine import make_engine
+    from zhijue.adapters.db.models import Base
+    from zhijue.adapters.db.profiles import ProfileRepository
+    from zhijue.application.profiles import ProfileService
+
+    engine = make_engine(f"sqlite:///{tmp_path / 'consistent.db'}", wal=True)
+    Base.metadata.create_all(engine)
+    service = ProfileService(repo=ProfileRepository(engine))
+    profile = service.create_profile(display_name="一致性测试")
+    wrote = False
+
+    def concurrent_fact_commit(_conn, _cursor, statement, _params, _context, _many):
+        nonlocal wrote
+        if wrote or "FROM profile \n" not in statement:
+            return
+        wrote = True
+        # Commit through another connection immediately after the read of revision.
+        # WAL permits that writer while the first connection holds its read snapshot.
+        service.add_facts(
+            profile.id,
+            expected_revision=0,
+            items=[{"section": "project", "text": "负责 UART 错帧排查"}],
+        )
+
+    event.listen(engine, "after_cursor_execute", concurrent_fact_commit)
+    try:
+        view, claims, documents = service.get_detail(profile.id)
+    finally:
+        event.remove(engine, "after_cursor_execute", concurrent_fact_commit)
+    assert wrote
+    assert view.revision == 0
+    assert claims == []
+    assert documents == []
+
+    current, claims, documents = service.get_detail(profile.id)
+    assert current.revision == 1
+    assert len(claims) == len(documents) == 1
+    confirmed = service.confirm(
+        profile.id,
+        expected_revision=current.revision,
+        decisions=[{"claim_id": claims[0].id, "action": "accept"}],
+    )
+    assert confirmed.revision == 2
+    engine.dispose()
+
+
+def test_profile_detail_missing_profile_preserves_not_found_contract(profiles):
+    service, _profile = profiles
+    with pytest.raises(ValueError, match="RESOURCE_NOT_FOUND"):
+        service.get_detail("profile_missing")

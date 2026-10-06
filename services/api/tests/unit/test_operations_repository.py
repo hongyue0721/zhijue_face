@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from threading import Barrier
 
 import pytest
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.engine import make_engine
-from zhijue.adapters.db.models import Base
+from zhijue.adapters.db.models import Base, Operation
 from zhijue.adapters.db.operations import (
     IdempotencyConflict,
     OperationCommand,
@@ -198,3 +201,150 @@ def test_canonical_input_hash_used_for_conflict_detection(repo):
     reordered = replace(start_command(), input={"answer_text": "我们加了锁"})
     assert canonical_input_hash(reordered.input) == op.input_hash
     assert repo.accept(reordered).id == op.id  # 等价输入命中原操作
+
+
+def test_retry_rejects_new_key_sibling_and_replays_after_budget_change(repo):
+    original = repo.accept(start_command())
+    repo.transition(original.id, OperationStatus.RUNNING)
+    repo.transition(original.id, OperationStatus.FAILED)
+    child = repo.retry(original.id, idempotency_key="first-retry")
+    repo.transition(child.id, OperationStatus.RUNNING)
+    repo.transition(child.id, OperationStatus.FAILED)
+    with pytest.raises(ValueError, match="latest operation"):
+        repo.retry(original.id, idempotency_key="sibling-retry")
+    assert (
+        repo.retry(original.id, idempotency_key="first-retry", max_attempts=1).id
+        == child.id
+    )
+    third = repo.retry(child.id, idempotency_key="tail-retry")
+    repo.transition(third.id, OperationStatus.RUNNING)
+    repo.transition(third.id, OperationStatus.FAILED)
+    with pytest.raises(ValueError, match="budget exhausted"):
+        repo.retry(third.id, idempotency_key="fourth-retry")
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+def test_concurrent_retry_repositories_admit_one_successor(repo, same_key):
+    original = repo.accept(start_command())
+    repo.transition(original.id, OperationStatus.RUNNING)
+    repo.transition(original.id, OperationStatus.FAILED)
+    barrier = Barrier(2)
+
+    def retry(index):
+        other = OperationRepository(repo._engine)
+        barrier.wait()
+        try:
+            return other.retry(
+                original.id,
+                idempotency_key="concurrent" if same_key else f"concurrent-{index}",
+            ).id
+        except ValueError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(retry, range(2)))
+    assert len({value for value in results if value is not None}) == 1
+    assert results.count(None) == (0 if same_key else 1)
+
+
+def test_legacy_retry_forks_share_one_logical_budget(repo):
+    original = repo.accept(start_command())
+    repo.transition(original.id, OperationStatus.RUNNING)
+    repo.transition(original.id, OperationStatus.FAILED)
+    child = repo.retry(original.id, idempotency_key="legacy-child-one")
+    repo.transition(child.id, OperationStatus.RUNNING)
+    repo.transition(child.id, OperationStatus.FAILED)
+    with Session(repo._engine) as session, session.begin():
+        session.add(
+            Operation(
+                id="operation_legacy_sibling",
+                kind=original.kind,
+                resource_type=original.resource_type,
+                resource_id=original.resource_id,
+                scope=child.scope,
+                idempotency_key="legacy-child-two",
+                input_hash=original.input_hash,
+                parent_operation_id=original.id,
+                status=OperationStatus.FAILED,
+                attempts=2,
+            )
+        )
+    with pytest.raises(ValueError, match="budget exhausted"):
+        repo.retry(child.id, idempotency_key="legacy-fourth-call")
+
+
+def test_concurrent_start_claims_one_actual_attempt(repo):
+    operation = repo.accept(start_command())
+    barrier = Barrier(2)
+
+    def start(_index):
+        other = OperationRepository(repo._engine)
+        barrier.wait()
+        return other.start(operation.id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        assert sorted(executor.map(start, range(2))) == [False, True]
+    stored = repo.get(operation.id)
+    assert stored.attempts == 1
+    assert stored.status == OperationStatus.RUNNING
+    events = repo.events_after(operation.id, 0)
+    assert len(events) == 1
+    assert events[0].event_type == "operation.started"
+
+
+def test_retry_provenance_comes_from_durable_events_and_legacy_parent_rows(repo):
+    original = repo.accept(start_command())
+    assert repo.retry_metadata(original) == {
+        "retry_trigger": None,
+        "next_operation_id": None,
+        "retry_reason": None,
+        "chain_started_at": original.created_at,
+    }
+    repo.start(original.id)
+    repo.transition(original.id, OperationStatus.FAILED)
+    automatic = repo.retry(original.id, idempotency_key="automatic-child")
+    repo.append_event(
+        automatic.id,
+        "operation.retry_scheduled",
+        {
+            "parent_operation_id": original.id,
+            "trigger": "automatic",
+            "reason": "correction",
+        },
+    )
+    repo.start(automatic.id)
+    repo.transition(automatic.id, OperationStatus.FAILED)
+    manual = repo.retry(automatic.id, idempotency_key="legacy-manual-child")
+    assert repo.retry_metadata(original)["next_operation_id"] == automatic.id
+    assert repo.retry_metadata(automatic) == {
+        "retry_trigger": "automatic",
+        "next_operation_id": manual.id,
+        "retry_reason": "correction",
+        "chain_started_at": original.created_at,
+    }
+    assert repo.retry_metadata(manual) == {
+        "retry_trigger": "manual",
+        "next_operation_id": None,
+        "retry_reason": None,
+        "chain_started_at": original.created_at,
+    }
+    assert repo.events_after(automatic.id, 0)[1].payload == {
+        "kind": automatic.kind,
+        "resource_id": automatic.resource_id,
+    }
+
+
+def test_retry_scheduling_event_cannot_persist_private_correction_context(repo):
+    operation = repo.accept(start_command())
+    with pytest.raises(ValueError, match="violates contract"):
+        repo.append_event(
+            operation.id,
+            "operation.retry_scheduled",
+            {
+                "parent_operation_id": "operation_original",
+                "trigger": "automatic",
+                "reason": "correction",
+                "repair_context": {"previous_output": "private model response"},
+            },
+        )
+    assert repo.events_after(operation.id, 0) == []

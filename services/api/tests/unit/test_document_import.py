@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from dataclasses import fields
@@ -17,7 +18,9 @@ from fixtures_pdf import encrypt_pdf, make_pdf
 from zhijue.adapters.db.documents import DocumentRepository, SourceBlockWrite
 from zhijue.adapters.db.engine import make_engine
 from zhijue.adapters.db.models import Base, Document, Profile
+from zhijue.adapters.model import ModelSettings, OpenAICompatibleContentGenerator
 from zhijue.adapters.pdf import extract_pdf_pages, sniff_kind
+from zhijue.api.app import AppConfig, build_services
 from zhijue.application.answer_workflow import (
     AnalysisResult,
     ModelRequestTimeoutError,
@@ -64,6 +67,7 @@ def service(tmp_path):
         engine=engine,
         repo=DocumentRepository(engine),
         limits=_limits(max_bytes=1_000_000),
+        workflow_timeout_seconds=60,
     )
 
 
@@ -160,6 +164,7 @@ def test_model_timeout_is_reported_as_upstream_timeout(service):
         engine=service._engine,
         repo=DocumentRepository(service._engine),
         limits=service.limits,
+        workflow_timeout_seconds=60,
         generator=TimedOutGenerator(),
         run_mode="live",
     )
@@ -329,7 +334,13 @@ class RecordingExtractGenerator:
         )
 
 
-def _live_service(tmp_path, generator, *, extract_call_limit: int):
+def _live_service(
+    tmp_path,
+    generator,
+    *,
+    extract_call_limit: int,
+    workflow_timeout_seconds: float = 60,
+):
     engine = make_engine(f"sqlite:///{tmp_path / 'live.db'}")
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
@@ -349,6 +360,7 @@ def _live_service(tmp_path, generator, *, extract_call_limit: int):
         engine=engine,
         repo=DocumentRepository(engine),
         limits=_limits(max_chars_per_extract_call=extract_call_limit),
+        workflow_timeout_seconds=workflow_timeout_seconds,
         generator=generator,
         run_mode="live",
     )
@@ -476,3 +488,153 @@ def test_merged_claims_over_fifty_rejects_all(tmp_path):
     assert len(generator.calls) == 6
     with service.session() as session:
         assert session.query(Document).count() == 0
+
+
+class FastForwardLoop(asyncio.SelectorEventLoop):
+    """Advance only idle timer waits; execute the SDK graph and cancellation normally."""
+
+    def __init__(self):
+        self.now = 0.0
+        super().__init__()
+
+    def time(self):
+        return self.now
+
+    def _run_once(self):
+        if not self._ready and self._scheduled:
+            self.now = max(self.now, self._scheduled[0].when())
+        super()._run_once()
+
+
+class DelayedExtractGenerator(RecordingExtractGenerator):
+    def __init__(self, *, request_timeout_seconds=240.0):
+        super().__init__()
+        self._adapter = OpenAICompatibleContentGenerator(
+            ModelSettings(
+                model_provider="fixture",
+                model_name="fixture",
+                api_base="https://model.example",
+                api_key="fixture-secret",
+                model_timeout=request_timeout_seconds,
+                model_max_retries=0,
+            )
+        )
+        self.elapsed = []
+        self.cancelled = False
+
+    @property
+    def request_timeout_seconds(self):
+        return self._adapter.request_timeout_seconds
+
+    async def generate(self, *, task, payload):
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            await asyncio.sleep(61)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        finally:
+            self.elapsed.append(loop.time() - started)
+        return await super().generate(task=task, payload=payload)
+
+
+def _deadline_services(tmp_path, generator, *, timeout):
+    config = AppConfig(
+        database_url=f"sqlite:///{tmp_path / 'deadline.db'}",
+        runtime_dir=tmp_path,
+        milvus_uri=tmp_path / "knowledge.db",
+        limits=_limits(max_chars_per_extract_call=100),
+        model_workflow_timeout_seconds=timeout,
+    )
+    services = build_services(config, generator=generator)
+    with services.engine.begin() as conn:
+        conn.execute(
+            Profile.__table__.insert().values(
+                id="profile_1",
+                workspace_id="local",
+                display_name="合成候选人",
+                synthetic=1,
+                status="active",
+                revision=0,
+                created_at="2026-09-18T00:00:00Z",
+                updated_at="2026-09-18T00:00:00Z",
+            )
+        )
+    return services
+
+
+@pytest.mark.parametrize("timeout", [None, 270.0])
+def test_extraction_exceeds_old_sixty_seconds_in_every_batch(
+    tmp_path, monkeypatch, timeout
+):
+    monkeypatch.setattr(asyncio.events, "new_event_loop", FastForwardLoop)
+    generator = DelayedExtractGenerator()
+    services = _deadline_services(tmp_path, generator, timeout=timeout)
+    try:
+        result = services.documents.import_document(
+            profile_id="profile_1",
+            expected_revision=0,
+            data=make_pdf([_sentences(3, 50)]),
+            filename="synthetic.pdf",
+            kind="resume",
+        )
+        assert generator.elapsed == [61.0, 61.0]
+        assert generator.cancelled is False
+        assert result.extraction_metadata["model_calls"] == 2
+        assert result.proposed_claim_count == 2
+        assert result.resource_revision == 1
+        blocks = services.documents.list_blocks(
+            result.document.id, cursor=None, limit=20
+        ).items
+        assert "".join(block.text for block in blocks) == _sentences(3, 50)
+    finally:
+        services.engine.dispose()
+
+
+def test_explicit_shorter_extraction_deadline_cancels_without_partial_commit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(asyncio.events, "new_event_loop", FastForwardLoop)
+    generator = DelayedExtractGenerator()
+    services = _deadline_services(tmp_path, generator, timeout=40.0)
+    try:
+        with pytest.raises(UpstreamError) as raised:
+            services.documents.import_document(
+                profile_id="profile_1",
+                expected_revision=0,
+                data=make_pdf([_sentences(3, 50)]),
+                filename="synthetic.pdf",
+                kind="resume",
+            )
+        assert raised.value.code == "UPSTREAM_TIMEOUT"
+        assert generator.elapsed == [40.0]
+        assert generator.cancelled is True
+        assert generator.calls == []
+        with services.documents.session() as session:
+            assert session.query(Document).count() == 0
+            assert session.get(Profile, "profile_1").revision == 0
+    finally:
+        services.engine.dispose()
+
+
+def test_transport_default_deadline_bounds_real_sdk_extraction(tmp_path, monkeypatch):
+    monkeypatch.setattr(asyncio.events, "new_event_loop", FastForwardLoop)
+    # Exercise the real adapter's configured transport fact with a slow local
+    # generator, without issuing paid or network requests.
+    generator = DelayedExtractGenerator(request_timeout_seconds=30.0)
+    services = _deadline_services(tmp_path, generator, timeout=None)
+    try:
+        with pytest.raises(UpstreamError) as raised:
+            services.documents.import_document(
+                profile_id="profile_1",
+                expected_revision=0,
+                data=make_pdf([_sentences(3, 50)]),
+                filename="synthetic.pdf",
+                kind="resume",
+            )
+        assert raised.value.code == "UPSTREAM_TIMEOUT"
+        assert generator.elapsed == [60.0]
+        assert generator.cancelled is True
+    finally:
+        services.engine.dispose()

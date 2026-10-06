@@ -351,7 +351,7 @@ def test_internal_error_does_not_leak_internals(tmp_path, monkeypatch):
             raise KeyError("/home/secret/path/business.db")
 
         monkeypatch.setattr(
-            "zhijue.application.profiles.ProfileService.list_claims", boom
+            "zhijue.application.profiles.ProfileService.get_detail", boom
         )
         response = client.get(f"/api/v1/profiles/{profile_id}")
         assert response.status_code == 500
@@ -411,6 +411,34 @@ def test_operation_events_stream_replays_and_closes_at_terminal(client):
 
     operation = client.get(f"/api/v1/operations/{operation_id}").json()["data"]
     assert operation["last_event_seq"] == 2
+    assert operation["retry_trigger"] is None
+    assert operation["next_operation_id"] is None
+    assert operation["retry_reason"] is None
+    assert operation["chain_started_at"] == operation["created_at"]
+    assert operation["attempt_limit"] is None
+    assert set(operation) == {
+        "id",
+        "kind",
+        "status",
+        "resource_type",
+        "resource_id",
+        "parent_operation_id",
+        "retry_trigger",
+        "retry_reason",
+        "next_operation_id",
+        "chain_started_at",
+        "attempt_limit",
+        "attempts",
+        "result",
+        "error",
+        "last_event_seq",
+        "created_at",
+        "updated_at",
+    }
+    assert json.loads(parsed[0]["data"])["payload"] == {
+        "kind": operation["kind"],
+        "resource_id": profile_id,
+    }
 
 
 def test_events_cursor_conflict_is_400(client):
@@ -454,12 +482,12 @@ def test_app_bootstraps_missing_runtime_directories(tmp_path):
     app = create_app(config, knowledge=InMemoryKnowledge())
     with TestClient(app) as client:
         assert client.get("/api/v1/health/live").status_code == 200
+        profile_id = create_profile(client)
+        assert (
+            client.get(f"/api/v1/profiles/{profile_id}").json()["data"]["id"]
+            == profile_id
+        )
     assert (runtime_dir / "business.db").is_file()
-    with sqlite3.connect(runtime_dir / "business.db") as connection:
-        revision = connection.execute(
-            "SELECT version_num FROM alembic_version"
-        ).fetchone()
-    assert revision == ("a7c4e1f29b58",)
 
 
 def test_document_upload_accepts_202_and_imports_text(client):

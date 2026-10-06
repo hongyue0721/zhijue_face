@@ -42,6 +42,13 @@ _USAGE_KEYS = frozenset({"input_tokens", "output_tokens", "total_tokens", "cost"
 class ContentWorkflowError(RuntimeError):
     """The workflow or generated candidate violated the application contract."""
 
+    def __init__(
+        self, message: str, *, repair_context: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message)
+        # Deliberately absent from exception args/repr and SDK/public records.
+        self.repair_context = repair_context
+
 
 @runtime_checkable
 class ContentGenerator(Protocol):
@@ -53,20 +60,38 @@ class ContentGenerator(Protocol):
 
 
 class _GeneratorComponent(WorkflowComponent):
-    def __init__(self, generator: ContentGenerator) -> None:
+    def __init__(
+        self,
+        generator: ContentGenerator,
+        repair_context: dict[str, Any] | None,
+        failures: list[Exception],
+    ) -> None:
         super().__init__()
         self._generator = generator
+        self._repair_context = repair_context
+        self._failures = failures
 
     async def invoke(self, inputs, session, context):
-        result = await self._generator.generate(
-            task=inputs["task"], payload=inputs["payload"]
-        )
+        payload = inputs["payload"]
+        if self._repair_context is not None:
+            payload = {**payload, "repair_context": self._repair_context}
+        try:
+            result = await self._generator.generate(
+                task=inputs["task"], payload=payload
+            )
+        except ModelRequestError as exc:
+            self._failures.append(exc)
+            raise
         if not isinstance(result, AnalysisResult):
             raise ContentWorkflowError("content generator must return AnalysisResult")
         return {"content": result.content, "usage": result.usage()}
 
 
 class _GroundingValidationComponent(WorkflowComponent):
+    def __init__(self, failures: list[Exception]) -> None:
+        super().__init__()
+        self._failures = failures
+
     async def invoke(self, inputs, session, context):
         try:
             candidate = _parse_json_object(inputs["content"])
@@ -96,17 +121,53 @@ class _GroundingValidationComponent(WorkflowComponent):
                 )
             else:
                 raise ContentWorkflowError("unsupported content task")
-        except (
-            ContentWorkflowError,
-            GroundedContentValidationError,
-            KeyError,
-            TypeError,
-        ):
-            # Never place raw model content in the SDK exception record.
-            raise ContentWorkflowError(
-                "generated content failed contract validation"
-            ) from None
+        except GroundedContentValidationError as exc:
+            repair_context = None
+            if _has_repair_sources(inputs["task"], inputs["payload"]):
+                repair_context = {
+                    "previous_output": inputs["content"],
+                    "issues": exc.issues,
+                }
+            error = ContentWorkflowError(
+                "generated content failed contract validation",
+                repair_context=repair_context,
+            )
+            self._failures.append(error)
+            # The SDK receives only a safe message, never raw model content.
+            raise error from None
+        except (ContentWorkflowError, KeyError, TypeError):
+            error = ContentWorkflowError("generated content failed contract validation")
+            self._failures.append(error)
+            raise error from None
         return {"candidate": validated, "usage": inputs["usage"]}
+
+
+def _has_repair_sources(task: ContentTask, payload: dict[str, Any]) -> bool:
+    claims = payload.get("allowed_claims")
+    if not isinstance(claims, dict):
+        return False
+    has_claims = any(isinstance(text, str) and text.strip() for text in claims.values())
+    if task == "compose_resume":
+        return has_claims and isinstance(payload.get("draft_id"), str)
+    if task == "coach_answers":
+        roots = payload.get("answers_by_root")
+        return (
+            isinstance(payload.get("report_id"), str)
+            and isinstance(roots, dict)
+            and bool(roots)
+            and all(
+                isinstance(answers, dict)
+                and (
+                    has_claims
+                    or any(
+                        isinstance(text, str) and text.strip()
+                        for text in answers.values()
+                    )
+                )
+                for answers in roots.values()
+            )
+        )
+    return False
 
 
 def _parse_json_object(content: str) -> dict[str, Any]:
@@ -126,16 +187,26 @@ def _parse_json_object(content: str) -> dict[str, Any]:
                 ValueError("non-finite JSON number")
             ),
         )
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise ContentWorkflowError("content generator returned invalid JSON") from exc
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raise GroundedContentValidationError(
+            "content generator returned invalid JSON", code="invalid_json"
+        ) from None
     if not isinstance(parsed, dict):
-        raise ContentWorkflowError("content generator output must be one object")
+        raise GroundedContentValidationError(
+            "content generator output must be one object", code="schema.type"
+        )
     return parsed
 
 
-def build_grounded_content_workflow(generator: ContentGenerator) -> Workflow:
+def build_grounded_content_workflow(
+    generator: ContentGenerator,
+    *,
+    repair_context: dict[str, Any] | None = None,
+    _failures: list[Exception] | None = None,
+) -> Workflow:
     """Build the official Start→Generator→SemanticValidation→End graph."""
 
+    failures = _failures if _failures is not None else []
     card = WorkflowCard(
         id=f"grounded_content_{uuid4().hex}",
         name="grounded_content",
@@ -161,12 +232,12 @@ def build_grounded_content_workflow(generator: ContentGenerator) -> Workflow:
     )
     workflow.add_workflow_comp(
         "generator",
-        _GeneratorComponent(generator),
+        _GeneratorComponent(generator, repair_context, failures),
         inputs_schema={"task": "${start.task}", "payload": "${start.payload}"},
     )
     workflow.add_workflow_comp(
         "semantic_validation",
-        _GroundingValidationComponent(),
+        _GroundingValidationComponent(failures),
         inputs_schema={
             "task": "${start.task}",
             "payload": "${start.payload}",
@@ -264,6 +335,7 @@ async def run_grounded_content_workflow(
     task: ContentTask,
     payload: dict[str, Any],
     timeout_seconds: float = 60,
+    repair_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute one bounded real-SDK content workflow invocation."""
 
@@ -279,7 +351,16 @@ async def run_grounded_content_workflow(
     ):
         raise ValueError("timeout_seconds must be a finite positive number")
 
-    workflow = build_grounded_content_workflow(generator)
+    if repair_context is not None and not _has_repair_sources(task, payload):
+        raise ContentWorkflowError(
+            "content correction requires original factual sources"
+        )
+    # SDK wrappers can discard Python causes. Capture typed failures per invocation;
+    # private candidate/context never enters workflow input, events or error strings.
+    failures: list[Exception] = []
+    workflow = build_grounded_content_workflow(
+        generator, repair_context=repair_context, _failures=failures
+    )
     session = create_workflow_session(
         session_id=uuid4().hex, envs={WORKFLOW_EXECUTE_TIMEOUT: float(timeout_seconds)}
     )
@@ -291,6 +372,8 @@ async def run_grounded_content_workflow(
     except TimeoutError:
         raise
     except Exception as exc:
+        if failures:
+            raise failures[0] from None
         timeout = _sdk_timeout_error(exc, float(timeout_seconds))
         if timeout is not None:
             raise timeout from exc

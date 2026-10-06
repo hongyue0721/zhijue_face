@@ -6,7 +6,7 @@ claim 归属）仍在 application 层，避免同一规则写两遍后漂移。
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -104,6 +104,31 @@ class OperationAccepted(BaseModel):
     resource_id: str
     status: str
     events_url: str
+
+
+class OperationView(BaseModel):
+    id: str
+    kind: str
+    status: str
+    resource_type: str
+    resource_id: str
+    parent_operation_id: str | None
+    retry_trigger: Literal["automatic", "manual"] | None
+    next_operation_id: str | None
+    retry_reason: Literal["transient", "correction"] | None
+    chain_started_at: str
+    attempt_limit: int | None
+    attempts: int
+    result: dict[str, Any] | None
+    error: dict[str, Any] | None
+    last_event_seq: int
+    created_at: str
+    updated_at: str
+
+
+class OperationResponse(BaseModel):
+    data: OperationView
+    meta: dict[str, str]
 
 
 class CreateInterviewRequest(BaseModel):

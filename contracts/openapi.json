@@ -376,6 +376,178 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "OperationResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OperationView"
+          },
+          "meta": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Meta",
+            "type": "object"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "OperationResponse",
+        "type": "object"
+      },
+      "OperationView": {
+        "properties": {
+          "attempt_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Limit"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "chain_started_at": {
+            "title": "Chain Started At",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_event_seq": {
+            "title": "Last Event Seq",
+            "type": "integer"
+          },
+          "next_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Operation Id"
+          },
+          "parent_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Operation Id"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "retry_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transient",
+                  "correction"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Reason"
+          },
+          "retry_trigger": {
+            "anyOf": [
+              {
+                "enum": [
+                  "automatic",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Trigger"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "resource_type",
+          "resource_id",
+          "parent_operation_id",
+          "retry_trigger",
+          "next_operation_id",
+          "retry_reason",
+          "chain_started_at",
+          "attempt_limit",
+          "attempts",
+          "result",
+          "error",
+          "last_event_seq",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OperationView",
+        "type": "object"
+      },
       "RetryOperationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1220,9 +1392,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Operation Api V1 Operations  Operation Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OperationResponse"
                 }
               }
             },

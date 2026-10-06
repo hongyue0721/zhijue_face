@@ -270,7 +270,13 @@ def _validate_entry_path(name: str) -> str:
             "PACK_PATH_INVALID", "路径必须为 NFC 规范化形式（防归一化冲突）"
         )
     normalized = posixpath.normpath(name)
-    if normalized != name or normalized == ".." or normalized.startswith("../"):
+    if (
+        not name
+        or normalized == "."
+        or normalized != name
+        or normalized == ".."
+        or normalized.startswith("../")
+    ):
         raise PackValidationError(
             "PACK_PATH_INVALID", "路径含 .、.. 或冗余分隔（归一化冲突）"
         )
@@ -295,36 +301,57 @@ def safe_extract_zip(zip_bytes: bytes, limits: PackLimits) -> dict[str, bytes]:
         )
     files: dict[str, bytes] = {}
     seen_casefold: dict[str, str] = {}
+    directories: dict[str, str] = {}
+    file_paths: set[str] = set()
     total_output = 0
     for info in infos:
-        path = _validate_entry_path(info.filename)
-        if info.is_dir():
-            # 目录条目不带内容；仍参与冲突检查。
-            key = path.casefold()
-            if key in seen_casefold:
-                raise PackValidationError(
-                    "PACK_PATH_COLLISION", f"大小写/归一化路径冲突：{path}"
-                )
-            seen_casefold[key] = path
-            continue
+        is_directory = info.is_dir()
+        # Strip exactly the directory marker, not arbitrary trailing separators.
+        # orig_filename preserves NULs that ZipInfo.filename silently truncates.
+        name = info.orig_filename
+        path = _validate_entry_path(name[:-1] if is_directory else name)
         key = path.casefold()
-        if key in seen_casefold:
+        if key in seen_casefold or (key in directories and directories[key] != path):
             raise PackValidationError(
                 "PACK_PATH_COLLISION", f"大小写/归一化路径冲突：{path}"
+            )
+        parts = path.split("/")
+        for index in range(1, len(parts)):
+            parent = "/".join(parts[:index])
+            parent_key = parent.casefold()
+            if parent_key in file_paths or (
+                parent_key in directories and directories[parent_key] != parent
+            ):
+                raise PackValidationError(
+                    "PACK_PATH_COLLISION", f"文件/目录路径冲突：{path}"
+                )
+            directories[parent_key] = parent
+        if not is_directory and key in directories:
+            raise PackValidationError(
+                "PACK_PATH_COLLISION", f"文件/目录路径冲突：{path}"
             )
         seen_casefold[key] = path
         mode = info.external_attr >> 16
         file_type = stat_module.S_IFMT(mode)
-        if mode and file_type == stat_module.S_IFLNK:
+        if file_type == stat_module.S_IFLNK:
             raise PackValidationError(
                 "PACK_SYMLINK_FORBIDDEN", "拒绝符号链接条目", path=path
             )
-        if mode and file_type not in (0, stat_module.S_IFREG):
+        expected_type = stat_module.S_IFDIR if is_directory else stat_module.S_IFREG
+        if file_type not in (0, expected_type):
             raise PackValidationError(
-                "PACK_SPECIAL_ENTRY", "只允许普通文件条目", path=path
+                "PACK_SPECIAL_ENTRY", "只允许普通文件和目录条目", path=path
             )
         if info.flag_bits & 0x1:
             raise PackValidationError("PACK_ENCRYPTED", "拒绝加密 ZIP 条目", path=path)
+        if is_directory:
+            if info.file_size:
+                raise PackValidationError(
+                    "PACK_SPECIAL_ENTRY", "目录条目不得携带内容", path=path
+                )
+            directories[key] = path
+            continue
+        file_paths.add(key)
         suffix = posixpath.splitext(path)[1].lower()
         if suffix in FORBIDDEN_SUFFIXES:
             raise PackValidationError(

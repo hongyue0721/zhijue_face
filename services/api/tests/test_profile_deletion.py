@@ -1,7 +1,7 @@
 """M4-DELETE 测试：DELETE /profiles/{id} tombstone→级联清理与 GET /runtime/info。
 
-断言业务可观察契约：删除后档案 404、派生行全部消失、Knowledge 只删确实
-写过的来源、失败可显式重试且 deleting 期间拒绝新写入；不测内部实现细节。
+断言业务可观察契约：删除后档案 404、派生行全部消失、Knowledge 清理可能
+写入的来源、失败可显式重试且 deleting 期间拒绝新写入；不测内部实现细节。
 """
 
 from __future__ import annotations

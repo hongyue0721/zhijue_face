@@ -50,7 +50,6 @@ def build_zip(entries: dict[str, bytes]) -> bytes:
         "C:/Windows/evil.json",
         "..\\evil.json",
         "seeds/../../evil.json",
-        "seeds/\x00evil.json",
         "./manifest.json",
         "seeds//a.json",
     ],
@@ -105,6 +104,70 @@ def test_duplicate_entry_rejected() -> None:
     with pytest.raises(PackValidationError) as excinfo:
         safe_extract_zip(buffer.getvalue(), LIMITS)
     assert excinfo.value.code in {"PACK_PATH_COLLISION", "PACK_DUPLICATE_ENTRY"}
+
+
+def test_real_zip_directory_entries_are_ignored_in_content_digest(tmp_path) -> None:
+    root = tmp_path / "pack"
+    (root / "seeds").mkdir(parents=True)
+    (root / "manifest.json").write_bytes(GOOD_MANIFEST)
+    (root / "seeds" / "one.json").write_bytes(b"{}")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in ("seeds", "seeds/one.json", "manifest.json"):
+            archive.write(root / name, arcname=name)
+    assert safe_extract_zip(buffer.getvalue(), LIMITS) == {
+        "manifest.json": GOOD_MANIFEST,
+        "seeds/one.json": b"{}",
+    }
+
+
+@pytest.mark.parametrize("name", ["../", "./", "/", "seeds//", "seeds/../"])
+def test_malicious_directory_entries_rejected(name: str) -> None:
+    with pytest.raises(PackValidationError) as excinfo:
+        safe_extract_zip(build_zip({name: b""}), LIMITS)
+    assert excinfo.value.code == "PACK_PATH_INVALID"
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [("seeds/", b""), ("SEEDS/", b"")],
+        [("data.json/", b""), ("data.json", b"{}")],
+        [("data.json", b"{}"), ("data.json/", b"")],
+        [("data.json/a.json", b"{}"), ("data.json", b"{}")],
+        [("data.json", b"{}"), ("data.json/a.json", b"{}")],
+        [("seeds/a.json", b"{}"), ("SEEDS/b.json", b"{}")],
+        [("seeds/a.json", b"{}"), ("SEEDS/", b"")],
+    ],
+)
+def test_directory_file_and_implicit_parent_collisions_rejected(entries) -> None:
+    with pytest.raises(PackValidationError) as excinfo:
+        safe_extract_zip(
+            build_zip(dict([("manifest.json", GOOD_MANIFEST), *entries])), LIMITS
+        )
+    assert excinfo.value.code == "PACK_PATH_COLLISION"
+
+
+def test_directory_marker_does_not_hide_symlink() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        info = zipfile.ZipInfo("seeds/")
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(info, b"")
+    with pytest.raises(PackValidationError) as excinfo:
+        safe_extract_zip(buffer.getvalue(), LIMITS)
+    assert excinfo.value.code == "PACK_SYMLINK_FORBIDDEN"
+
+
+def test_raw_zip_nul_path_is_rejected_before_zipinfo_truncation() -> None:
+    # ZipFile.writestr truncates NUL names; patch both actual ZIP name records
+    # instead of accidentally testing a different, already-truncated filename.
+    archive = build_zip({"seeds/Xevil.json": b"{}"})
+    archive = archive.replace(b"seeds/Xevil.json", b"seeds/\x00evil.json")
+    with pytest.raises(PackValidationError) as excinfo:
+        safe_extract_zip(archive, LIMITS)
+    assert excinfo.value.code == "PACK_PATH_INVALID"
 
 
 # --- B07：类型与加密 -----------------------------------------------------------

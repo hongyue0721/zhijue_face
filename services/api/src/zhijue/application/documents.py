@@ -171,6 +171,7 @@ class DocumentService:
         engine: Engine,
         repo: DocumentRepository,
         limits: ExtractionLimits,
+        workflow_timeout_seconds: float,
         generator: ContentGenerator | None = None,
         run_mode: str = "fixture",
         generator_metadata: dict[str, Any] | None = None,
@@ -180,6 +181,7 @@ class DocumentService:
         self._repo = repo
         self._generator = generator
         self._run_mode = run_mode
+        self._workflow_timeout_seconds = workflow_timeout_seconds
         self._generator_metadata = dict(generator_metadata or {})
         self.limits = limits
         self._extractors: Mapping[str, Callable[..., list[Any]]] = extractors or {
@@ -302,6 +304,7 @@ class DocumentService:
                         generator=self._generator,
                         task="extract_claims",
                         payload=payload,
+                        timeout_seconds=self._workflow_timeout_seconds,
                     )
                 )
             except TimeoutError as exc:

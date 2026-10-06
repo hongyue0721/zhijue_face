@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
 from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.requisition import (
     NEVER_A_WEAKNESS,
@@ -143,7 +144,7 @@ class RootPlan:
         return tuple(sorted({slot.competency for slot in self.slots}))
 
 
-PLANNER_VERSION = "0.1.0"
+PLANNER_VERSION = "0.2.0"
 
 
 def build_coverage_map(
@@ -206,14 +207,18 @@ def build_coverage_map(
     return CoverageMap(entries=tuple(entries), profile_snapshot_id=profile_snapshot_id)
 
 
-def _verification_goal(competency_id: str, status: CoverageStatus) -> str:
-    if status is CoverageStatus.UNKNOWN:
-        return (
-            f"确认是否具备 {competency_id} 的岗位相关能力（材料未体现，不作负面推断）"
-        )
-    if status is CoverageStatus.CONTRADICTED:
-        return f"澄清 {competency_id} 上的材料冲突"
-    return f"请候选人说明 {competency_id} 的具体做法与边界"
+def _verification_goal(candidate: _CandidateSlot, profile: CompetencyProfile) -> str:
+    label = next(
+        (
+            capability.label
+            for capability in profile.capabilities
+            if capability.competency_id == candidate.competency_id
+        ),
+        "岗位要求中的相关能力",
+    )
+    requirement = candidate.requirement
+    target = requirement.statement.strip().rstrip("。；;") if requirement else label
+    return f"围绕{label}，针对岗位要求「{target}」，{candidate.verification_focus}"
 
 
 def _difficulty(importance: int, status: CoverageStatus) -> str:
@@ -242,6 +247,9 @@ class _CandidateSlot:
     related_context_ids: tuple[str, ...] = ()
     requirement_count: int = 1
     probing_richness: int = 0
+    verification_focus: str = (
+        "请选一次相关任务或练习，说明当时的目标、你负责的部分和具体实施过程"
+    )
 
     @property
     def priority(self) -> int:
@@ -327,11 +335,12 @@ def plan_interview_slots(
     slot_count: int = ROOT_SLOT_COUNT,
     min_competencies: int = MIN_COMPETENCIES,
     evidence_index: dict[str, list[str]] | None = None,
+    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
 ) -> RootPlan:
     """生成固定数量的 Interview Slots；同输入必然同输出。
 
-    关键约束：不得为凑数让同一 competency 无理由占据多个 slot；
-    若确实需要重复，必须在 `structured_reason` 中给出理由。
+    先覆盖不同能力；不足五题时，同一能力按实施过程与证据边界分配不同切面。
+    切面仅规定询问目标，不创造技术评分标准；后续仍须绑定审核种子或非技术 fallback。
     """
     if slot_count < min_competencies:
         raise PlanningRejected("INVALID_REQUEST", "slot 数量不能少于最少能力维度数")
@@ -397,16 +406,31 @@ def plan_interview_slots(
     chosen: list[_CandidateSlot] = ordered[:slot_count]
     limitations: list[str] = []
     if len(chosen) < slot_count:
-        # 能力维度少于槽位数：按优先级补足，并**必须**给出结构化重复理由
-        # （负责人决策 §7：同一 competency 重复需要 reason，不得无理由占用）。
-        remaining = list(ordered)
-        while remaining and len(chosen) < slot_count:
-            duplicate = remaining.pop(0)
-            chosen.append(duplicate)
+        # 额外槽位核对证据与结论边界，而非复制相同的实施过程问题。
+        # 目标仍锚定同一 JD 要求；没有已审核种子时只评表达与证据推理。
+        for candidate in ordered:
+            if len(chosen) == slot_count:
+                break
+            facet = replace(
+                candidate,
+                verification_focus=(
+                    "请说明你会保留哪些观察或记录来验证结果，如何用它们区分"
+                    "不同解释，以及这些证据还不能证明什么"
+                ),
+                reason_text=(
+                    f"{candidate.reason_text}；同一能力另设证据与结论边界切面，"
+                    "区别于前题的任务实施过程；仍依据相同岗位要求，不增加技术评分范围"
+                ),
+            )
+            chosen.append(facet)
             limitations.append(
-                f"{duplicate.competency_id} 出现多次（原因：JD 可用能力维度 "
-                f"{len(ordered)} 个少于 {slot_count} 个槽位，按优先级补足；"
-                "非按简历篇幅选择）"
+                f"{candidate.competency_id} 出现多次（原因：JD 可用能力维度 "
+                f"{len(ordered)} 个少于 {slot_count} 个槽位，"
+                "分别验证任务实施过程与证据边界；非按简历篇幅选择）"
+            )
+        if len(chosen) != slot_count:
+            raise PlanningRejected(
+                "INVALID_REQUEST", "岗位要求不足以支持所请求数量的不同验证切面"
             )
 
     slots: list[InterviewSlot] = []
@@ -419,7 +443,7 @@ def plan_interview_slots(
                 jd_requirement_ids=candidate.requirement_ids,
                 candidate_evidence_ids=candidate.evidence_ids,
                 current_verification_status=candidate.status,
-                verification_goal=_verification_goal(competency, candidate.status),
+                verification_goal=_verification_goal(candidate, profile),
                 priority=candidate.priority,
                 difficulty=_difficulty(candidate.importance, candidate.status),
                 reason_code=candidate.reason_code,

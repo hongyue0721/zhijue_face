@@ -26,6 +26,10 @@ from zhijue.application.answer_workflow import (
     build_handle_answer_workflow,
     run_handle_answer_workflow,
 )
+from zhijue.application.content_workflow import (
+    ContentWorkflowError,
+    run_grounded_content_workflow,
+)
 
 RUBRIC_SNAPSHOT = {
     "source": "approved_seed",
@@ -726,8 +730,23 @@ def test_mid_stream_stall_and_total_budget_both_map_to_timeout():
     }
 
 
-@pytest.mark.parametrize("status_code", [429, 503])
-def test_model_transport_uses_one_request_per_persisted_operation(status_code):
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize(
+    ("status_code", "retryable"),
+    [
+        (400, False),
+        (401, False),
+        (403, False),
+        (404, False),
+        (422, False),
+        (429, True),
+        (500, True),
+        (503, True),
+    ],
+)
+def test_model_transport_uses_one_request_per_persisted_operation(
+    status_code, retryable, stream
+):
     attempts = 0
 
     async def unavailable(request: httpx.Request) -> httpx.Response:
@@ -738,9 +757,10 @@ def test_model_transport_uses_one_request_per_persisted_operation(status_code):
     async def scenario():
         transport = httpx.MockTransport(unavailable)
         async with httpx.AsyncClient(transport=transport) as client:
-            analyzer = OpenAICompatibleAnswerAnalyzer(model_settings(), client=client)
+            settings = model_settings(model_stream=stream)
+            analyzer = OpenAICompatibleAnswerAnalyzer(settings, client=client)
             assert analyzer.max_total_attempts == 3
-            with pytest.raises(Exception, match=f"HTTP {status_code}"):
+            with pytest.raises(ModelRequestError) as answer_error:
                 await analyzer.analyze(
                     observation_id="observation_1",
                     answer_id="answer_1",
@@ -751,21 +771,24 @@ def test_model_transport_uses_one_request_per_persisted_operation(status_code):
                     rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
                     reference_material=None,
                 )
-            generator = OpenAICompatibleContentGenerator(
-                model_settings(), client=client
-            )
+            assert answer_error.value.retryable is retryable
+            assert answer_error.value.status_code == status_code
+            generator = OpenAICompatibleContentGenerator(settings, client=client)
             assert generator.max_total_attempts == 3
-            with pytest.raises(Exception, match=f"HTTP {status_code}"):
+            with pytest.raises(ModelRequestError) as content_error:
                 await generator.generate(
                     task="compose_resume",
                     payload={"draft_id": "resume_demo", "allowed_claims": {}},
                 )
+            assert content_error.value.retryable is retryable
+            assert content_error.value.status_code == status_code
 
     asyncio.run(scenario())
     assert attempts == 2
 
 
-def test_model_transport_timeout_remains_typed_for_all_model_clients():
+@pytest.mark.parametrize("stream", [True, False])
+def test_model_transport_timeout_remains_typed_for_all_model_clients(stream):
     attempts = 0
 
     async def timed_out(request: httpx.Request) -> httpx.Response:
@@ -776,8 +799,9 @@ def test_model_transport_timeout_remains_typed_for_all_model_clients():
     async def scenario():
         transport = httpx.MockTransport(timed_out)
         async with httpx.AsyncClient(transport=transport) as client:
-            analyzer = OpenAICompatibleAnswerAnalyzer(model_settings(), client=client)
-            with pytest.raises(ModelRequestTimeoutError):
+            settings = model_settings(model_stream=stream)
+            analyzer = OpenAICompatibleAnswerAnalyzer(settings, client=client)
+            with pytest.raises(ModelRequestTimeoutError) as answer_error:
                 await analyzer.analyze(
                     observation_id="observation_1",
                     answer_id="answer_1",
@@ -788,10 +812,9 @@ def test_model_transport_timeout_remains_typed_for_all_model_clients():
                     rubric_snapshot=copy.deepcopy(RUBRIC_SNAPSHOT),
                     reference_material=None,
                 )
-            generator = OpenAICompatibleContentGenerator(
-                model_settings(), client=client
-            )
-            with pytest.raises(ModelRequestTimeoutError):
+            assert answer_error.value.retryable is True
+            generator = OpenAICompatibleContentGenerator(settings, client=client)
+            with pytest.raises(ModelRequestTimeoutError) as content_error:
                 await generator.generate(
                     task="extract_claims",
                     payload={
@@ -799,6 +822,142 @@ def test_model_transport_timeout_remains_typed_for_all_model_clients():
                         "source_blocks": [{"id": "block_demo", "text": "STM32"}],
                     },
                 )
+            assert content_error.value.retryable is True
 
     asyncio.run(scenario())
     assert attempts == 2
+
+
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.RemoteProtocolError])
+def test_content_network_failure_is_transient_without_hidden_requests(
+    stream, error_type
+):
+    requests = []
+
+    async def failed(request):
+        requests.append(request)
+        raise error_type("fixture network failure", request=request)
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(failed)) as client:
+            generator = OpenAICompatibleContentGenerator(
+                model_settings(model_stream=stream), client=client
+            )
+            with pytest.raises(ModelRequestError) as error:
+                await generator.generate(task="compose_resume", payload={})
+            assert error.value.retryable is True
+            assert error.value.status_code is None
+
+    asyncio.run(scenario())
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("repair_is_grounded", [True, False])
+def test_resume_correction_uses_original_facts_through_real_adapter_and_sdk(
+    repair_is_grounded,
+):
+    source = "参与 UART 调试。"
+    payload = {
+        "draft_id": "resume_demo",
+        "allowed_claims": {"claim_uart": source},
+        "target_context": "嵌入式岗位",
+    }
+    requests = []
+    context = None
+
+    def candidate(text):
+        return {
+            "schema_version": "1.0.0",
+            "draft_id": "resume_demo",
+            "sections": [
+                {
+                    "section_id": "projects",
+                    "title": "项目经历",
+                    "items": [
+                        {
+                            "item_id": "item_uart",
+                            "text": text,
+                            "claim_ids": ["claim_uart"],
+                            "reason": "说明调试经历",
+                        }
+                    ],
+                }
+            ],
+            "missing_facts": [
+                {"prompt": "请补充职责", "reason": "原事实未说明负责范围"}
+            ],
+            "cautions": [],
+        }
+
+    async def handler(request):
+        data = json.loads(request.content)
+        user_data = json.loads(data["messages"][1]["content"])
+        requests.append(user_data)
+        assert user_data["allowed_claims"] == payload["allowed_claims"]
+        assert user_data["draft_id"] == payload["draft_id"]
+        if len(requests) == 1:
+            assert "repair_context" not in user_data
+            text = "负责 UART 调试。"
+        else:
+            assert user_data["repair_context"] == context
+            text = source if repair_is_grounded else "主导 UART 调试。"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(candidate(text), ensure_ascii=False)
+                        }
+                    }
+                ]
+            },
+        )
+
+    async def scenario():
+        nonlocal context
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            generator = OpenAICompatibleContentGenerator(
+                model_settings(model_stream=False), client=client
+            )
+            with pytest.raises(ContentWorkflowError) as failure:
+                await run_grounded_content_workflow(
+                    generator=generator, task="compose_resume", payload=payload
+                )
+            context = failure.value.repair_context
+            assert context["issues"] == [
+                {
+                    "code": "unsupported_assertion",
+                    "path": ["sections", 0, "items", 0, "text"],
+                }
+            ]
+            assert len(requests) == 1
+            if repair_is_grounded:
+                result = await run_grounded_content_workflow(
+                    generator=generator,
+                    task="compose_resume",
+                    payload=payload,
+                    repair_context=context,
+                )
+                assert result["candidate"]["source_claim_ids"] == ["claim_uart"]
+                assert result["candidate"]["sections"][0]["items"][0]["text"] == source
+                assert (
+                    result["candidate"]["missing_facts"]
+                    == candidate(source)["missing_facts"]
+                )
+            else:
+                with pytest.raises(ContentWorkflowError) as invalid:
+                    await run_grounded_content_workflow(
+                        generator=generator,
+                        task="compose_resume",
+                        payload=payload,
+                        repair_context=context,
+                    )
+                assert invalid.value.repair_context["issues"][0]["code"] == (
+                    "unsupported_assertion"
+                )
+
+    asyncio.run(scenario())
+    assert len(requests) == 2
+    assert "repair_context" not in payload

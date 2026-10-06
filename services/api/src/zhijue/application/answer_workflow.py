@@ -68,9 +68,23 @@ class AnswerWorkflowError(RuntimeError):
 class ModelRequestError(RuntimeError):
     """The remote model request did not produce a usable response envelope."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.status_code = status_code
+
 
 class ModelRequestTimeoutError(ModelRequestError):
     """The remote model request exceeded its configured transport deadline."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, retryable=True)
 
 
 @dataclass(frozen=True, slots=True)

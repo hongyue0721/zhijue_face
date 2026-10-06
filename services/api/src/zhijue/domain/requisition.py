@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import urlparse
 
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
 from zhijue.domain.errors import JdRejected
 
 
@@ -221,12 +221,6 @@ _NON_REQUIREMENT_MARKERS = (
     "role:",
 )
 
-# 单一真源：JD→competency 映射属于 embedded-junior-v1 能力配置
-# （domain/competency_profiles.py）。知识包只能声明镜像，不能改写规则（R03）。
-_COMPETENCY_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
-    EMBEDDED_JUNIOR_V1.jd_keyword_rules
-)
-
 
 def _utf16_code_units(s: str) -> int:
     """计算字符串在 UTF-16（JavaScript String）中的 code unit 长度。"""
@@ -397,10 +391,12 @@ def classify_tier(line: str) -> RequirementTier | None:
     return None
 
 
-def detect_competency(statement: str) -> str | None:
+def detect_competency(
+    statement: str, *, profile: CompetencyProfile = EMBEDDED_JUNIOR_V1
+) -> str | None:
     """把要求映射到能力维度；匹配不到就返回 None（不硬塞到某个维度）。"""
     lowered = statement.lower()
-    for keywords, competency in _COMPETENCY_RULES:
+    for keywords, competency in profile.jd_keyword_rules:
         if any(keyword in lowered for keyword in keywords):
             return competency
     return None
@@ -481,7 +477,10 @@ def _split_statements(text: str) -> list[str]:
 
 
 def extract_requirements(
-    snapshot: JDSnapshot, *, extraction: str = "rule_based"
+    snapshot: JDSnapshot,
+    *,
+    extraction: str = "rule_based",
+    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
 ) -> list[Requirement]:
     """从 JD 原文抽取要求，每条都带可回指且定义计量单位的 `source_span`。
 
@@ -494,7 +493,7 @@ def extract_requirements(
         if tier is None:
             continue
         for index, statement in enumerate(_split_statements(span.text)):
-            competency = detect_competency(statement)
+            competency = detect_competency(statement, profile=profile)
             if competency is None:
                 continue
             # 在原文中精确匹配偏移

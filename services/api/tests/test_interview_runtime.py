@@ -17,6 +17,7 @@ from zhijue.adapters.db.operations import OperationCommand, canon_scope
 from zhijue.api.app import AppConfig, create_app
 from zhijue.application.answer_workflow import AnalysisResult
 from zhijue.application.profiles import ActivationReceipt
+from zhijue.domain.errors import InvalidStateError
 from zhijue.domain.operations import OperationStatus
 
 
@@ -206,6 +207,9 @@ def test_start_and_answers_are_idempotent_and_emit_durable_policy_events(
         "data"
     ]
     assert operation["status"] == "succeeded", operation["error"]
+    assert operation["attempt_limit"] == 3
+    assert operation["retry_reason"] is None
+    assert operation["chain_started_at"] == operation["created_at"]
     assert operation["result"]["action"] == "PROBE"
     assert operation["result"]["usage"] == {
         "input_tokens": 20,
@@ -949,3 +953,473 @@ def test_restart_releases_stale_terminal_interview_operation(tmp_path):
         view = client.get(f"/api/v1/interviews/{active['id']}").json()["data"]
         assert view["active_operation_id"] is None
         assert view["status"] == "active"
+
+
+def test_old_failed_answer_cannot_rewind_after_skip_or_reopen_completed(tmp_path):
+    analyzer = ScriptedAnalyzer("invalid", "adequate")
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        failed = client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "obsolete-first-turn",
+                "answer_text": "保留第一题失败回答。",
+            },
+            headers={"Idempotency-Key": "obsolete-first-answer"},
+        ).json()["data"]
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": view["revision"], "action": "skip"},
+            headers={"Idempotency-Key": "obsolete-first-skip"},
+        )
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "current-second-turn",
+                "answer_text": "第二题已回答成功。",
+            },
+            headers={"Idempotency-Key": "current-second-answer"},
+        )
+        view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        for completed in (False, True):
+            response = client.post(
+                f"/api/v1/operations/{failed['operation_id']}/retry",
+                json={"expected_revision": view["revision"]},
+                headers={"Idempotency-Key": f"obsolete-retry-{completed}"},
+            )
+            assert response.status_code == 409
+            assert (
+                client.get(f"/api/v1/interviews/{interview_id}").json()["data"] == view
+            )
+            assert len(analyzer.calls) == 2
+            if not completed:
+                client.post(
+                    f"/api/v1/interviews/{interview_id}/control",
+                    json={"expected_revision": view["revision"], "action": "end"},
+                    headers={"Idempotency-Key": "obsolete-end-interview"},
+                )
+                view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+                assert view["status"] == "completed"
+
+
+def test_late_answer_result_cannot_commit_after_cursor_moves(runtime_client):
+    client, _ = runtime_client
+    active = _prepare_active_interview(client)
+    services = client.app.state.services
+    payload = {
+        "expected_revision": active["revision"],
+        "question_id": active["current_question"]["id"],
+        "client_turn_id": "late-commit-turn",
+        "answer_text": "模型调用期间当前轮次发生变化。",
+    }
+    accepted = services.interviews.accept_answer(
+        active["id"],
+        **payload,
+        command=OperationCommand(
+            kind="interview.answer",
+            resource_type="interview",
+            resource_id=active["id"],
+            scope=canon_scope(
+                "local", "POST", f"/api/v1/interviews/{active['id']}/answers"
+            ),
+            idempotency_key="late-commit-answer",
+            input=payload,
+        ),
+    )
+    services.operations.transition(accepted.operation.id, OperationStatus.RUNNING)
+    context = services.interviews._load_answer_context(accepted.operation.id)
+    # Keep the old operation pointer: checking only ownership is insufficient.
+    with Session(services.engine) as session, session.begin():
+        interview = session.get(Interview, active["id"])
+        interview.current_question_id = context.remaining_root_ids[0]
+        interview.revision += 1
+    with pytest.raises(InvalidStateError):
+        services.interviews._commit_answer_result(
+            operation_id=accepted.operation.id,
+            context=context,
+            observation={},
+            decision={},
+            usage={},
+        )
+    with Session(services.engine) as session:
+        answer = session.get(Answer, accepted.answer_id)
+        interview = session.get(Interview, active["id"])
+        assert answer.evaluation_status == "processing"
+        assert interview.current_question_id == context.remaining_root_ids[0]
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"jd_text": "不同的岗位要求：设计实时中断处理。"},
+        {"pack_release_id": "kpr_0123456789abcdef"},
+        {"profile_revision": 999},
+        {"memory_enabled": True},
+        {"observer_mode": True},
+    ],
+)
+def test_plan_replay_compares_explicit_input_without_resolving_defaults(
+    runtime_client, monkeypatch, changed
+):
+    client, _ = runtime_client
+    active = _prepare_active_interview(client)
+    profile = client.get(f"/api/v1/profiles/{active['profile_id']}").json()["data"]
+    payload = {"profile_id": profile["id"], "profile_revision": profile["revision"]}
+
+    def unavailable_default(*args, **kwargs):
+        raise AssertionError("A replay must not resolve the changed default pack")
+
+    monkeypatch.setattr(
+        client.app.state.services.knowledge_packs,
+        "freeze_for_new_plan",
+        unavailable_default,
+    )
+    replay = client.post(
+        "/api/v1/interviews",
+        json=payload,
+        headers={"Idempotency-Key": "runtime-plan-key-000001"},
+    )
+    assert replay.status_code == 202
+    assert replay.json()["data"]["resource_id"] == active["id"]
+    conflict = client.post(
+        "/api/v1/interviews",
+        json={**payload, **changed},
+        headers={"Idempotency-Key": "runtime-plan-key-000001"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_admitted_plan_and_questions_keep_review_snapshot_after_revocation(
+    tmp_path, monkeypatch
+):
+    app = create_app(
+        _config(tmp_path),
+        knowledge=InMemoryKnowledge(),
+        analyzer=ScriptedAnalyzer("adequate"),
+    )
+    with TestClient(app) as client:
+        services = client.app.state.services
+        create_plan = services.interviews.create_plan
+
+        def revoke_after_admission(**kwargs):
+            binding = kwargs["binding"]
+            services.knowledge_packs.record_review(
+                release_id=binding.release_id,
+                expected_digest=binding.content_digest,
+                decision="rejected",
+                reviewer_id="runtime-test-owner",
+                reviewer_role="owner",
+                note="回归测试：受理后撤销，只影响新计划。",
+            )
+            return create_plan(**kwargs)
+
+        monkeypatch.setattr(services.interviews, "create_plan", revoke_after_admission)
+        active = _prepare_active_interview(client)
+        accepted = client.post(
+            f"/api/v1/interviews/{active['id']}/answers",
+            json={
+                "expected_revision": active["revision"],
+                "question_id": active["current_question"]["id"],
+                "client_turn_id": "frozen-review-turn",
+                "answer_text": "继续使用本场受理时批准的评价依据。",
+            },
+            headers={"Idempotency-Key": "frozen-review-answer"},
+        ).json()["data"]
+        operation = services.operations.get(accepted["operation_id"])
+        assert operation.status == "succeeded"
+        profile = client.get(f"/api/v1/profiles/{active['profile_id']}").json()["data"]
+        rejected = client.post(
+            "/api/v1/interviews",
+            json={"profile_id": profile["id"], "profile_revision": profile["revision"]},
+            headers={"Idempotency-Key": "new-plan-after-review-revocation"},
+        )
+        assert rejected.status_code == 409
+        with Session(services.engine) as session:
+            interview = session.get(Interview, active["id"])
+            assert interview.pack_review_snapshot["review"]["decision"] == "approved"
+
+
+def test_failed_skip_cannot_retry_after_another_skip_advances(tmp_path, monkeypatch):
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=ScriptedAnalyzer()
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        services = app.state.services
+        process_control = services.interviews.process_control
+
+        def fail_control(**kwargs):
+            raise RuntimeError("synthetic failed skip")
+
+        monkeypatch.setattr(services.interviews, "process_control", fail_control)
+        failed = client.post(
+            f"/api/v1/interviews/{view['id']}/control",
+            json={"expected_revision": view["revision"], "action": "skip"},
+            headers={"Idempotency-Key": "obsolete-failed-skip"},
+        ).json()["data"]
+        monkeypatch.setattr(services.interviews, "process_control", process_control)
+        view = client.get(f"/api/v1/interviews/{view['id']}").json()["data"]
+        client.post(
+            f"/api/v1/interviews/{view['id']}/control",
+            json={"expected_revision": view["revision"], "action": "skip"},
+            headers={"Idempotency-Key": "replacement-successful-skip"},
+        )
+        view = client.get(f"/api/v1/interviews/{view['id']}").json()["data"]
+        response = client.post(
+            f"/api/v1/operations/{failed['operation_id']}/retry",
+            json={"expected_revision": view["revision"]},
+            headers={"Idempotency-Key": "obsolete-failed-skip-retry"},
+        )
+        assert response.status_code == 409
+        assert client.get(f"/api/v1/interviews/{view['id']}").json()["data"] == view
+
+
+def test_concurrent_retry_and_skip_cannot_both_claim_current_turn(tmp_path):
+    app = create_app(
+        _config(tmp_path),
+        knowledge=InMemoryKnowledge(),
+        analyzer=ScriptedAnalyzer("invalid"),
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        failed = client.post(
+            f"/api/v1/interviews/{view['id']}/answers",
+            json={
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "race-retry-skip-turn",
+                "answer_text": "重试和跳过竞争同一轮次。",
+            },
+            headers={"Idempotency-Key": "race-retry-skip-answer"},
+        ).json()["data"]
+        view = client.get(f"/api/v1/interviews/{view['id']}").json()["data"]
+        services = app.state.services
+        barrier = threading.Barrier(2)
+        accepted, errors = [], []
+
+        def submit(action):
+            barrier.wait()
+            try:
+                if action == "retry":
+                    result = services.interviews.accept_retry(
+                        failed["operation_id"],
+                        expected_revision=view["revision"],
+                        idempotency_key="race-current-retry",
+                        request_input={"expected_revision": view["revision"]},
+                    )
+                else:
+                    payload = {"expected_revision": view["revision"], "action": "skip"}
+                    result = services.interviews.accept_control(
+                        view["id"],
+                        **payload,
+                        command=OperationCommand(
+                            kind="interview.control.skip",
+                            resource_type="interview",
+                            resource_id=view["id"],
+                            scope=canon_scope(
+                                "local",
+                                "POST",
+                                f"/api/v1/interviews/{view['id']}/control",
+                            ),
+                            idempotency_key="race-current-skip",
+                            input=payload,
+                        ),
+                    )
+                accepted.append(result)
+            except Exception as exc:  # noqa: BLE001 - assert the losing domain error.
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=submit, args=(action,))
+            for action in ("retry", "skip")
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(accepted) == len(errors) == 1
+        assert getattr(errors[0], "code", None) in {
+            "REVISION_CONFLICT",
+            "OPERATION_IN_PROGRESS",
+        }
+        latest = client.get(f"/api/v1/interviews/{view['id']}").json()["data"]
+        assert latest["active_operation_id"] == accepted[0].operation.id
+        assert latest["current_question"]["id"] == view["current_question"]["id"]
+
+
+@pytest.mark.parametrize("final_action", ["skip", "answer"])
+def test_already_admitted_end_succeeds_after_final_turn_without_duplicate_report(
+    tmp_path, monkeypatch, final_action
+):
+    analyzer = ScriptedAnalyzer(*(["adequate"] * 5))
+    app = create_app(
+        _config(tmp_path), knowledge=InMemoryKnowledge(), analyzer=analyzer
+    )
+    with TestClient(app) as client:
+        view = _prepare_active_interview(client)
+        interview_id = view["id"]
+        services = app.state.services
+        for index in range(4):
+            response = client.post(
+                f"/api/v1/interviews/{interview_id}/answers",
+                json={
+                    "expected_revision": view["revision"],
+                    "question_id": view["current_question"]["id"],
+                    "client_turn_id": f"final-end-prepare-{index}",
+                    "answer_text": "记录证据并说明自己的做法。",
+                },
+                headers={"Idempotency-Key": f"final-end-prepare-{index}"},
+            )
+            assert response.status_code == 202
+            operation = services.operations.get(response.json()["data"]["operation_id"])
+            assert operation.status == "succeeded", operation.error
+            view = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+
+        execute = services.runner._execute
+        held = []
+
+        async def hold_execution(job):
+            held.append(job)
+
+        monkeypatch.setattr(services.runner, "_execute", hold_execution)
+        if final_action == "skip":
+            final_payload = {"expected_revision": view["revision"], "action": "skip"}
+            final_path = f"/api/v1/interviews/{interview_id}/control"
+        else:
+            final_payload = {
+                "expected_revision": view["revision"],
+                "question_id": view["current_question"]["id"],
+                "client_turn_id": "final-end-last-answer",
+                "answer_text": "最后一题保留原回答并形成评价。",
+            }
+            final_path = f"/api/v1/interviews/{interview_id}/answers"
+        final_response = client.post(
+            final_path,
+            json=final_payload,
+            headers={"Idempotency-Key": "final-end-final-turn"},
+        )
+        assert final_response.status_code == 202
+        pending = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        end_payload = {"expected_revision": pending["revision"], "action": "end"}
+        end_response = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json=end_payload,
+            headers={"Idempotency-Key": "final-end-queued-end"},
+        )
+        assert end_response.status_code == 202, end_response.json()
+        assert len(held) == 2
+        assert held[0].operation_id == final_response.json()["data"]["operation_id"]
+        assert held[1].operation_id == end_response.json()["data"]["operation_id"]
+        assert services.operations.get(held[1].operation_id).status == "queued"
+        assert asyncio.run(execute(held[0])) is None
+        final_operation = services.operations.get(held[0].operation_id)
+        assert final_operation.status == "succeeded", final_operation.error
+        assert final_operation.result["action"] == "END"
+        completed_before_end = None
+        report_before_end = None
+        if final_action == "skip":
+            completed_before_end = client.get(
+                f"/api/v1/interviews/{interview_id}"
+            ).json()["data"]
+            assert completed_before_end["status"] == "completed"
+            report_before_end = client.get(
+                f"/api/v1/interviews/{interview_id}/report"
+            ).json()["data"]
+            assert final_operation.result["report_id"] == report_before_end["id"]
+
+        assert asyncio.run(execute(held[1])) is None
+        end_operation = services.operations.get(held[1].operation_id)
+        assert end_operation.status == "succeeded", end_operation.error
+        report = client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+        completed = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        assert (
+            end_operation.result["report_id"] == report["id"] == completed["report_id"]
+        )
+        assert end_operation.result["action"] == "END"
+        assert completed["status"] == "completed"
+        assert completed["active_operation_id"] is None
+        if completed_before_end is not None:
+            assert completed == completed_before_end
+            assert report == report_before_end
+        assert len(analyzer.calls) == (4 if final_action == "skip" else 5)
+        with Session(services.engine) as session:
+            assert session.scalar(select(func.count(Report.id))) == 1
+            assert session.scalar(select(func.count(Assessment.id))) == 5
+        report_events = [
+            event
+            for event in services.operations.events_after(end_operation.id, 0)
+            if event.event_type == "report.ready"
+        ]
+        assert len(report_events) == 1
+        assert report_events[0].payload["report_id"] == report["id"]
+
+        replay = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json=end_payload,
+            headers={"Idempotency-Key": "final-end-queued-end"},
+        )
+        assert replay.status_code == 202
+        assert replay.json()["data"]["operation_id"] == end_operation.id
+        mismatch = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": completed["revision"], "action": "end"},
+            headers={"Idempotency-Key": "final-end-queued-end"},
+        )
+        assert mismatch.status_code == 409
+        assert mismatch.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+        fresh_end = client.post(
+            f"/api/v1/interviews/{interview_id}/control",
+            json={"expected_revision": completed["revision"], "action": "end"},
+            headers={"Idempotency-Key": "final-end-after-completion"},
+        )
+        assert fresh_end.status_code == 409
+        assert fresh_end.json()["error"]["code"] == "INVALID_STATE"
+        assert (
+            client.get(f"/api/v1/interviews/{interview_id}").json()["data"] == completed
+        )
+        assert (
+            client.get(f"/api/v1/interviews/{interview_id}/report").json()["data"]
+            == report
+        )
+        assert len(held) == 2
+
+
+def test_stale_next_execution_cannot_advance_or_reopen_interview(runtime_client):
+    client, analyzer = runtime_client
+    view = _prepare_active_interview(client)
+    services = client.app.state.services
+    interview_id = view["id"]
+    skipped = client.post(
+        f"/api/v1/interviews/{interview_id}/control",
+        json={"expected_revision": view["revision"], "action": "skip"},
+        headers={"Idempotency-Key": "stale-next-original"},
+    ).json()["data"]
+    operation = services.operations.get(skipped["operation_id"])
+    assert operation.status == "succeeded"
+    assert operation.result["action"] == "NEXT"
+    for is_completed in (False, True):
+        current = client.get(f"/api/v1/interviews/{interview_id}").json()["data"]
+        with pytest.raises(InvalidStateError):
+            services.interviews.process_control(operation_id=operation.id)
+        assert (
+            client.get(f"/api/v1/interviews/{interview_id}").json()["data"] == current
+        )
+        if not is_completed:
+            ended = client.post(
+                f"/api/v1/interviews/{interview_id}/control",
+                json={"expected_revision": current["revision"], "action": "end"},
+                headers={"Idempotency-Key": "stale-next-completion"},
+            )
+            assert ended.status_code == 202
+    assert analyzer.calls == []

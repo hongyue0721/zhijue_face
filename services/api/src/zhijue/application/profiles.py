@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
+from zhijue.adapters.db.models import Claim, Document
 from zhijue.adapters.db.operations import OperationCommand
 from zhijue.adapters.db.profiles import (
     AcceptedProfileOperation,
@@ -105,6 +106,15 @@ class ProfileService:
             raise ValueError(f"RESOURCE_NOT_FOUND: profile {profile_id}")
         return view
 
+    def get_detail(
+        self, profile_id: str
+    ) -> tuple[ProfileView, list[ClaimView], list[Document]]:
+        detail = self._repo.get_detail(profile_id)
+        if detail is None:
+            raise ValueError(f"RESOURCE_NOT_FOUND: profile {profile_id}")
+        profile, claims, documents = detail
+        return profile, [self._claim_view(claim) for claim in claims], documents
+
     def add_facts(
         self, profile_id: str, *, expected_revision: int, items: list[dict[str, str]]
     ) -> ProfileView:
@@ -135,17 +145,18 @@ class ProfileService:
     # ---------- 确认 ----------
 
     def list_claims(self, profile_id: str) -> list[ClaimView]:
-        return [
-            ClaimView(
-                id=claim.id,
-                text=claim.text,
-                status=ClaimStatus(claim.status),
-                source_block_ids=list(claim.source_block_ids or []),
-                source_quotes=list(claim.source_quotes or []),
-                supersedes_id=claim.supersedes_id,
-            )
-            for claim in self._repo.list_claims(profile_id)
-        ]
+        return [self._claim_view(claim) for claim in self._repo.list_claims(profile_id)]
+
+    @staticmethod
+    def _claim_view(claim: Claim) -> ClaimView:
+        return ClaimView(
+            id=claim.id,
+            text=claim.text,
+            status=ClaimStatus(claim.status),
+            source_block_ids=list(claim.source_block_ids or []),
+            source_quotes=list(claim.source_quotes or []),
+            supersedes_id=claim.supersedes_id,
+        )
 
     def confirm(
         self,
@@ -236,7 +247,11 @@ class ProfileService:
         """
         source_ids = self._repo.knowledge_source_ids(profile_id)
         dropped = 0
-        if source_ids and self._knowledge is not None:
+        if source_ids:
+            if self._knowledge is None:
+                raise RuntimeError(
+                    "SERVICE_NOT_READY: 未配置 Knowledge 网关，不能清理索引"
+                )
             dropped = await self._knowledge.drop_profile(
                 profile_id=profile_id, source_ids=source_ids
             )

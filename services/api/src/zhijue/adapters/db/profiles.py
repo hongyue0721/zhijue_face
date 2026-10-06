@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
-from sqlalchemy import Engine, and_, delete, func, or_, select, text
+from sqlalchemy import Engine, and_, delete, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import (
@@ -148,6 +148,35 @@ class ProfileRepository:
         with Session(self._engine, expire_on_commit=False) as session:
             profile = session.get(Profile, profile_id)
             return None if profile is None else _to_view(session, profile)
+
+    def get_detail(
+        self, profile_id: str
+    ) -> tuple[ProfileView, list[Claim], list[Document]] | None:
+        """Read the revision and every displayed child from one database snapshot."""
+        with Session(self._engine, expire_on_commit=False) as session, session.begin():
+            # sqlite3's legacy transaction mode does not BEGIN for SELECT.
+            # A Session alone therefore permits revision 0 with revision 1's claims.
+            if self._engine.dialect.name == "sqlite":
+                session.execute(text("BEGIN"))
+            profile = session.get(Profile, profile_id)
+            if profile is None:
+                return None
+            view = _to_view(session, profile)
+            claims = list(
+                session.scalars(
+                    select(Claim)
+                    .where(Claim.profile_id == profile_id)
+                    .order_by(Claim.created_at, Claim.id)
+                )
+            )
+            documents = list(
+                session.scalars(
+                    select(Document)
+                    .where(Document.profile_id == profile_id)
+                    .order_by(Document.created_at, Document.id)
+                )
+            )
+            return view, claims, documents
 
     # ---------- 事实与 Claim ----------
 
@@ -464,25 +493,37 @@ class ProfileRepository:
         return sorted(set(ids))
 
     def knowledge_source_ids(self, profile_id: str) -> list[str]:
-        """全部激活回执里的 source_id：Knowledge 清理只删确实写过的来源。"""
+        """Recover all possible writes, not just successful retrieval receipts.
+
+        Entering indexing commits the immutable generation and its claim IDs before
+        Knowledge IO. That snapshot is the durable write intent even if add_documents
+        succeeds but receipt retrieval fails, or the process dies between those calls.
+        Deletion is idempotent for absent IDs; pending snapshots have never been sent.
+        """
         with Session(self._engine) as session:
-            receipts = session.scalars(
-                select(ProfileSnapshotActivation.receipt)
+            generations = session.execute(
+                select(ProfileSnapshot, ProfileSnapshotActivation)
                 .join(
-                    ProfileSnapshot,
+                    ProfileSnapshotActivation,
                     ProfileSnapshot.id == ProfileSnapshotActivation.snapshot_id,
                 )
                 .where(ProfileSnapshot.profile_id == profile_id)
             ).all()
-        ids: set[str] = set()
-        for receipt in receipts:
-            if isinstance(receipt, dict):
-                ids.update(
-                    source_id
-                    for source_id in (receipt.get("source_ids") or [])
-                    if isinstance(source_id, str)
-                )
-        return sorted(ids)
+            ids: set[str] = set()
+            for snapshot, activation in generations:
+                if activation.status != "pending":
+                    ids.update(
+                        f"{snapshot.id}:{claim_id}"
+                        for claim_id in snapshot.confirmed_claim_ids or []
+                    )
+                receipt = activation.receipt
+                if isinstance(receipt, dict):
+                    ids.update(
+                        source_id
+                        for source_id in (receipt.get("source_ids") or [])
+                        if isinstance(source_id, str)
+                    )
+            return sorted(ids)
 
     def purge_profile(self, profile_id: str) -> dict[str, int]:
         """单事务级联清理：任何一步失败整体回滚，绝不留下半清理状态。
@@ -626,6 +667,13 @@ class ProfileRepository:
                 "profile.delete",
             }:
                 raise InvalidStateError("该操作不是资料确认或资料删除操作。")
+            # Serialize independent repositories/processes before reading retry
+            # children or activation state, not only when inserting the child.
+            session.execute(
+                update(Profile)
+                .where(Profile.id == original.resource_id)
+                .values(revision=Profile.revision)
+            )
             retry_scope = f"{original.scope}#retry_of_{original.id}"
             existing = session.scalar(
                 select(Operation).where(

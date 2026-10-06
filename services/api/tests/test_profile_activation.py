@@ -207,6 +207,63 @@ def test_retry_budget_cannot_branch_or_reset_with_new_key(activation_client):
         assert session.scalar(select(func.count()).select_from(ProfileSnapshot)) == 1
 
 
+@pytest.mark.parametrize("same_key", [False, True])
+def test_profile_retry_acceptance_serializes_independent_repositories(
+    activation_client, same_key
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from zhijue.adapters.db.profiles import ProfileRepository
+    from zhijue.domain.errors import InvalidStateError
+
+    client, _knowledge = activation_client
+    profile_id = create_profile(client)
+    first = _confirm(client, profile_id, _propose(client, profile_id))
+    revision = _profile(client, profile_id)["revision"]
+    engine = client.app.state.services.engine
+    repositories = [ProfileRepository(engine), ProfileRepository(engine)]
+    start = Barrier(2)
+
+    def accept(index):
+        start.wait(timeout=5)
+        try:
+            return repositories[index].accept_retry(
+                first["operation_id"],
+                expected_revision=revision,
+                idempotency_key=f"concurrent-retry-{0 if same_key else index}",
+                request_input={"expected_revision": revision},
+                capacity_available=True,
+            )
+        except InvalidStateError as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(accept, range(2)))
+    accepted = [result for result in results if not isinstance(result, Exception)]
+    if same_key:
+        assert len(accepted) == 2
+        assert accepted[0].operation.id == accepted[1].operation.id
+        assert sorted(result.created for result in accepted) == [False, True]
+    else:
+        assert len(accepted) == 1
+        assert accepted[0].created
+        assert sum(isinstance(result, InvalidStateError) for result in results) == 1
+    with Session(engine) as session:
+        children = session.scalars(
+            select(Operation).where(
+                Operation.parent_operation_id == first["operation_id"]
+            )
+        ).all()
+        assert len(children) == 1
+        activation = session.get(
+            ProfileSnapshotActivation,
+            _profile(client, profile_id)["latest_snapshot_id"],
+        )
+        assert activation.operation_id == children[0].id
+        assert activation.status == "indexing"
+
+
 def test_start_checks_bound_generation_not_latest_or_document_status(activation_client):
     client, knowledge = activation_client
     knowledge.fail = False

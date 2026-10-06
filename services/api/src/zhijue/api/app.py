@@ -105,8 +105,20 @@ class AppConfig:
     api_workers: int = 1
     limits: ExtractionLimits = field(default_factory=ExtractionLimits)
     max_queued_operations: int = 8
-    answer_workflow_timeout_seconds: float = 60
+    model_workflow_timeout_seconds: float | None = None
     data_mode: str = "synthetic"
+
+    def __post_init__(self) -> None:
+        value = self.model_workflow_timeout_seconds
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError(
+                "model_workflow_timeout_seconds must be a finite positive number"
+            )
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> AppConfig:
@@ -127,8 +139,8 @@ class AppConfig:
             model_env_file=Path(model_env) if model_env else None,
             api_workers=int(env.get("ZHIJUE_API_WORKERS", "1")),
             data_mode=env.get("ZHIJUE_DATA_MODE", "synthetic"),
-            answer_workflow_timeout_seconds=_positive_float(
-                env, "ZHIJUE_ANSWER_WORKFLOW_TIMEOUT_SECONDS", 60.0
+            model_workflow_timeout_seconds=_optional_positive_float(
+                env, "ZHIJUE_MODEL_WORKFLOW_TIMEOUT_SECONDS"
             ),
         )
 
@@ -145,11 +157,11 @@ class AppConfig:
         self.milvus_uri.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _positive_float(env: dict[str, str], key: str, default: float) -> float:
+def _optional_positive_float(env: dict[str, str], key: str) -> float | None:
     """超时是部署策略值：允许显式配置，但拒绝非正/非数，不静默兜底。"""
     raw = env.get(key)
     if raw is None or not raw.strip():
-        return default
+        return None
     try:
         value = float(raw)
     except ValueError as exc:
@@ -157,6 +169,27 @@ def _positive_float(env: dict[str, str], key: str, default: float) -> float:
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{key} must be a finite positive number")
     return value
+
+
+def resolve_model_workflow_timeout(
+    config: AppConfig, adapter: AnswerAnalyzer | ContentGenerator | None
+) -> float:
+    """Use explicit policy, otherwise the adapter's request budget plus SDK margin."""
+    if config.model_workflow_timeout_seconds is not None:
+        return float(config.model_workflow_timeout_seconds)
+    request_timeout = getattr(adapter, "request_timeout_seconds", None)
+    if request_timeout is None:
+        return 60.0
+    if (
+        isinstance(request_timeout, bool)
+        or not isinstance(request_timeout, (int, float))
+        or not math.isfinite(request_timeout)
+        or request_timeout <= 0
+    ):
+        raise ValueError(
+            "adapter request_timeout_seconds must be a finite positive number"
+        )
+    return max(60.0, float(request_timeout) + 30.0)
 
 
 @dataclass
@@ -212,6 +245,7 @@ def build_services(
         "data_mode": config.data_mode,
         "database": "sqlite",
         "knowledge": "configured" if knowledge is not None else "absent",
+        "content_generation": "configured" if generator is not None else "absent",
         "model": (
             "configured"
             if analyzer is not None and generator is not None
@@ -253,12 +287,14 @@ def build_services(
         if generator is not None and hasattr(generator, "public_summary")
         else {}
     )
+    generator_timeout = resolve_model_workflow_timeout(config, generator)
+    analyzer_timeout = resolve_model_workflow_timeout(config, analyzer)
     content = ContentGenerationService(
         engine=engine,
         operations=operation_repo,
         generator=generator,
         run_mode=config.run_mode,
-        workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
+        workflow_timeout_seconds=generator_timeout,
         model_attempt_limit=getattr(generator, "max_total_attempts", 3),
         generator_metadata=generator_metadata,
     )
@@ -272,7 +308,7 @@ def build_services(
             reporting=reporting,
             packs=packs,
             analyzer=analyzer,
-            workflow_timeout_seconds=config.answer_workflow_timeout_seconds,
+            workflow_timeout_seconds=analyzer_timeout,
             model_attempt_limit=getattr(analyzer, "max_total_attempts", 3),
         ),
         documents=DocumentService(
@@ -282,6 +318,7 @@ def build_services(
             generator=generator,
             run_mode=config.run_mode,
             generator_metadata=generator_metadata,
+            workflow_timeout_seconds=generator_timeout,
         ),
         profiles=ProfileService(repo=profile_repo, knowledge=knowledge),
         operations=operation_repo,

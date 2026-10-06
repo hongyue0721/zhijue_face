@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
+from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.planning import InterviewSlot
 from zhijue.domain.requisition import CoverageStatus
 
@@ -98,7 +99,7 @@ def instantiate_root_questions(
     for order_index, (slot, seed) in enumerate(zip(ordered_slots, assigned)):
         question_id = _root_question_id(interview_id, slot, order_index)
         if seed is None:
-            wording = _fallback_wording(slot)
+            wording = _fallback_wording(slot, profile)
             snapshot = _fallback_rubric_snapshot(slot.competency)
         else:
             wording = _candidate_safe_seed_wording(seed, slot)
@@ -114,6 +115,10 @@ def instantiate_root_questions(
                 rubric_snapshot=snapshot,
                 order_index=order_index,
             )
+        )
+    if len({draft.wording.strip() for draft in drafts}) != len(drafts):
+        raise PlanningRejected(
+            "INVALID_REQUEST", "主问题存在重复，请为岗位要求分配不同验证切面。"
         )
     return tuple(drafts)
 
@@ -247,24 +252,34 @@ def _candidate_safe_seed_wording(seed: Seed, slot: InterviewSlot) -> str:
     return wording
 
 
-def _fallback_wording(slot: InterviewSlot) -> str:
+def _fallback_wording(slot: InterviewSlot, profile: CompetencyProfile) -> str:
+    labels = {
+        capability.competency_id: capability.label
+        for capability in profile.capabilities
+    }
+    label = labels.get(slot.competency, "岗位要求中的相关能力")
+    safe_goal = slot.verification_goal
+    for internal_id, human_label in labels.items():
+        safe_goal = safe_goal.replace(internal_id, human_label)
     safe_goal = (
-        slot.verification_goal.replace(slot.competency, "这项岗位相关能力")
+        safe_goal.replace(slot.competency, label)
+        .replace("请候选人说明", "请说明")
         .strip()
         .rstrip("。；;")
     )
+    if label not in safe_goal:
+        safe_goal = f"关于{label}：{safe_goal}"
     if slot.current_verification_status is CoverageStatus.CONTRADICTED:
         return (
-            f"{safe_goal}。材料中相关描述存在差异，请说明实际情况、你的具体做法"
-            "和可以核对的证据；不确定的部分请明确指出。"
+            f"{safe_goal}。材料中相关描述存在差异，请先澄清实际情况，并区分"
+            "可核对的事实和不确定的判断。"
         )
     if slot.candidate_evidence_ids:
         return (
-            f"{safe_goal}。请结合材料中的一次真实经历，说明当时的目标、你的具体"
-            "做法、观察到的证据，以及你如何判断结果；不确定的部分请明确指出。"
+            f"{safe_goal}。请结合材料中的一次真实经历回答，并明确哪些是你"
+            "亲自完成或观察到的；不确定的部分请明确指出。"
         )
     return (
-        f"{safe_goal}。请结合一次相关经历或练习，说明目标、你的具体做法、观察"
-        "到的证据，以及你如何判断结果。如果没有直接经历，也可以说明你会如何"
-        "收集证据；不需要猜测具体技术结论。"
+        f"{safe_goal}。如果没有直接经历，可以结合练习或说明你会如何"
+        "收集证据；请区分实际做过的事和设想，不需要猜测具体技术结论。"
     )

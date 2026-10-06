@@ -82,11 +82,15 @@ ReportView 的 `root_assessments[].question_text/answers[]` 只读关联该场�
 
 服务端所有列表有明确 order_by，不依赖 SQLite 偶然返回顺序。测试数据与真实数据使用独立目录/数据库。前端 refresh 从服务端快照恢复，不从上一个用户的 React 内存拼凑资料。
 
+资料组合视图的 revision、快照激活状态、claims 与 documents 必须由同一仓储读取事务组装。SQLite 的旧式驱动事务模式不会为 SELECT 自动 BEGIN，因此该读取显式开启事务，避免并发 facts 提交后出现旧 revision 搭配新 claim、下一次确认误报 409。
+
 ## 8. 业务库与知识索引的双存储一致性
 
 SQLite 保存权威资料与引用；索引是可重建副本，二者不能假设跨库原子事务。
 
 入库采用 `pending → indexing → ready/failed`，由独立 `profile_snapshot_activation` 而非 Document 全局状态承担门禁。confirm 在一个事务中受理裁决、revision、快照、activation 和 Operation；后台仅在 generation/source_ids 完整匹配后置 ready。失败 retry 复用同一快照，不重放裁决、不增加资料 revision；父子操作累计最多三次，禁止旧代或兄弟分叉。检索只接受该快照允许的 source IDs。
+
+`indexing` 在 Knowledge 写入之前提交，绑定不可变快照中的 generation 与 confirmed_claim_ids，构成可恢复写入意图。即使 `add_documents` 成功后回查失败、成功 receipt 仍为空，或进程在两者之间中断，删除也能按 `${snapshot.id}:${claim.id}` 重建该代可能写入的 source_ids，并与历史成功回执取并集；不能只清理成功回执。重启恢复只把中断代标为 failed，不丢失清理依据，不改变历史 ready 代。索引删除幂等，失败或未配置 Knowledge 网关时保留业务行；必须完成来源清理后才级联删除业务数据。
 
 迁移 `e62a9f8c10bd` 只把具有同代、完整、succeeded 历史激活回执的快照回填 ready，其余 pending；不因历史 Document.ready 或快照存在而猜成功。旧库部署前必须显式迁移。pending 可通过 `/profiles/{id}/activate` 激活；queued/running 中断后 activation 变 failed，由用户显式恢复。计划/start 拒绝空快照与非 ready 代次；通用简历也拒绝空快照。
 

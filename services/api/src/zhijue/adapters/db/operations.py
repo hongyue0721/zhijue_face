@@ -15,7 +15,7 @@ from threading import Lock
 from typing import Any
 
 from jsonschema import Draft202012Validator
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -166,6 +166,35 @@ class OperationRepository:
         with Session(self._engine, expire_on_commit=False) as session:
             return session.get(Operation, operation_id)
 
+    def retry_metadata(self, operation: Operation) -> dict[str, Any]:
+        with Session(self._engine) as session:
+            automatic = session.scalar(
+                select(OperationEvent.payload).where(
+                    OperationEvent.operation_id == operation.id,
+                    OperationEvent.event_type == "operation.retry_scheduled",
+                )
+            )
+            successor = session.scalar(
+                select(Operation.id)
+                .where(Operation.parent_operation_id == operation.id)
+                .order_by(Operation.created_at, Operation.id)
+            )
+            root = self._retry_root_in_session(session, operation)
+            return {
+                "retry_trigger": (
+                    "automatic"
+                    if automatic is not None
+                    else "manual"
+                    if operation.parent_operation_id is not None
+                    else None
+                ),
+                "next_operation_id": successor,
+                "retry_reason": (
+                    automatic.get("reason") if automatic is not None else None
+                ),
+                "chain_started_at": root.created_at,
+            }
+
     def find_by_key(self, *, scope: str, idempotency_key: str) -> Operation | None:
         """幂等重放预检：受理路径先找到原操作，再决定是否解析新输入。
 
@@ -190,7 +219,11 @@ class OperationRepository:
         request_input: Any | None = None,
     ) -> Operation:
         """仅 failed/interrupted 可重试；新 ID + parent 链接，累计预算不重置。"""
-        with Session(self._engine, expire_on_commit=False) as session, session.begin():
+        with (
+            self._acceptance_lock,
+            Session(self._engine, expire_on_commit=False) as session,
+            session.begin(),
+        ):
             original = session.get(Operation, operation_id)
             if original is None:
                 raise KeyError(operation_id)
@@ -211,13 +244,14 @@ class OperationRepository:
         idempotency_key: str | None = None,
         request_input: Any | None = None,
     ) -> Operation:
-        if original.status not in (
-            OperationStatus.FAILED,
-            OperationStatus.INTERRUPTED,
-        ):
-            raise ValueError(f"retry not allowed from {original.status}")
-        if original.attempts >= max_attempts:
-            raise ValueError("retry budget exhausted")
+        # Lock the logical root before reading successors/budget, including
+        # callers using different repositories and historical fork branches.
+        root = OperationRepository._retry_root_in_session(session, original)
+        session.execute(
+            update(Operation)
+            .where(Operation.id == root.id)
+            .values(updated_at=Operation.updated_at)
+        )
         retry_scope = f"{original.scope}#retry_of_{original.id}"
         retry_key = idempotency_key or original.idempotency_key
         retry_input_hash = (
@@ -235,6 +269,21 @@ class OperationRepository:
             if existing.input_hash != retry_input_hash:
                 raise IdempotencyConflict(retry_key)
             return existing
+        if original.status not in (
+            OperationStatus.FAILED,
+            OperationStatus.INTERRUPTED,
+        ):
+            raise ValueError(f"retry not allowed from {original.status}")
+        if (
+            session.scalar(
+                select(Operation.id).where(Operation.parent_operation_id == original.id)
+            )
+            is not None
+        ):
+            raise ValueError("retry must target the latest operation")
+        attempts = OperationRepository.logical_attempts_in_session(session, original)
+        if attempts >= max_attempts:
+            raise ValueError("retry budget exhausted")
         clone = Operation(
             id=new_id("operation"),
             kind=original.kind,
@@ -252,7 +301,80 @@ class OperationRepository:
         session.refresh(clone)
         return clone
 
+    @staticmethod
+    def _retry_root_in_session(session: Session, operation: Operation) -> Operation:
+        root = operation
+        visited = {root.id}
+        while root.parent_operation_id is not None:
+            parent = session.get(Operation, root.parent_operation_id)
+            if parent is None or parent.id in visited:
+                raise ValueError("invalid retry ancestry")
+            visited.add(parent.id)
+            root = parent
+        return root
+
+    @staticmethod
+    def logical_attempts_in_session(session: Session, operation: Operation) -> int:
+        """Count calls and queued reservations across all historical branches."""
+        root = OperationRepository._retry_root_in_session(session, operation)
+        total = root.attempts
+        frontier = [root]
+        visited = {root.id}
+        while frontier:
+            parents = {item.id: item for item in frontier}
+            frontier = list(
+                session.scalars(
+                    select(Operation).where(Operation.parent_operation_id.in_(parents))
+                )
+            )
+            for child in frontier:
+                if child.id in visited:
+                    raise ValueError("invalid retry ancestry")
+                visited.add(child.id)
+                # Counters inherit their parent's calls; queued successors also
+                # reserve their next call until they run or are interrupted.
+                total += max(
+                    int(child.status == OperationStatus.QUEUED),
+                    child.attempts - parents[child.parent_operation_id].attempts,
+                )
+        return total
+
     # ---- 状态与事件 -------------------------------------------------------
+
+    def start(self, operation_id: str) -> bool:
+        """Claim queued work once and publish its start in the same transaction."""
+        with Session(self._engine) as session, session.begin():
+            claimed = session.execute(
+                update(Operation)
+                .where(
+                    Operation.id == operation_id,
+                    Operation.status == OperationStatus.QUEUED,
+                )
+                .values(
+                    status=OperationStatus.RUNNING,
+                    attempts=Operation.attempts + 1,
+                    updated_at=utc_now_rfc3339(),
+                )
+            )
+            if claimed.rowcount != 1:
+                return False
+            operation = session.get(Operation, operation_id)
+            self.append_event_in_session(
+                session,
+                operation.id,
+                "operation.started",
+                {"kind": operation.kind, "resource_id": operation.resource_id},
+            )
+            return True
+
+    def fail_in_session(
+        self, session: Session, operation: Operation, error: dict[str, Any]
+    ) -> None:
+        self.append_event_in_session(session, operation.id, "operation.failed", error)
+        ensure_transition(OperationStatus(operation.status), OperationStatus.FAILED)
+        operation.status = OperationStatus.FAILED
+        operation.error = error
+        operation.updated_at = utc_now_rfc3339()
 
     def transition(self, operation_id: str, target: OperationStatus) -> Operation:
         with Session(self._engine, expire_on_commit=False) as session, session.begin():

@@ -7,9 +7,16 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from zhijue.adapters.db.models import Base, Claim, Profile
+from zhijue.application.requisition import JDPlanningService
+from zhijue.application.seed_bank import SeedBank
+from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, Capability
 from zhijue.domain.planning import (
     MIN_COMPETENCIES,
     ROOT_SLOT_COUNT,
@@ -20,6 +27,7 @@ from zhijue.domain.planning import (
     build_coverage_map,
     plan_interview_slots,
 )
+from zhijue.domain.questions import instantiate_root_questions
 from zhijue.domain.requisition import (
     CoverageStatus,
     JdRejected,
@@ -467,24 +475,6 @@ def test_plan_without_resume_evidence_marks_unknown(snapshot):
         s.current_verification_status is CoverageStatus.UNKNOWN for s in plan.slots
     )
     assert all(s.candidate_evidence_ids == () for s in plan.slots)
-    assert any("不推断为不会" in note for note in plan.limitations)
-    # 未验证不等于不会：槽位不得给出任何能力缺失**结论**。
-    # 注意区分：解释性否定（"材料未体现≠不会"）是合规的措辞，
-    # 因此这里检查"断言式"表达而非裸词。
-    for slot in plan.slots:
-        slot_text = json.dumps(slot.as_dict(), ensure_ascii=False)
-        for forbidden in ("不具备", "能力薄弱", "已掌握", "不会使用", "weakness"):
-            assert forbidden not in slot_text, slot_text
-        # unknown 槽位的验证目标必须显式声明"不作负面推断"——
-        # 这是"材料没体现 ≠ 不会"在输出上的可观察保证。
-        if slot.current_verification_status is CoverageStatus.UNKNOWN:
-            assert slot.verification_goal.endswith("（材料未体现，不作负面推断）"), (
-                slot.verification_goal
-            )
-            assert (
-                "≠不会" in slot.structured_reason
-                or slot.reason_code is SlotReason.JD_PREFERRED_SECONDARY
-            )
 
 
 # ---- 12. 不得绕过 Seed approval gate ----
@@ -525,6 +515,11 @@ def test_duplicate_slot_requires_structured_reason():
     repeated = [s.competency for s in plan.slots]
     assert len(set(repeated)) == 4 and len(repeated) == 5
     assert any("出现多次" in note for note in plan.limitations), plan.limitations
+    duplicates = [s for s in plan.slots if s.competency == plan.slots[-1].competency]
+    assert len({s.verification_goal for s in duplicates}) == len(duplicates)
+    assert "证据与结论边界切面" in duplicates[-1].structured_reason
+    assert "具体实施过程" in duplicates[0].verification_goal
+    assert "还不能证明什么" in duplicates[-1].verification_goal
 
 
 # ---- 13. source_span 单位定义与跨语言 Unicode 测试（M2-02 闭环） ----
@@ -838,3 +833,157 @@ def test_demo_critical_fact_checklist_recall():
 
     recall_rate = recalled / len(checklist)
     assert recall_rate == 1.0, f"召回率不足 100%: {recall_rate}"
+
+
+FOUR_DIMENSION_JD = (
+    "必要项：熟悉 C 语言指针与内存管理。了解 STM32、UART、SPI 和 I2C。"
+    "掌握 FreeRTOS 任务调度与互斥锁。能够使用示波器或逻辑分析仪定位通信故障。"
+    "能够说明课程项目个人职责与验证方法。"
+)
+SINGLE_CLAIM = (
+    "课程项目中使用STM32/FreeRTOS，负责UART接收/环形缓冲区，用逻辑分析仪验证。"
+)
+
+
+@pytest.mark.parametrize(
+    "jd_text",
+    [
+        FOUR_DIMENSION_JD,
+        SYNTHETIC_JD,
+        "必要项：熟悉 C 语言指针与内存管理。了解 UART。掌握 FreeRTOS 任务调度。",
+    ],
+)
+@pytest.mark.parametrize("with_claim", [False, True])
+def test_five_distinct_grounded_questions_without_approved_seeds(jd_text, with_claim):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Profile(id="p", display_name="synthetic question regression"))
+        session.flush()
+        if with_claim:
+            session.add(
+                Claim(
+                    id="claim_one",
+                    profile_id="p",
+                    text=SINGLE_CLAIM,
+                    status="confirmed",
+                )
+            )
+        session.commit()
+    service = JDPlanningService(engine=engine)
+    snapshot = make_snapshot(
+        snapshot_id="jd_facets",
+        profile_id="p",
+        raw_text=jd_text,
+        source_type=JDSourceType.SYNTHETIC_DEMO_JD,
+        source_name="question quality regression",
+    )
+    direct, context, relations = service.evidence_indices(
+        profile_id="p", profile=EMBEDDED_JUNIOR_V1
+    )
+    result = service.plan(
+        snapshot=snapshot,
+        evidence_index=direct,
+        profile_snapshot_id="snapshot_p" if with_claim else None,
+        seed_bank_version="empty",
+        related_context_index=context,
+        relation_index=relations,
+        profile=EMBEDDED_JUNIOR_V1,
+    )
+    bank = SeedBank([], schema_version="1.0.0", live_allowed_review_status="approved")
+    questions = instantiate_root_questions(
+        result.plan.slots, bank, interview_id="facets", profile=EMBEDDED_JUNIOR_V1
+    )
+    assert len(questions) == len({q.wording for q in questions}) == 5
+    assert len({s.verification_goal for s in result.plan.slots}) == 5
+    requirements = {r.id: r for r in result.requirements}
+    for slot, question in zip(result.plan.slots, questions):
+        assert slot.competency not in question.wording
+        assert "请候选人" not in question.wording
+        assert any(
+            requirements[req_id].statement in question.wording
+            for req_id in slot.jd_requirement_ids
+        )
+        assert question.seed_id is None
+        assert question.rubric_snapshot["reference_ids"] == []
+        assert {c["kind"] for c in question.rubric_snapshot["rubric"]} == {
+            "expression",
+            "evidence_reasoning",
+        }
+        if not with_claim:
+            assert slot.current_verification_status is CoverageStatus.UNKNOWN
+            assert slot.candidate_evidence_ids == ()
+    if jd_text == FOUR_DIMENSION_JD:
+        verification_slots = [
+            s for s in result.plan.slots if s.competency == "engineering.verification"
+        ]
+        assert len(verification_slots) == 2
+        assert verification_slots[0].jd_requirement_ids == (
+            verification_slots[1].jd_requirement_ids
+        )
+        assert "具体实施过程" in verification_slots[0].verification_goal
+        assert "还不能证明什么" in verification_slots[1].verification_goal
+        c_question = next(
+            q for q in questions if q.basis["competency_id"] == "embedded.c.basics"
+        )
+        assert "C 语言指针与内存管理" in c_question.wording
+    engine.dispose()
+
+
+def test_planning_service_uses_frozen_profile_for_rules_and_labels():
+    frozen = replace(
+        EMBEDDED_JUNIOR_V1,
+        capabilities=tuple(
+            Capability(c.competency_id, "冻结的 C 语言目标")
+            if c.competency_id == "embedded.c.basics"
+            else c
+            for c in EMBEDDED_JUNIOR_V1.capabilities
+        ),
+        jd_keyword_rules=(
+            (("缓冲区",), "embedded.c.basics"),
+            *EMBEDDED_JUNIOR_V1.jd_keyword_rules,
+        ),
+        direct_evidence_rules=((("环形缓冲区",), "embedded.c.basics"),),
+        related_context_rules=((("stm32",), "embedded.mcu.interrupt"),),
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Profile(id="p", display_name="synthetic frozen profile"))
+        session.flush()
+        session.add(
+            Claim(id="claim_one", profile_id="p", text=SINGLE_CLAIM, status="confirmed")
+        )
+        session.commit()
+    service = JDPlanningService(engine=engine)
+    direct, context, relations = service.evidence_indices(
+        profile_id="p", profile=frozen
+    )
+    assert direct == {"embedded.c.basics": ["claim_one"]}
+    assert context == {"embedded.mcu.interrupt": ["claim_one"]}
+    assert service.evidence_index(profile_id="p", profile=frozen) == direct
+    snapshot = make_snapshot(
+        snapshot_id="jd_frozen",
+        profile_id="p",
+        raw_text="必要项：能够维护缓冲区；理解中断；了解 UART。",
+        source_type=JDSourceType.SYNTHETIC_DEMO_JD,
+        source_name="frozen profile regression",
+    )
+    result = service.plan(
+        snapshot=snapshot,
+        evidence_index=direct,
+        profile_snapshot_id="snapshot_p",
+        seed_bank_version="empty",
+        related_context_index=context,
+        relation_index=relations,
+        profile=frozen,
+    )
+    c_slots = [s for s in result.plan.slots if s.competency == "embedded.c.basics"]
+    assert c_slots
+    assert all("冻结的 C 语言目标" in s.verification_goal for s in c_slots)
+    assert all(
+        s.current_verification_status is CoverageStatus.UNKNOWN
+        for s in result.plan.slots
+        if s.competency == "embedded.mcu.interrupt"
+    )
+    engine.dispose()

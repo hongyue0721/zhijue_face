@@ -155,6 +155,8 @@ class Interview(TimestampMixin, Base):
     pack_release_id: Mapped[str | None] = mapped_column(String(64))
     pack_content_digest: Mapped[str | None] = mapped_column(String(80))
     competency_profile_id: Mapped[str | None] = mapped_column(String(64))
+    # NULL means legacy audit scope unknown; never infer it from today's review.
+    pack_review_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
 class Question(TimestampMixin, Base):

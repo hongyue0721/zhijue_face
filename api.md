@@ -8,6 +8,8 @@
 
 **岗位知识包轮次（2026-09-25）**：新增 §9 `GET /knowledge-packs`、`GET /knowledge-packs/{release_id}`、`POST /knowledge-packs/import`（multipart + Idempotency-Key，202 异步）与 `knowledge_pack.import` Operation kind；`POST /interviews` 增加可选 `pack_release_id`，`InterviewView` 增加冻结摘要 `knowledge_pack`，`/runtime/info` 增加 `knowledge_packs` 增量。迁移 `a7c4e1f29b58` 建 `knowledge_pack_release/review/import` 三表并为 `interview` 增加三个可空绑定列；旧行保持 null（`legacy_unresolved`），不回填捏造。HTTP 面无“全局激活”写接口。
 
+**恢复与冻结修复（2026-10-03）**：Profile 组合视图以同一数据库读取快照返回 revision、事实及资料；新迁移 `c91f8b34d602` 保存面试受理时的审核身份与批准 Seed 范围。重试按持久化逻辑操作根串行受理，拒绝旧题回退和兄弟分叉；内容生成重启恢复同时检查业务资源与 Operation。健康接口增加 `content_generation` 能力事实。
+
 ## 1. 全局约定
 
 Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_..."}}`。Content-Type 为 `application/json; charset=utf-8`，上传除外。所有网络 DTO 字段为 snake_case；时间 RFC3339 UTC；ID 为不透明字符串。
@@ -60,7 +62,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 `InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations、knowledge_pack。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`knowledge_pack` 是该场受理时冻结的摘要：`{binding:"frozen"|"frozen_unavailable"|"legacy_unresolved", pack_release_id, pack_id, name, version, content_digest, competency_profile_id}`；旧记录无可证实绑定时 binding=`legacy_unresolved` 并附说明 note，绝不从“当前默认包”倒推或捏造版本。`jd_text` 只读返回该会话冻结的岗位输入原文，供准备页刷新后核对与修改；仅历史记录确未保存原文时为 null，不从 requirements 拼造原文，不写浏览器持久存储。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
 
-`OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、attempts、result、error、last_event_seq、created_at、updated_at。
+`OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、retry_trigger、retry_reason、next_operation_id、attempts、attempt_limit、chain_started_at、result、error、last_event_seq、created_at、updated_at。`retry_trigger` 为 `automatic / manual / null`：自动来源以持久化 `operation.retry_scheduled` 为准，普通 parent-linked retry 为 manual，原操作为 null。`retry_reason` 为该自动事件记录的 `transient / correction / null`，不从错误文案猜测。`chain_started_at` 为逻辑原操作的 created_at；`attempt_limit` 为回答分析、回答优化和简历生成的当前实际模型总额度，其他操作为 null。`next_operation_id` 指向已受理的唯一直接后继，没有后继时为 null；它不修改原操作的失败状态。attempts 是累计已开始的尝试数，queued 后继尚未开始时继承父值。
 
 `OperationAccepted`：operation_id、resource_type、resource_id、status=`queued` 或原操作真实状态、events_url。重放幂等请求时仍返回原操作状态；不得伪装为新 queued。
 
@@ -102,7 +104,9 @@ confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必�
 
 `ResumeDraftView` 精确字段：`id / revision / profile_id / profile_snapshot_id / interview_id / status / sections / source_claims / source_claim_ids / changes / missing_facts / cautions / target_context / active_operation_id / run_metadata`。status 只取 `generating / generation_failed / draft / accepted`；`generation_failed` 时 `active_operation_id` 保留失败链尾操作作为跨刷新恢复键（可 GET 并走 `/retry`），只有 succeeded 后清 null。`sections[]` 为 `{section_id,title,items:[{item_id,text,claim_ids}]}`；每个实质 item 至少绑定一个当前快照内 confirmed Claim。`source_claims[]` 只返回 `{id,text}`，用于人工 diff；`changes[]` 为 `{item_id,before,after,claim_ids,reason}`，before 由服务端按绑定 Claim 生成，不信任模型回填原文。
 
-jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事实。提供 interview_id 时使用该会话冻结的 JD，且该会话的 profile_snapshot_id 必须与请求一致；两者都不提供时生成通用单模板。生成失败保留 draft 行和 operation，status=`generation_failed`，通过 `/operations/{id}/retry` 恢复，不重新创建第二份草稿。
+jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事实。提供 interview_id 时使用该会话冻结的 JD，且该会话的 profile_snapshot_id 必须与请求一致；两者都不提供时生成通用单模板。首次生成失败满足下文自动恢复条件时，沿原链受理一次自动后继；没有可执行的自动后继时保留 draft 行与失败链尾，status=`generation_failed`，通过 `/operations/{id}/retry` 在剩余额度内恢复，不重新创建第二份草稿。
+
+创建简历的同 scope、Idempotency-Key、规范化输入重放，始终返回原创建 OperationAccepted（包括原 events_url），不因自动/手动后继或草稿状态变化而换成链尾回执；恢复进度通过 next_operation_id 和资源快照读取。重放先于可变资源校验；同键不同输入仍返回 409 IDEMPOTENCY_CONFLICT。不同键的同目标去重不重置预算、不创建第二份草稿。
 
 浏览器只允许对 `accepted` 草稿进入打印样式；打印内容必须可选中、长文本不截断，不输出 missing_facts、cautions 或未确认占位符。P0 没有服务端 PDF 字节导出接口。
 
@@ -120,13 +124,19 @@ jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事�
 
 end 在回答操作进行中也可受理：服务端原子记录 `stop_requested=true` 和唯一结束 operation；不再接受新答案、不再向 InterviewView 暴露待答问题，结束 operation 在当前回答安全释放后串行汇总。结束不保证远端调用立即取消或退费。重复 end 返回同一 operation。skip 仅在没有 active operation 且仍有 current_question 时受理：跳过主问题会使该根题 `status=skipped`、`score=null`；跳过追问保留该根题已有 Observation，但整场 `completion=incomplete`。两种 control 都不调用模型。
 
+已受理的 end 若排队等待期间由最后一题 skip/answer 完成同一报告，end 成功复用该已持久化 report_id，不产生矛盾的 INVALID_STATE、不再评分或创建报告。该收敛只作用于已受理操作；completed 会话的新结束命令仍拒绝，既有同键重放及同输入 end 去重保持原回执。
+
 role_preset P0 只支持 `embedded_junior`。JD 不提供时使用显著标注的预置（`SYNTHETIC_DEMO_JD`）；不将其称为某企业真实招聘要求。JD 最多 8,000 字符。五主问题与追问上限由服务端配置，客户端不得无限增加。
 
 `pack_release_id`（`kpr_` + 16 hex）为可选：省略 = 服务端在受理瞬间解析默认岗位包。无论显式或默认，release ID、内容摘要与能力配置 ID 都在受理时冻结进 Interview；后续默认变化、包被替换或损坏都不改变本场。未审核/被拒/损坏/能力配置未注册的包在受理前同步返回 409（`PACK_REVIEW_PENDING`/`PACK_REVIEW_REJECTED`/`PACK_CONTENT_*`/`COMPETENCY_PROFILE_UNSUPPORTED`），不进入后台。幂等重放按 §1 先找回原操作返回受理结果：客户端未显式给 `pack_release_id` 时，服务端解析出的默认值不参与输入 hash，避免“默认变化导致重放误报冲突”。
 
+冻结绑定还包含受理时的审核记录、审核内容摘要和逐 Seed 批准范围（内部 `pack_review_snapshot`）。受理后的审核撤销或范围变更只影响新面试，不能重新解释旧场次的题库资格。旧行的审核快照保持 null，不用今天的审核倒填历史事实；缺少可证实审核绑定时不得启动或继续生成依赖该绑定的新题，已有报告仍可读取。相同幂等键必须比对规范化的显式输入：JD、revision、显式 release 或选项变化返回 `IDEMPOTENCY_CONFLICT`；合法重放不重新解析默认包。
+
 开始面试（`POST /interviews/{id}/start`）只按本场冻结绑定解析岗位包：绑定 release 内容与登记摘要不符返回 409 并明确失败，绝不回落其他包顶替；`legacy_unresolved` 记录不允许再开始新回答流程，原报告仍可读。
 
 开始面试时，服务端按五个冻结 slot 逐一实例化根问题：优先绑定同 competency 的 approved Seed；`embedded.rtos.fundamentals` 只允许映射到未重复使用的 approved `embedded.rtos.*` Seed。没有相符 Seed 时，退回经历/证据表达题并令 `seed_id=null`，其 Rubric 不评价无技术参考支持的技术正确性。不得为了凑五题绑定无关 Seed，也不得把回退题冒充经 Level 2 审核的技术题。
+
+同场规划优先覆盖不同能力；能力不足五类时，仅以该能力的不同验证切面补足，不能循环复制同一道泛化题。回退题面保留注册能力的中文名称、真实岗位要求和验证切面；缺失技术参考不会被包装为已批准技术题。
 
 来源类型由服务端根据可信输入路径决定，客户端不能仅凭枚举把 JD 升格为真实来源：
 
@@ -153,7 +163,7 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 - 每个 `improved_answers[]` 为 `{root_question_id,original_answers,rewritten_answer,segments,used_claim_ids,changes,missing_facts,cautions}`。`original_answers[]` 保留 `{answer_id,question_id,question_kind,raw_text}`；`segments[]` 的每段必须绑定当前根题回答 exact_quote 或当前 ProfileSnapshot 的 confirmed claim_id，服务端校验 ID、精确引文、数值与责任边界后才提交。
 - `run_metadata` 的评分部分只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`。回答优化成功后追加 `content_generation={run_mode,workflow,workflow_version,prompt_version,generator,usage}`；未知模型、SDK 或 usage 字段为 null，不填造默认值。
 
-回答优化是显式异步操作，不与结束评分绑成一次隐式模型调用。它使用真实 openJiuwen `Start → Generator → SemanticValidation → End` Workflow；模型只生成候选文案，不能改 Assessment/score。失败时 Report 保留且 `improvements_status=failed`；retry 复用同一 Report 与输入快照。缺失数字、职责或实验事实必须进入 missing_facts/cautions，不得进入 rewritten_answer。
+回答优化的首次生成是显式异步操作，不与结束评分绑成一次隐式模型调用。它使用真实 openJiuwen `Start → Generator → SemanticValidation → End` Workflow；模型只生成候选文案，不能改 Assessment/score。首次可恢复失败允许一次自动后继；自动处理终止且仍失败时 Report 保留且 `improvements_status=failed`。自动与手动 retry 都复用同一 Report 与输入快照。缺失数字、职责或实验事实必须进入 missing_facts/cautions，不得进入 rewritten_answer。
 
 根题计算严格采用冻结 Rubric：可评分项为 level 属于 0—3 且 finding 不为 `not_assessable/disputed` 的 criterion；`coverage=sum(可评分权重)/sum(冻结权重)`。可评分集合为空、coverage<0.60 或存在 disputed criterion 时根题 score=null。否则 `score=round_half_up(100 * sum(weight*level/3)/sum(可评分权重))`。至少三根题 `status=scored` 才提供 overall_score，按各根题等权算术平均并 `round_half_up`；JD priority 不进入分数。Report 与 Assessment 在同一事务落库，每场只允许一份；`report.ready` 与业务状态同事务追加。GET 无报告时返回 409 `REPORT_NOT_READY`，不得现场补算或重复调用模型。
 
@@ -168,11 +178,25 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 | GET `/health/live` | 无 | 200 {status:"ok"} |
 | GET `/health/ready` | 无 | 200 ready 或 503 not_ready |
 
-retry 仅 failed/interrupted 且 retryable 的操作允许；输入、快照和题目不变。`knowledge_pack.import` 的 retry 复用同一上传回执（后台输入持久在受控 runtime 目录）与 parent 链累计预算（最多三次）；回执字节丢失返回 `PACK_UPLOAD_INPUT_LOST` 并要求重新上传同一文件（内容 digest 去重保证不会登记第二份）。`GET /operations/{id}` 的 `error.retryable` 表示当前配置下是否仍可执行恢复动作：负责人显式提高 `MODEL_MAX_RETRIES` 后，既有 `interview.answer` 的 `UPSTREAM_FAILED / UPSTREAM_TIMEOUT` 可在新预算内重新开放，其他业务失败不会因此变成可重试。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
+retry 仅 failed/interrupted 且当前允许恢复的操作可受理；输入、快照和题目不变。`knowledge_pack.import` 的 retry 复用同一上传回执（后台输入持久在受控 runtime 目录）与 parent 链累计预算（最多三次）；回执字节丢失返回 `PACK_UPLOAD_INPUT_LOST` 并要求重新上传同一文件（内容 digest 去重保证不会登记第二份）。interview 操作用 Interview revision，回答优化用 Report revision，简历生成用 ResumeDraft revision。目标被修改/删除、已由其他操作推进或草稿已经 accepted 时返回 409，不悄悄覆盖新状态。
+
+`GET /operations/{id}` 的 `error.retryable` 表示当前可执行的恢复动作，不只是错误原因是否瞬时。回答优化/简历生成与 retry 受理共用链尾、整树实际尝试及排队预留、剩余预算、资源状态和归属判定；第三次执行被重启中断后不可出现可点击但必被拒绝的第四次重试。新的内容生成失败记录只保存原因本身的可恢复性，GET 按当前策略投影，不重写历史失败；历史已记为不可恢复且缺少独立证据的内容错误不猜成可恢复。负责人提高 `MODEL_MAX_RETRIES` 后，可恢复原因仍需满足其他条件及三次硬上限。
+
+一次模型 Operation 只发一次 HTTP 请求；`MODEL_MAX_RETRIES` 表示同一 logical_operation 可额外创建的 parent-linked retry 数，父子所有 transport/Schema/语义失败合计最多 `MODEL_MAX_RETRIES + 1` 次且硬上限为三次，不能以隐藏 transport retry 或换 Idempotency-Key 绕过额度。
+
+同键重放返回已创建的原 retry；不同键不得从已有子节点的旧父操作再开兄弟分支。预算计入整棵历史重试树的实际尝试和已排队预留，不重置旧分叉记录。回答和 skip 重试受理、异步结果提交都必须仍对应当前题及合法面试状态；即使携带最新 revision，也不能重试已经跳过的旧题或重开 completed 会话。已接受 END 后失败的报告收尾仍可按原操作恢复。
+
+`report.coach / resume.compose` 的原始操作首次失败、原因可恢复且预算允许时，服务端最多自动受理一个后继；自动后继和之后的手动 retry 不再触发自动 retry。瞬时网络错误、超时、HTTP 429/5xx 采用一次短暂退避；候选 JSON、Schema、引用或事实边界错误携带具体校验代码与位置定向修正，再执行原有完整门禁。认证、权限、非法配置及缺失事实来源等不可恢复失败不自动重试；缺失事实不补造。上次候选输出与修正上下文仅在进程内存中传递，不写入 Operation、事件或公开错误。
+
+原操作失败、自动子操作受理、`operation.retry_scheduled` 与业务资源的 active_operation_id 在同一事务发布，客户端不会看到“最终失败已公开但自动后继尚未受理”的间隙。自动后继复用 runner 槽位但拥有独立 operation_id，仍共享 `MODEL_MAX_RETRIES + 1` 总预算和每次执行 deadline；失败记录不覆盖。刷新只 GET 当前链尾，不发起新调用。重启将尚未完成的尝试标为 interrupted，后续由用户在剩余预算内明确恢复，不从内存丢失的候选内容静默重放。本自动策略不扩展至文件重传或面试回答分析。
+
+重启恢复扫描 Report 的 `generating` 和 ResumeDraft 的 `generating` 状态及其操作指针，而不只扫描本次被标 interrupted 的 Operation；因此“Operation 已 failed、业务清理写回失败”也能收敛为可观察失败并保留原恢复键。重复恢复不会反复增加 revision。
 
 资料确认/激活 operation retry 使用当前 Profile revision，并校验目标仍是最新快照；每个逻辑激活最多三次尝试，换 Idempotency-Key 不重新开启预算。恢复只作用于原代次 Knowledge，不重复确认事实。上传原始字节不持久化，`document.import` 失败不可通过通用 `/retry` 重放，error.retryable=false，页面明确提供重新选择并上传文件的恢复方式；网络受理结果不明确时，同一已选文件与原请求 body/Idempotency-Key 必须复用，不擅自新建一次模型调用。
 
 健康接口不返回个人数据或密钥；readiness 检查已初始化依赖状态，不每请求调用付费模型。runtime/info 只有 model ID 和配置指纹，不暴露 base URL 中 token/query、真实 key 或内部存储路径。
+
+`GET /health/ready` 的 `content_generation` 为 `configured` 或 `absent`，只说明实际内容生成适配器是否配置，不代表已完成一次模型调用。前端按此字段限制回答优化、简历生成及相应重试；不得仅由 fixture/live 模式推断能力。已有报告读取与已生成草稿确认不受该能力缺失影响。
 
 ## 8. SSE 规范
 
@@ -185,7 +209,7 @@ data: {"schema_version":"1.0.0","operation_id":"operation_example","seq":7,"payl
 
 ```
 
-事件类型：`operation.started`、`node.started`、`node.completed`、`policy.decided`、`question.ready`、`report.ready`、`coaching.ready`、`resume_draft.ready`、`operation.completed`、`operation.failed`、`operation.interrupted`。
+事件类型：`operation.started`、`operation.retry_scheduled`、`node.started`、`node.completed`、`policy.decided`、`question.ready`、`report.ready`、`coaching.ready`、`resume_draft.ready`、`operation.completed`、`operation.failed`、`operation.interrupted`。`operation.retry_scheduled` 写在自动后继上，payload 为 `{parent_operation_id,trigger:"automatic",reason:"transient"|"correction"}`，不含候选正文。既有 `operation.started` 的 `{kind,resource_id}` 形状不变。
 
 P0 不推送未验证的模型 token，因此不会先把错误前提渲染给用户再撤回。节点状态可以即时出现；问题通过来源校验并持久化后才发 question.ready。确有需要再添加独立 P1 token 流，不改变业务事件语义。
 
@@ -209,13 +233,15 @@ P0 不推送未验证的模型 token，因此不会先把错误前提渲染给�
 
 契约要点：
 
-- 无“全局激活”写接口。默认包只影响新创建的面试；已创建面试使用其冻结绑定（§6）。
+- 无“全局激活”写接口。默认 release 固定为当前进程启动时登记的内置资产，不按最新导入版本查找；导入同一 pack_id 的新版本不得改变默认值。选择只影响新创建的面试；已创建面试使用其冻结绑定（§6）。
 - 导入幂等：相同 key + 相同上传内容 hash 复用原操作；相同 key 不同内容返回 409 `IDEMPOTENCY_CONFLICT`。相同内容不同 ZIP 重打包按内容 digest 去重复用原 release（`result.reused=true`），不生成第二项；同 `(pack_id, version)` 不同内容返回 409 `PACK_VERSION_CONFLICT`，禁止覆盖旧包。
 - 上传限制由 `config/demo.yaml knowledge_packs.limits` 集中声明（ZIP 5 MiB、解压 20 MiB、单文件 1 MiB、条目 256、压缩比 50、路径深度 5）；超限 413 `PACK_UPLOAD_TOO_LARGE`；ZIP 内绝对路径/`..`/符号链接/设备文件/加密条目/声明外文件全部拒绝（`PACK_PATH_*`/`PACK_SYMLINK_FORBIDDEN`/`PACK_ENCRYPTED`/`PACK_UNDECLARED_FILE` 等，422 类不可重试修复）。
+- 普通 ZIP 目录条目（例如 `seeds/`）经过路径和类型校验后允许存在，不作为内容文件计入摘要；目录与文件同名冲突、路径穿越等仍拒绝。是否可用只由实际声明文件与内容校验决定。
 - ZIP manifest 里的 `approved` 只是作者声明，服务端一律从 `unreviewed` 开始。有效审核 = 绑定当前 `content_digest` 的包外负责人记录 ∩ Seed 内容 hash 批准范围；批准经 `scripts/manage_knowledge_pack.py` CLI 由负责人登记，HTTP 面不提供自批接口。
 - Operation result：`{release_id, pack_id, version, content_digest, reused, review_status, selectable_for_new_interview}`。导入成功 ≠ 可用于技术评分。
 - 列表/详情/导入不依赖模型或候选人 embedding 就绪；没有可用包时这些入口仍可访问，仅“生成面试”能力不就绪（`/health/ready` 的 `knowledge_packs` 与 `default_pack_release_id` 增量报告）。
-- 内置 embedded-software-junior release 由启动时 `ensure_builtin` 登记，批准范围锁定为 M2-01 负责人已批的六条 Seed 原内容（逐条内容 hash）；内置目录新增 Seed 不会自动获批。
+- 内置 embedded-software-junior release 由启动时 `ensure_builtin` 登记，批准范围锁定为 M2-01 负责人已批六条 Seed 的固定历史版本与内容 hash；不从本次待导入文件重新计算“可信批准值”。新增或修改的内置 Seed 不会自动获批。
+- 列表与详情读取实际存储并重新核对内容摘要；损坏、缺失或不合法时 `validation_status=failed`、`selectable=false`，附真实阻断原因与完整性失败明细。历史审核记录不因损坏被改写，也不能替损坏内容取得当前使用资格；面试受理与恢复仍独立复查，不依赖浏览器标签作安全判断。
 
 ## 10. 示例业务请求
 

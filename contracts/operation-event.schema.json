@@ -18,6 +18,7 @@
     "event_type": {
       "enum": [
         "operation.started",
+        "operation.retry_scheduled",
         "node.started",
         "node.completed",
         "policy.decided",
@@ -69,6 +70,36 @@
               "kind",
               "resource_id"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "operation.retry_scheduled"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "parent_operation_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{2,127}$"
+              },
+              "trigger": {
+                "const": "automatic"
+              },
+              "reason": {
+                "enum": ["transient", "correction"]
+              }
+            },
+            "required": ["parent_operation_id", "trigger", "reason"]
           }
         }
       }

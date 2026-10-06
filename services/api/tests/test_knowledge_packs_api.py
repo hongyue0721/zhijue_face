@@ -196,6 +196,57 @@ def test_import_is_async_unreviewed_and_not_selectable(client):
     assert aux["approved_seed_count"] == 0
 
 
+def test_importing_new_default_pack_version_does_not_activate_it(client, tmp_path):
+    default_id = client.get("/api/v1/knowledge-packs").json()["data"][
+        "default_pack_release_id"
+    ]
+    imported = import_pack(
+        client,
+        aux_pack_zip(pack_id="embedded-software-junior", version="1.0.1"),
+        "default-version-import",
+    )
+    result = wait_operation(client, imported["operation_id"])
+    assert result["status"] == "succeeded"
+    assert result["result"]["review_status"] == "unreviewed"
+    assert result["result"]["release_id"] != default_id
+    assert (
+        client.get("/api/v1/knowledge-packs").json()["data"]["default_pack_release_id"]
+        == default_id
+    )
+
+    config = AppConfig(
+        run_mode="fixture",
+        database_url=f"sqlite:///{tmp_path / 'packs.db'}",
+        runtime_dir=tmp_path,
+        milvus_uri=tmp_path / "knowledge.db",
+    )
+    with TestClient(create_app(config, knowledge=InMemoryKnowledge())) as restarted:
+        assert (
+            restarted.get("/api/v1/knowledge-packs").json()["data"][
+                "default_pack_release_id"
+            ]
+            == default_id
+        )
+        profile = confirmed_profile(restarted, "默认包隔离资料", "default-version")
+        response = restarted.post(
+            "/api/v1/interviews",
+            json={
+                "profile_id": profile["id"],
+                "profile_revision": profile["revision"],
+            },
+            headers={"Idempotency-Key": "default-version-plan"},
+        )
+        assert response.status_code == 202, response.text
+        accepted = response.json()["data"]
+        assert (
+            wait_operation(restarted, accepted["operation_id"])["status"] == "succeeded"
+        )
+        interview = restarted.get(
+            "/api/v1/interviews/" + accepted["resource_id"]
+        ).json()["data"]
+        assert interview["knowledge_pack"]["pack_release_id"] == default_id
+
+
 def test_import_idempotency_reuses_same_key_and_rejects_different_content(client):
     zip_bytes = aux_pack_zip()
     first = import_pack(client, zip_bytes, "pack-import-replay")
@@ -407,3 +458,49 @@ def test_legacy_interview_view_reports_unresolved_binding(client):
     assert summary["binding"] == "legacy_unresolved"
     assert summary["pack_release_id"] is None
     assert "重新创建计划" in summary["note"]
+
+
+def test_import_retry_replay_and_old_parent_cannot_add_calls(client, monkeypatch):
+    services = client.app.state.services
+    import_bytes = services.knowledge_packs.import_pack_bytes
+    calls = []
+
+    def counted_import(*args, **kwargs):
+        calls.append(kwargs["operation_id"])
+        return import_bytes(*args, **kwargs)
+
+    monkeypatch.setattr(services.knowledge_packs, "import_pack_bytes", counted_import)
+    original = import_pack(client, b"invalid-retry-chain", "import-chain-original")
+    wait_operation(client, original["operation_id"])
+    original_url = f"/api/v1/operations/{original['operation_id']}/retry"
+    child = client.post(
+        original_url,
+        json={"expected_revision": 0},
+        headers={"Idempotency-Key": "import-chain-child"},
+    )
+    assert child.status_code == 202
+    child_id = child.json()["data"]["operation_id"]
+    wait_operation(client, child_id)
+    replay = client.post(
+        original_url,
+        json={"expected_revision": 0},
+        headers={"Idempotency-Key": "import-chain-child"},
+    )
+    assert replay.status_code == 202
+    assert replay.json()["data"]["operation_id"] == child_id
+    conflict = client.post(
+        original_url,
+        json={"expected_revision": 1},
+        headers={"Idempotency-Key": "import-chain-child"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    for index in range(3):
+        sibling = client.post(
+            original_url,
+            json={"expected_revision": 0},
+            headers={"Idempotency-Key": f"import-chain-sibling-{index}"},
+        )
+        assert sibling.status_code == 409
+        assert sibling.json()["error"]["code"] == "RETRY_NOT_ALLOWED"
+    assert calls == [original["operation_id"], child_id]

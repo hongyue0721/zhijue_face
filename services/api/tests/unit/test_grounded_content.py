@@ -7,8 +7,15 @@ import json
 
 import pytest
 
-from zhijue.application.answer_workflow import AnalysisResult, ModelRequestTimeoutError
-from zhijue.application.content_workflow import run_grounded_content_workflow
+from zhijue.application.answer_workflow import (
+    AnalysisResult,
+    ModelRequestError,
+    ModelRequestTimeoutError,
+)
+from zhijue.application.content_workflow import (
+    ContentWorkflowError,
+    run_grounded_content_workflow,
+)
 from zhijue.domain.grounded_content import (
     GroundedContentValidationError,
     validate_claim_extraction_candidate,
@@ -375,3 +382,176 @@ def test_resume_accepts_grounded_items_and_derives_claim_union():
     )
 
     assert result["source_claim_ids"] == ["claim_uart"]
+
+
+@pytest.mark.parametrize(
+    ("defect", "code", "path"),
+    [
+        ("json", "invalid_json", []),
+        ("schema", "schema.required", ["items", 0, "segments", 0, "source_refs", 0]),
+        (
+            "reference",
+            "unknown_reference",
+            ["items", 0, "segments", 0, "source_refs", 0, "answer_id"],
+        ),
+        (
+            "quote",
+            "non_verbatim_quote",
+            ["items", 0, "segments", 0, "source_refs", 0, "exact_quote"],
+        ),
+        ("assertion", "unsupported_assertion", ["items", 0, "segments", 0, "text"]),
+    ],
+)
+def test_sdk_preserves_private_repair_issues_and_revalidates_correction(
+    defect, code, path, caplog
+):
+    source = "我参与了系统调试。"
+    payload = {
+        "report_id": "report_demo",
+        "answers_by_root": {"question_root": {"answer_demo": source}},
+        "allowed_claims": {},
+    }
+
+    def candidate(text=source):
+        return _coaching_candidate(
+            text,
+            refs=[
+                {
+                    "type": "answer_quote",
+                    "answer_id": "answer_demo",
+                    "exact_quote": source,
+                }
+            ],
+        )
+
+    invalid = candidate()
+    ref = invalid["items"][0]["segments"][0]["source_refs"][0]
+    if defect == "schema":
+        del ref["exact_quote"]
+    elif defect == "reference":
+        ref["answer_id"] = "foreign_answer"
+    elif defect == "quote":
+        ref["exact_quote"] = "不是原话"
+    elif defect == "assertion":
+        invalid = candidate("我负责系统调试。")
+    raw = (
+        "private_rejected_output{"
+        if defect == "json"
+        else json.dumps(invalid, ensure_ascii=False)
+    )
+
+    class Generator:
+        def __init__(self):
+            self.content = raw
+            self.payloads = []
+
+        async def generate(self, *, task, payload):
+            self.payloads.append(payload)
+            return AnalysisResult(self.content)
+
+    generator = Generator()
+
+    async def scenario():
+        with pytest.raises(ContentWorkflowError) as failed:
+            await run_grounded_content_workflow(
+                generator=generator, task="coach_answers", payload=payload
+            )
+        context = failed.value.repair_context
+        assert context["previous_output"] == raw
+        issue = next(issue for issue in context["issues"] if issue["code"] == code)
+        assert issue["path"] == path
+        if defect == "schema":
+            assert "exact_quote" in issue["missing_fields"]
+        assert raw not in str(failed.value)
+        assert raw not in repr(failed.value)
+        assert len(generator.payloads) == 1
+
+        # A correction is not permission to invent a new assertion.
+        generator.content = json.dumps(
+            candidate("我负责系统调试。"), ensure_ascii=False
+        )
+        with pytest.raises(ContentWorkflowError) as still_invalid:
+            await run_grounded_content_workflow(
+                generator=generator,
+                task="coach_answers",
+                payload=payload,
+                repair_context=context,
+            )
+        assert still_invalid.value.repair_context["issues"][0]["code"] == (
+            "unsupported_assertion"
+        )
+
+        generator.content = json.dumps(candidate(), ensure_ascii=False)
+        result = await run_grounded_content_workflow(
+            generator=generator,
+            task="coach_answers",
+            payload=payload,
+            repair_context=context,
+        )
+        assert result["candidate"]["items"][0]["rewritten_answer"] == source
+        assert generator.payloads[-1]["repair_context"] == context
+        assert {
+            key: value
+            for key, value in generator.payloads[-1].items()
+            if key != "repair_context"
+        } == payload
+        assert "repair_context" not in payload
+        assert len(generator.payloads) == 3
+
+    asyncio.run(scenario())
+    assert raw not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("task", "payload"),
+    [
+        ("compose_resume", {"draft_id": "resume_demo", "allowed_claims": {}}),
+        (
+            "coach_answers",
+            {"report_id": "report_demo", "answers_by_root": {}, "allowed_claims": {}},
+        ),
+        ("extract_claims", {"source_blocks": []}),
+    ],
+)
+def test_absent_sources_and_extraction_do_not_offer_model_correction(task, payload):
+    class Generator:
+        async def generate(self, *, task, payload):
+            return AnalysisResult("{invalid")
+
+    with pytest.raises(ContentWorkflowError) as error:
+        asyncio.run(
+            run_grounded_content_workflow(
+                generator=Generator(), task=task, payload=payload
+            )
+        )
+    assert error.value.repair_context is None
+
+
+@pytest.mark.parametrize("retryable", [True, False])
+def test_sdk_preserves_request_classification_without_another_request(retryable):
+    failure = ModelRequestError(
+        "model request failed",
+        retryable=retryable,
+        status_code=503 if retryable else 401,
+    )
+    calls = []
+
+    class Generator:
+        async def generate(self, *, task, payload):
+            calls.append(task)
+            raise failure
+
+    with pytest.raises(ModelRequestError) as error:
+        asyncio.run(
+            run_grounded_content_workflow(
+                generator=Generator(),
+                task="compose_resume",
+                payload={
+                    "draft_id": "resume_demo",
+                    "allowed_claims": {"claim": "参与调试"},
+                },
+            )
+        )
+    assert error.value is failure
+    assert error.value.retryable is retryable
+    assert len(calls) == 1

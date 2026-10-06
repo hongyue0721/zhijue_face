@@ -60,6 +60,19 @@ _CONTACT_DATA = re.compile(
 class GroundedContentValidationError(ValueError):
     """Generated candidate violates a deterministic grounding invariant."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "invalid_content",
+        path: tuple[str | int, ...] = (),
+        issues: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.issues = (
+            issues if issues is not None else [{"code": code, "path": list(path)}]
+        )
+
 
 def _contracts_root() -> Path:
     here = Path(__file__).resolve()
@@ -81,10 +94,27 @@ def _validator(filename: str) -> Draft202012Validator:
 def _validate_schema(candidate: Any, filename: str) -> dict[str, Any]:
     if not isinstance(candidate, dict):
         raise GroundedContentValidationError("generated content must be one object")
-    errors = sorted(_validator(filename).iter_errors(candidate), key=str)
+    errors = list(_validator(filename).iter_errors(candidate))
     if errors:
+        issues: list[dict[str, Any]] = []
+        pending = list(reversed(errors))
+        while pending and len(issues) < 20:
+            error = pending.pop()
+            if error.context:
+                pending.extend(reversed(error.context))
+                continue
+            issue: dict[str, Any] = {
+                "code": f"schema.{error.validator}",
+                "path": list(error.absolute_path),
+                "schema_path": list(error.absolute_schema_path),
+            }
+            if error.validator == "required" and isinstance(error.instance, dict):
+                issue["missing_fields"] = [
+                    key for key in error.validator_value if key not in error.instance
+                ]
+            issues.append(issue)
         raise GroundedContentValidationError(
-            "generated content failed its JSON Schema"
+            "generated content failed its JSON Schema", issues=issues
         ) from None
     return candidate
 
@@ -95,20 +125,26 @@ def _contains_assertion(text: str, phrase: str) -> bool:
     return phrase in text
 
 
-def _reject_unbound_assertions(text: str, source_texts: list[str]) -> None:
+def _reject_unbound_assertions(
+    text: str, source_texts: list[str], *, path: tuple[str | int, ...] = ()
+) -> None:
     combined_sources = "\n".join(source_texts)
     source_numbers = set(_NUMERIC_FACT.findall(combined_sources))
     introduced_numbers = set(_NUMERIC_FACT.findall(text)) - source_numbers
     if introduced_numbers:
         raise GroundedContentValidationError(
-            "generated content introduced an unbound numeric fact"
+            "generated content introduced an unbound numeric fact",
+            code="unsupported_numeric_fact",
+            path=path,
         )
     for phrase in _HIGH_RISK_ASSERTIONS:
         if _contains_assertion(text, phrase) and not _contains_assertion(
             combined_sources, phrase
         ):
             raise GroundedContentValidationError(
-                "generated content introduced an unbound high-risk assertion"
+                "generated content introduced an unbound high-risk assertion",
+                code="unsupported_assertion",
+                path=path,
             )
     source_tokens = {
         token.casefold() for token in _TECHNICAL_TOKEN.findall(combined_sources)
@@ -118,7 +154,9 @@ def _reject_unbound_assertions(text: str, source_texts: list[str]) -> None:
     } - source_tokens
     if introduced_tokens:
         raise GroundedContentValidationError(
-            "generated content introduced an unbound technical token"
+            "generated content introduced an unbound technical token",
+            code="unsupported_technical_token",
+            path=path,
         )
 
 
@@ -175,31 +213,51 @@ def validate_coaching_candidate(
 
     document = _validate_schema(candidate, "coaching-result.schema.json")
     if document["report_id"] != report_id:
-        raise GroundedContentValidationError("coaching result changed report_id")
+        raise GroundedContentValidationError(
+            "coaching result changed report_id",
+            code="identifier_mismatch",
+            path=("report_id",),
+        )
 
     items_by_root: dict[str, dict[str, Any]] = {}
-    for item in document["items"]:
+    for item_index, item in enumerate(document["items"]):
+        item_path = ("items", item_index)
         root_id = item["root_question_id"]
         if root_id in items_by_root:
-            raise GroundedContentValidationError("duplicate coaching root question")
+            raise GroundedContentValidationError(
+                "duplicate coaching root question",
+                code="duplicate_identifier",
+                path=(*item_path, "root_question_id"),
+            )
         root_answers = answers_by_root.get(root_id)
         if root_answers is None:
-            raise GroundedContentValidationError("coaching referenced an unknown root")
+            raise GroundedContentValidationError(
+                "coaching referenced an unknown root",
+                code="unknown_reference",
+                path=(*item_path, "root_question_id"),
+            )
 
         claim_ids: set[str] = set()
         segment_texts: list[str] = []
-        for segment in item["segments"]:
+        for segment_index, segment in enumerate(item["segments"]):
+            segment_path = (*item_path, "segments", segment_index)
             segment_sources: list[str] = []
             segment_texts.append(segment["text"])
-            for source_ref in segment["source_refs"]:
+            for ref_index, source_ref in enumerate(segment["source_refs"]):
+                ref_path = (*segment_path, "source_refs", ref_index)
                 if source_ref["type"] == "answer_quote":
                     answer_text = root_answers.get(source_ref["answer_id"])
-                    if (
-                        answer_text is None
-                        or source_ref["exact_quote"] not in answer_text
-                    ):
+                    if answer_text is None:
                         raise GroundedContentValidationError(
-                            "coaching answer quote is not verbatim"
+                            "coaching referenced an unknown answer",
+                            code="unknown_reference",
+                            path=(*ref_path, "answer_id"),
+                        )
+                    if source_ref["exact_quote"] not in answer_text:
+                        raise GroundedContentValidationError(
+                            "coaching answer quote is not verbatim",
+                            code="non_verbatim_quote",
+                            path=(*ref_path, "exact_quote"),
                         )
                     segment_sources.append(source_ref["exact_quote"])
                 else:
@@ -207,19 +265,27 @@ def validate_coaching_candidate(
                     claim_text = allowed_claims.get(claim_id)
                     if claim_text is None:
                         raise GroundedContentValidationError(
-                            "coaching referenced a claim outside the snapshot"
+                            "coaching referenced a claim outside the snapshot",
+                            code="unknown_reference",
+                            path=(*ref_path, "claim_id"),
                         )
                     claim_ids.add(claim_id)
                     segment_sources.append(claim_text)
-            _reject_unbound_assertions(segment["text"], segment_sources)
+            _reject_unbound_assertions(
+                segment["text"], segment_sources, path=(*segment_path, "text")
+            )
 
         if "".join(segment_texts) != item["rewritten_answer"]:
             raise GroundedContentValidationError(
-                "coaching segments do not reproduce rewritten_answer"
+                "coaching segments do not reproduce rewritten_answer",
+                code="segment_text_mismatch",
+                path=(*item_path, "rewritten_answer"),
             )
         if set(item["used_claim_ids"]) != claim_ids:
             raise GroundedContentValidationError(
-                "coaching claim summary does not match segment references"
+                "coaching claim summary does not match segment references",
+                code="claim_summary_mismatch",
+                path=(*item_path, "used_claim_ids"),
             )
         normalized_item = dict(item)
         normalized_item["used_claim_ids"] = sorted(claim_ids)
@@ -227,7 +293,9 @@ def validate_coaching_candidate(
 
     if set(items_by_root) != set(answers_by_root):
         raise GroundedContentValidationError(
-            "coaching result did not cover every answered root"
+            "coaching result did not cover every answered root",
+            code="missing_answered_root",
+            path=("items",),
         )
     return {
         "schema_version": "1.0.0",
@@ -246,36 +314,56 @@ def validate_resume_candidate(
 
     document = _validate_schema(candidate, "resume-draft-result.schema.json")
     if document["draft_id"] != draft_id:
-        raise GroundedContentValidationError("resume result changed draft_id")
+        raise GroundedContentValidationError(
+            "resume result changed draft_id",
+            code="identifier_mismatch",
+            path=("draft_id",),
+        )
 
     section_ids: set[str] = set()
     item_ids: set[str] = set()
     source_claim_ids: set[str] = set()
     normalized_sections: list[dict[str, Any]] = []
-    for section in document["sections"]:
+    for section_index, section in enumerate(document["sections"]):
+        section_path = ("sections", section_index)
         section_id = section["section_id"]
         if section_id in section_ids:
-            raise GroundedContentValidationError("duplicate resume section")
+            raise GroundedContentValidationError(
+                "duplicate resume section",
+                code="duplicate_identifier",
+                path=(*section_path, "section_id"),
+            )
         section_ids.add(section_id)
         normalized_items: list[dict[str, Any]] = []
-        for item in section["items"]:
+        for item_index, item in enumerate(section["items"]):
+            item_path = (*section_path, "items", item_index)
             if item["item_id"] in item_ids:
-                raise GroundedContentValidationError("duplicate resume item")
+                raise GroundedContentValidationError(
+                    "duplicate resume item",
+                    code="duplicate_identifier",
+                    path=(*item_path, "item_id"),
+                )
             item_ids.add(item["item_id"])
             if _PLACEHOLDER.search(item["text"]):
                 raise GroundedContentValidationError(
-                    "resume content contains a placeholder"
+                    "resume content contains a placeholder",
+                    code="placeholder",
+                    path=(*item_path, "text"),
                 )
             source_texts: list[str] = []
-            for claim_id in item["claim_ids"]:
+            for claim_index, claim_id in enumerate(item["claim_ids"]):
                 claim_text = allowed_claims.get(claim_id)
                 if claim_text is None:
                     raise GroundedContentValidationError(
-                        "resume referenced a claim outside the snapshot"
+                        "resume referenced a claim outside the snapshot",
+                        code="unknown_reference",
+                        path=(*item_path, "claim_ids", claim_index),
                     )
                 source_claim_ids.add(claim_id)
                 source_texts.append(claim_text)
-            _reject_unbound_assertions(item["text"], source_texts)
+            _reject_unbound_assertions(
+                item["text"], source_texts, path=(*item_path, "text")
+            )
             normalized_items.append(dict(item))
         normalized_sections.append({**section, "items": normalized_items})
 

@@ -421,11 +421,6 @@ def test_unversioned_create_all_database_upgrades_without_data_loss(tmp_path):
             session.get(ProfileSnapshotActivation, "snapshot_legacy").status
             == "pending"
         )
-    with migrated.connect() as connection:
-        revision = connection.exec_driver_sql(
-            "SELECT version_num FROM alembic_version"
-        ).scalar_one()
-    assert revision == "a7c4e1f29b58"
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
 

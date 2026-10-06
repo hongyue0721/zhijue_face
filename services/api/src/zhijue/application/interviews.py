@@ -11,18 +11,20 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import (
     Answer,
     Decision,
     Interview,
+    KnowledgePackRelease,
     Observation,
     Operation,
     Profile,
     ProfileSnapshot,
     Question,
+    Report,
     utc_now_rfc3339,
 )
 from zhijue.adapters.db.operations import (
@@ -55,6 +57,7 @@ from zhijue.domain.errors import (
 )
 from zhijue.domain.ids import new_id
 from zhijue.domain.interview_policy import ObservationValidationError
+from zhijue.domain.operations import canonical_input_hash
 from zhijue.domain.planning import InterviewSlot, SlotReason
 from zhijue.domain.questions import instantiate_root_questions
 from zhijue.domain.requisition import CoverageStatus, JDSourceType
@@ -165,6 +168,10 @@ class InterviewService:
         self._model_attempt_limit = model_attempt_limit
         self._acceptance_lock = Lock()
 
+    @property
+    def model_attempt_limit(self) -> int:
+        return self._model_attempt_limit
+
     def _require_plannable_snapshot(
         self, session: Session, profile_id: str, expected_revision: int
     ) -> ProfileSnapshot:
@@ -221,6 +228,7 @@ class InterviewService:
         binding: InterviewPackBinding,
         run_mode: str,
     ) -> dict[str, Any]:
+        resolved = self._packs.resolve(binding.release_id, binding=binding)
         with Session(self._engine, expire_on_commit=False) as session:
             snapshot = self._require_plannable_snapshot(
                 session, profile_id, expected_revision
@@ -234,7 +242,7 @@ class InterviewService:
                 source_type=jd_source_type,
             )
             direct_ev, related_ctx, rel_map = self._planner.evidence_indices(
-                profile_id=profile_id
+                profile_id=profile_id, profile=resolved.profile
             )
             result = self._planner.plan(
                 snapshot=jd,
@@ -243,6 +251,7 @@ class InterviewService:
                 seed_bank_version=binding.seed_bank_version,
                 related_context_index=related_ctx,
                 relation_index=rel_map,
+                profile=resolved.profile,
             )
         except JDPlanningError as exc:
             raise InterviewPreparationFailed(str(exc)) from exc
@@ -324,6 +333,7 @@ class InterviewService:
                 pack_release_id=binding.release_id,
                 pack_content_digest=binding.content_digest,
                 competency_profile_id=binding.competency_profile_id,
+                pack_review_snapshot=binding.review_snapshot,
                 created_at=utc_now_rfc3339(),
                 updated_at=utc_now_rfc3339(),
             )
@@ -418,18 +428,26 @@ class InterviewService:
             binding_row = session.get(Interview, interview_id)
             if binding_row is None:
                 raise ResourceNotFoundError("面试不存在。")
-            pack_release_id = binding_row.pack_release_id
-            pack_digest = binding_row.pack_content_digest
-        if pack_release_id is None or pack_digest is None:
-            raise InvalidStateError(
-                "该会话为旧记录，无可证实的岗位包绑定（legacy_unresolved）。"
-                "原报告与冻结题目仍可读；需要继续练习请重新创建计划。"
+            release = (
+                session.get(KnowledgePackRelease, binding_row.pack_release_id)
+                if binding_row.pack_release_id is not None
+                else None
             )
-        resolved = self._packs.resolve(pack_release_id)
-        if resolved.content_digest != pack_digest:
-            raise InvalidStateError(
-                "冻结岗位包与登记摘要不一致；已中止开始，不会用其他包顶替。"
+            if release is None or binding_row.pack_content_digest is None:
+                raise InvalidStateError(
+                    "该会话为旧记录，无可证实的岗位包绑定（legacy_unresolved）。"
+                    "原报告与冻结题目仍可读；需要继续练习请重新创建计划。"
+                )
+            binding = InterviewPackBinding(
+                release_id=release.id,
+                pack_id=release.pack_id,
+                version=release.version,
+                content_digest=binding_row.pack_content_digest,
+                competency_profile_id=binding_row.competency_profile_id,
+                seed_bank_version=binding_row.seed_bank_version,
+                review_snapshot=binding_row.pack_review_snapshot,
             )
+        resolved = self._packs.resolve(binding.release_id, binding=binding)
         with Session(self._engine) as session, session.begin():
             interview = session.get(Interview, interview_id)
             if interview is None:
@@ -535,6 +553,7 @@ class InterviewService:
             Session(self._engine, expire_on_commit=False) as session,
             session.begin(),
         ):
+            self._lock_interview(session, interview_id)
             existing_operation = self._existing_operation(session, command)
             if existing_operation is not None:
                 answer = session.scalar(
@@ -636,9 +655,8 @@ class InterviewService:
     def _failed_retry_tail(session: Session, answer: Answer) -> str | None:
         """沿 parent 链找到该回答失败链的链尾 operation。
 
-        retry clone 通过 parent_operation_id 指向上一节点；链尾的 attempts
-        才是累计预算真值，只有从链尾重试才不会被 `retry budget exhausted`
-        误拒或分叉绕过预算。created_at 为 RFC3339，字符串序即时间序。
+        新重试只能从链尾继续；历史分叉保留最近分支作为恢复入口，
+        完整预算由 OperationRepository 遍历所有分支统一核对。
         """
         current = session.get(Operation, answer.accepted_operation_id)
         if current is None:
@@ -704,8 +722,8 @@ class InterviewService:
             root = session.get(Question, question.root_id)
             if root is None or root.kind != "main":
                 raise InvalidStateError("回答关联的根问题不存在。")
-            if existing is None and interview.active_operation_id != operation.id:
-                raise InvalidStateError("回答操作已过期或状态不一致。")
+            if existing is None:
+                self._require_answer_position(interview, answer, operation.id)
 
             remaining_roots = tuple(
                 session.scalars(
@@ -753,13 +771,40 @@ class InterviewService:
                 existing_result=existing,
             )
 
+    @staticmethod
+    def _lock_interview(session: Session, interview_id: str) -> None:
+        session.execute(
+            update(Interview)
+            .where(Interview.id == interview_id)
+            .values(revision=Interview.revision)
+        )
+
+    @staticmethod
+    def _require_answer_position(
+        interview: Interview, answer: Answer, operation_id: str
+    ) -> None:
+        # An accepted end may wait for this exact in-flight answer. No other
+        # terminal state or moved cursor may accept its late result.
+        if (
+            interview.active_operation_id != operation_id
+            or interview.current_question_id != answer.question_id
+            or interview.report_id is not None
+            or not (
+                interview.status == "active"
+                or (interview.status == "finishing" and interview.stop_requested)
+            )
+        ):
+            raise InvalidStateError("回答操作已过期或状态不一致。")
+
     def _upstream_error(
         self, operation_id: str, message: str, *, timeout: bool = False
     ) -> UpstreamError:
         with Session(self._engine) as session:
             operation = session.get(Operation, operation_id)
             retryable = (
-                operation is not None and operation.attempts < self._model_attempt_limit
+                operation is not None
+                and self._operations.logical_attempts_in_session(session, operation)
+                < self._model_attempt_limit
             )
         return UpstreamError(message, timeout=timeout, retryable=retryable)
 
@@ -897,6 +942,7 @@ class InterviewService:
         usage: dict[str, Any],
     ) -> dict[str, Any]:
         with Session(self._engine) as session, session.begin():
+            self._lock_interview(session, context.interview_id)
             operation = session.get(Operation, operation_id)
             if operation is None:
                 raise ResourceNotFoundError("回答操作不存在。")
@@ -909,8 +955,7 @@ class InterviewService:
             )
             if existing is not None:
                 return existing
-            if interview.active_operation_id != operation_id:
-                raise InvalidStateError("回答操作已过期或状态不一致。")
+            self._require_answer_position(interview, answer, operation_id)
 
             session.add(
                 Observation(
@@ -1052,6 +1097,14 @@ class InterviewService:
             Session(self._engine, expire_on_commit=False) as session,
             session.begin(),
         ):
+            self._lock_interview(session, interview_id)
+            existing = self._existing_operation(session, command)
+            if existing is not None:
+                operation = self._operations.accept_in_session(session, command)
+                return AcceptedInterviewOperation(operation, created=False)
+            interview = session.get(Interview, interview_id)
+            if interview is None:
+                raise ResourceNotFoundError("面试不存在。")
             if action == "end":
                 existing_end = session.scalar(
                     select(Operation)
@@ -1061,14 +1114,13 @@ class InterviewService:
                     )
                     .order_by(Operation.created_at, Operation.id)
                 )
-                if existing_end is not None:
+                if existing_end is not None and (
+                    interview.status != "completed"
+                    or existing_end.input_hash == canonical_input_hash(command.input)
+                ):
                     return AcceptedInterviewOperation(existing_end, created=False)
-            existing = self._existing_operation(session, command)
-            if existing is not None:
-                return AcceptedInterviewOperation(existing, created=False)
-            interview = session.get(Interview, interview_id)
-            if interview is None:
-                raise ResourceNotFoundError("面试不存在。")
+            if interview.status not in {"active", "finishing", "finish_failed"}:
+                raise InvalidStateError("当前面试不接受控制操作。")
             if not capacity_available:
                 raise CapacityLimitedError()
             if interview.revision != expected_revision:
@@ -1076,8 +1128,6 @@ class InterviewService:
                     "面试版本已更新。",
                     current_revision=interview.revision,
                 )
-            if interview.status not in {"active", "finishing", "finish_failed"}:
-                raise InvalidStateError("当前面试不接受控制操作。")
             if action == "skip" and interview.active_operation_id is not None:
                 raise InvalidStateError(
                     "面试已有进行中的操作。",
@@ -1179,10 +1229,60 @@ class InterviewService:
             operation = session.get(Operation, operation_id)
             if operation is None:
                 raise ResourceNotFoundError("控制操作不存在。")
+            self._lock_interview(session, operation.resource_id)
             interview = session.get(Interview, operation.resource_id)
             if interview is None:
                 raise ResourceNotFoundError("面试不存在。")
             decision = self._control_decision_for_operation(session, operation)
+            # An end admitted while another operation held the resource can run
+            # after that operation naturally finished the same interview. Only
+            # this pending END may consume the committed report; stale NEXT and
+            # final-skip replays still go through the position guards below.
+            if (
+                operation.kind == "interview.control.end"
+                and operation.status in {"queued", "running"}
+                and decision.action == "END"
+                and interview.status == "completed"
+                and interview.stop_requested
+                and interview.active_operation_id is None
+                and interview.report_id is not None
+            ):
+                report = session.get(Report, interview.report_id)
+                if report is None or report.interview_id != interview.id:
+                    raise InvalidStateError("已结束的面试报告不存在或不一致。")
+                report = self._reporting.create_in_session(
+                    session, interview=interview, operation_id=operation_id
+                )
+                return {
+                    "resource_revision": interview.revision,
+                    "decision_id": decision.id,
+                    "action": "END",
+                    "question_id": None,
+                    "report_id": report.id,
+                }
+            if decision.action == "NEXT":
+                if (
+                    interview.status != "active"
+                    or interview.stop_requested
+                    or interview.report_id is not None
+                    or interview.active_operation_id != operation.id
+                    or interview.current_question_id
+                    != (decision.target or {}).get("question_id")
+                ):
+                    raise InvalidStateError("跳过操作已过期或状态不一致。")
+            elif (
+                interview.status not in {"active", "finishing", "finish_failed"}
+                or interview.report_id is not None
+                or interview.active_operation_id not in {None, operation.id}
+            ):
+                raise InvalidStateError("结束操作已过期或状态不一致。")
+            if (
+                operation.kind == "interview.control.skip"
+                and interview.status == "active"
+                and interview.current_question_id
+                != (decision.target or {}).get("question_id")
+            ):
+                raise InvalidStateError("跳过操作已不属于当前轮次。")
             self._operations.append_event_in_session(
                 session,
                 operation_id,
@@ -1279,8 +1379,33 @@ class InterviewService:
             max_attempts = 3
         else:
             return False
-        if operation.attempts >= max_attempts:
-            return False
+        with Session(self._engine) as session:
+            if (
+                session.scalar(
+                    select(Operation.id).where(
+                        Operation.parent_operation_id == operation.id
+                    )
+                )
+                is not None
+            ):
+                return False
+            if (
+                self._operations.logical_attempts_in_session(session, operation)
+                >= max_attempts
+            ):
+                return False
+            interview = session.get(Interview, operation.resource_id)
+            if interview is None or interview.active_operation_id is not None:
+                return False
+            try:
+                self._require_retry_position(
+                    session,
+                    interview,
+                    operation,
+                    self._answer_for_operation(session, operation),
+                )
+            except InvalidStateError:
+                return False
         error = operation.error or {}
         if bool(error.get("retryable")):
             return True
@@ -1288,6 +1413,57 @@ class InterviewService:
             operation.kind == "interview.answer"
             and str(error.get("code")) in _RECOVERABLE_ANSWER_FAILURE_CODES
         )
+
+    def _require_retry_position(
+        self,
+        session: Session,
+        interview: Interview,
+        operation: Operation,
+        answer: Answer | None,
+    ) -> None:
+        if interview.report_id is not None or interview.status == "completed":
+            raise InvalidStateError("已结束的面试不能重新打开。")
+        if answer is not None:
+            if answer.evaluation_status == "evaluated":
+                result = self._existing_answer_result(
+                    session, answer=answer, interview=interview
+                )
+                if (
+                    interview.status != "finish_failed"
+                    or result is None
+                    or result["action"] != "END"
+                    or interview.current_question_id is not None
+                ):
+                    raise InvalidStateError("已提交的回答只能重试报告收尾。")
+            elif (
+                interview.status != "active"
+                or interview.stop_requested
+                or interview.current_question_id != answer.question_id
+            ):
+                raise InvalidStateError("回答已不属于当前轮次。")
+            return
+        decision = self._control_decision_for_operation(session, operation)
+        if decision.action == "NEXT":
+            if (
+                interview.status != "active"
+                or interview.stop_requested
+                or interview.current_question_id
+                != (decision.target or {}).get("question_id")
+            ):
+                raise InvalidStateError("跳过操作已不属于当前轮次。")
+        elif operation.kind == "interview.control.end":
+            if interview.status != "finish_failed" or not interview.stop_requested:
+                raise InvalidStateError("结束操作只能重试失败的报告收尾。")
+        elif not (
+            interview.status == "finish_failed"
+            or (
+                interview.status == "active"
+                and not interview.stop_requested
+                and interview.current_question_id
+                == (decision.target or {}).get("question_id")
+            )
+        ):
+            raise InvalidStateError("跳过操作已不属于当前轮次。")
 
     def _accept_retry_once(
         self,
@@ -1312,6 +1488,7 @@ class InterviewService:
                 raise ResourceNotFoundError("原操作不存在。")
             if original.kind not in supported_kinds:
                 raise InvalidStateError("该操作不支持面试运行时重试。")
+            self._lock_interview(session, original.resource_id)
             max_attempts = (
                 self._model_attempt_limit if original.kind == "interview.answer" else 3
             )
@@ -1355,7 +1532,15 @@ class InterviewService:
                     "面试已有进行中的操作。",
                     code="OPERATION_IN_PROGRESS",
                 )
-            if not self.can_retry_operation(original):
+            self._require_retry_position(session, interview, original, answer)
+            error = original.error or {}
+            if not (
+                bool(error.get("retryable"))
+                or (
+                    original.kind == "interview.answer"
+                    and str(error.get("code")) in _RECOVERABLE_ANSWER_FAILURE_CODES
+                )
+            ):
                 raise InvalidStateError("原操作不可重试。")
             try:
                 operation = self._operations.retry_in_session(
