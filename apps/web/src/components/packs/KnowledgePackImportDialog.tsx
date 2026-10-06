@@ -9,20 +9,24 @@ export function KnowledgePackImportDialog({
   isOpen,
   limits,
   busy,
+  submitting,
   operationError,
   retryable,
   onClose,
   onSubmit,
   onRetry,
+  onFileChange,
 }: {
   isOpen: boolean;
   limits: KnowledgePackList["import_limits"] | null;
   busy: boolean;
+  submitting: boolean;
   operationError: { code: string; message: string; retryable: boolean } | null;
   retryable: boolean;
   onClose: () => void;
   onSubmit: (file: File) => void;
   onRetry: () => void;
+  onFileChange: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -38,22 +42,19 @@ export function KnowledgePackImportDialog({
   };
 
   // 格式/安全/版本冲突类错误不允许“重试即可修好”：换文件才是恢复动作。
-  const mustReselect =
-    operationError !== null &&
-    !operationError.retryable &&
-    operationError.code !== "RETRY_NOT_ALLOWED";
+  const mustReselect = operationError !== null && !operationError.retryable;
 
   return (
     <ModalDialog
       isOpen={isOpen}
-      busy={busy}
+      busy={submitting}
       titleId="pack-import-title"
       eyebrow="岗位知识包"
       title="导入岗位知识包"
       onClose={onClose}
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button disabled={submitting} onClick={onClose}>
             关闭
           </Button>
           {operationError && !mustReselect ? (
@@ -63,10 +64,10 @@ export function KnowledgePackImportDialog({
           ) : null}
           <Button
             type="primary"
-            disabled={busy || !file || mustReselect}
+            disabled={busy || !file || Boolean(operationError)}
             onClick={submit}
           >
-            {busy ? "提交中…" : "提交导入"}
+            {submitting ? "提交中…" : busy ? "后台处理中…" : "提交导入"}
           </Button>
         </>
       }
@@ -76,6 +77,7 @@ export function KnowledgePackImportDialog({
         导入成功只代表格式通过；技术审核与“可用于新面试”是独立状态，
         外部上传默认未审核。
       </p>
+      {busy && !submitting ? <p>导入已受理，可以关闭此窗口；后台处理不会中断。</p> : null}
       {limits ? (
         <p className="pack-import-limits">
           上限：ZIP {Math.floor(limits.max_upload_bytes / 1024 / 1024)} MiB ·
@@ -90,6 +92,7 @@ export function KnowledgePackImportDialog({
         disabled={busy}
         onChange={(event) => {
           setFile(event.target.files?.[0] ?? null);
+          if (event.target.files?.[0]) onFileChange();
           setNotice(null);
         }}
       />

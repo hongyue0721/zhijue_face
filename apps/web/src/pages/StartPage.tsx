@@ -9,9 +9,12 @@ import { ResumeScan } from "../components/profile/ResumeScan";
 import { FactModal } from "../components/profile/FactModal";
 import { UploadModal } from "../components/profile/UploadModal";
 import { ErrorNotice } from "../components/common/ErrorNotice";
+import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { clearOperationId, clearRecoverableCommand, loadOperationId, loadRecoverableCommand, saveOperationId, saveRecoverableCommand, type RecoverableCommand } from "../storage";
 import { preparePath, resumeDraftPath, startPath } from "../routing";
+import { acceptsProfileSnapshot } from "../profileSnapshots";
+import { clearProfileTemporaryDrafts } from "../temporaryDrafts";
 
 type ProfileCommand = {
   profileId: string;
@@ -32,9 +35,10 @@ function profileOperationToMonitor(profile: ProfileView): string | null {
   return activation && activation.status !== "ready" ? activation.operation_id : null;
 }
 
-export function StartPage({ profileId, serviceReady, navigate }: {
+export function StartPage({ profileId, serviceReady, contentGenerationReady, navigate }: {
   profileId: string | null;
   serviceReady: boolean;
+  contentGenerationReady: boolean;
   navigate: (path: string, replace?: boolean) => void;
 }) {
   const [profile, setProfile] = useState<ProfileView | null>(null);
@@ -58,22 +62,31 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   const manualFactTriggerRef = useRef<HTMLDivElement>(null);
   const uploadTriggerRef = useRef<HTMLDivElement>(null);
   const confirmSuccessTimerRef = useRef<number | null>(null);
-  const previousProfileId = useRef(profileId);
+  const profileSnapshot = useRef<ProfileView | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const applyProfile = useCallback((next: ProfileView) => {
+    if (!mounted.current || !acceptsProfileSnapshot(profileSnapshot.current, next, profileId)) return false;
+    profileSnapshot.current = next;
     setProfile(next);
     setDecisions((current) => {
       const ids = new Set([...next.proposed_claims, ...next.confirmed_claims].map((claim) => claim.id));
       return Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id)));
     });
-  }, []);
+    return true;
+  }, [profileId]);
 
   const reloadProfile = useCallback(async () => {
     const id = profile?.id ?? profileId;
     if (!id) return;
     try {
       const next = await api.getProfile(id);
-      applyProfile(next);
+      if (!applyProfile(next)) return;
       const authoritativeOperationId = profileOperationToMonitor(next);
       if (authoritativeOperationId) {
         saveOperationId("profile", id, authoritativeOperationId);
@@ -89,15 +102,6 @@ export function StartPage({ profileId, serviceReady, navigate }: {
 
   useEffect(() => {
     setUploadVisible(false);
-    if (previousProfileId.current && previousProfileId.current !== profileId) {
-      setProfile(null);
-      setPendingCommand(null);
-      setDecisions({});
-      setSelectedName(null);
-      setError(null);
-      setList("proposed");
-    }
-    previousProfileId.current = profileId;
     if (!profileId) {
       setProfile(null);
       setOperationId(null);
@@ -108,9 +112,12 @@ export function StartPage({ profileId, serviceReady, navigate }: {
       setSelectedName(null);
       return;
     }
+    // Creation already installed the authoritative POST response. Re-reading
+    // here only races the first write and can erase its operation/revision.
+    if (profileSnapshot.current?.id === profileId) return;
     const controller = new AbortController();
     api.getProfile(profileId, controller.signal).then((next) => {
-      applyProfile(next);
+      if (controller.signal.aborted || !applyProfile(next)) return;
       const authoritativeOperationId = profileOperationToMonitor(next);
       if (authoritativeOperationId) {
         saveOperationId("profile", profileId, authoritativeOperationId);
@@ -119,7 +126,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
       }
       setOperationId(authoritativeOperationId);
     }).catch((nextError) => {
-      if (!(nextError instanceof DOMException && nextError.name === "AbortError")) setError(nextError);
+      if (!controller.signal.aborted && !(nextError instanceof DOMException && nextError.name === "AbortError")) setError(nextError);
     });
     const command = loadRecoverableCommand("profile-resume", profileId);
     setPendingResume(command?.kind === "profile-resume" ? command : null);
@@ -138,7 +145,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
 
   const operationSettled = useCallback(async (settled: OperationView) => {
     const id = profile?.id ?? profileId;
-    if (!id) return;
+    if (!id || !mounted.current) return;
     if (settled.kind === "profile.delete") {
       // 档案行已物理删除，GET /profiles 必然 404：成功即回到无档案入口；
       // 失败则重读 deleting 状态并保留失败 Operation，供原操作重试。
@@ -147,7 +154,8 @@ export function StartPage({ profileId, serviceReady, navigate }: {
         clearOperationId("prepare", id);
         clearOperationId("resume", id);
         clearRecoverableCommand("profile-resume", id);
-        navigate("/start", true);
+        const draftsCleared = clearProfileTemporaryDrafts(id);
+        navigate(draftsCleared ? "/start" : "/start?notice=draft_cleanup_failed", true);
         return;
       }
       try {
@@ -167,7 +175,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
         }
         return;
       }
-      applyProfile(await api.getProfile(id));
+      if (!applyProfile(await api.getProfile(id))) return;
       if (settled.status === "succeeded") {
         clearOperationId("profile", id);
         setOperationId(null);
@@ -189,7 +197,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
 
   const resumeSettled = useCallback(async (settled: OperationView) => {
     const id = profile?.id ?? profileId;
-    if (!id) return;
+    if (!id || !mounted.current) return;
     try {
       if (settled.status === "succeeded" && settled.resource_type === "resume_draft") {
         clearOperationId("resume", id);
@@ -248,6 +256,9 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   const interviewReady = confirmedCount > 0 && activation?.status === "ready" && activation.snapshot_id === profile?.latest_snapshot_id;
   const selection = Object.values(decisions);
   const invalidCorrection = selection.some((decision) => decision.action === "correct" && !decision.corrected_text?.trim());
+  const acceptedSelectionCount = selection.filter((decision) => decision.action === "accept").length;
+  const correctedSelectionCount = selection.filter((decision) => decision.action === "correct").length;
+  const rejectedSelectionCount = selection.filter((decision) => decision.action === "reject").length;
   let document: ProfileView["documents"][number] | null = null;
   for (const item of profile?.documents ?? []) {
     if (item.kind === "resume") document = item;
@@ -268,6 +279,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   const deleteOperationFailed = operation?.kind === "profile.delete"
     && ["failed", "interrupted"].includes(operation.status);
   const trackAccepted = (accepted: OperationAccepted, id: string) => {
+    if (!mounted.current) return;
     if (accepted.resource_type === "resume_draft") {
       saveOperationId("resume", id, accepted.operation_id);
       setResumeOperationId(accepted.operation_id);
@@ -304,6 +316,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
           accepted = await api.deleteProfile(command.profileId, command.revision, command.key);
           break;
       }
+      if (!mounted.current) return;
       setPendingCommand(null);
       if (command.kind === "confirm") {
         // 只清本批提交的 claim；提交期间用户新勾选的不该被误删。
@@ -331,7 +344,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
       setSubmitting(true);
       try {
         current = await api.createProfile(file.name.replace(/\.pdf$/i, "").trim() || "候选人资料", false);
-        applyProfile(current);
+        if (!applyProfile(current)) return;
         navigate(startPath(current.id), true);
       } catch (nextError) {
         setError(nextError);
@@ -340,7 +353,9 @@ export function StartPage({ profileId, serviceReady, navigate }: {
         setSubmitting(false);
       }
     }
-    if (current) await runProfileCommand({ kind: "upload", profileId: current.id, revision: current.revision, file, key: newCommandKey("document") });
+    if (current && mounted.current) {
+      await runProfileCommand({ kind: "upload", profileId: current.id, revision: current.revision, file, key: newCommandKey("document") });
+    }
     setUploadRequestActive(false);
   };
 
@@ -351,11 +366,9 @@ export function StartPage({ profileId, serviceReady, navigate }: {
     setError(null);
     try {
       const current = profile ?? await api.createProfile("我的经历资料", false);
-      if (!profile) {
-        applyProfile(current);
-        navigate(startPath(current.id), true);
-      }
-      applyProfile(await api.addFacts(current.id, current.revision, [text]));
+      if (!mounted.current || !applyProfile(current)) return false;
+      if (!profileId) navigate(startPath(current.id), true);
+      if (!applyProfile(await api.addFacts(current.id, current.revision, [text]))) return false;
       setList("proposed");
       return true;
     } catch (nextError) {
@@ -368,7 +381,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   };
 
   const createResume = async () => {
-    if (!profile || requestInFlight.current || !serviceReady || busy || pendingCommand) return;
+    if (!profile || requestInFlight.current || !contentGenerationReady || busy || pendingCommand) return;
     const command: ResumeCommand | null = pendingResume ?? (profile.latest_snapshot_id && confirmedCount > 0 ? {
       kind: "profile-resume",
       idempotencyKey: newCommandKey("profile-resume"),
@@ -413,7 +426,7 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   const hasReview = Boolean(profile && (profile.proposed_claims.length || confirmedCount));
   const reviewComplete = Boolean(profile && !profile.proposed_claims.length && confirmedCount > 0 && selection.length === 0);
   const showList = hasReview && (!reviewComplete || list === "confirmed");
-  const resumeDisabled = !serviceReady || busy || Boolean(pendingCommand)
+  const resumeDisabled = !contentGenerationReady || busy || Boolean(pendingCommand)
     || (!pendingResume && (!profile?.latest_snapshot_id || confirmedCount === 0));
 
   const profileManagement = profile ? (
@@ -430,6 +443,11 @@ export function StartPage({ profileId, serviceReady, navigate }: {
   return (
     <main className={`page-container start-page progressive-profile ${!hasReview || importing ? "profile-stage-centered" : ""}`}>
       {profile && !hasReview && !importing ? <div className="profile-empty-tools">{profileManagement}</div> : null}
+      {new URLSearchParams(window.location.search).get("notice") === "draft_cleanup_failed" ? (
+        <Alert type="warn" title="档案已删除，浏览器草稿清理未确认">
+          无法确认本标签页中的临时草稿已清除。请清除此站点的浏览器数据，避免残留资料继续显示。
+        </Alert>
+      ) : null}
       <ErrorNotice error={error ?? operationError ?? resumeError} onReload={profile || profileId ? () => void reloadProfile() : undefined} />
       {pendingCommand && !submitting && (pendingCommand.kind !== "upload" || !uploadVisible) ? (
         <Alert type="warn" title="上次请求未确认完成">
@@ -454,7 +472,14 @@ export function StartPage({ profileId, serviceReady, navigate }: {
           onSave={addFact} onClose={() => setManualFactVisible(false)}
         />
       ) : null}
-      {importing ? <ResumeScan label={uploadRequestActive ? "正在上传简历" : "正在识别简历"} /> : (
+      {importing ? (
+        <div className="profile-import-progress">
+          <ResumeScan label={uploadRequestActive ? "正在上传简历" : "正在识别简历"} />
+          {uploadRequestActive
+            ? <p>文件正在发送，请暂时保留本页；收到受理结果后会显示识别状态。</p>
+            : <OperationStatus operation={documentOperation} label="简历识别" />}
+        </div>
+      ) : (
         <>
           {!hasReview ? (
             <div className="profile-upload-center">
@@ -472,7 +497,16 @@ export function StartPage({ profileId, serviceReady, navigate }: {
                 <h1>{reviewComplete ? "经历已确认" : "核对你的经历"}</h1>
                 {profileManagement}
               </header>
+              {!reviewComplete ? (
+                <p className="profile-review-guidance">
+                  已确认 {confirmedCount} 条 · 待核对 {profile?.proposed_claims.length ?? 0} 条。
+                  逐条核对来源后选择采用、更正或不采用；选择还未提交，不会自动成为已确认经历。每次最多提交 50 条。
+                </p>
+              ) : null}
               <DocumentStatus selectedName={selectedName} operation={documentOperation} document={document} />
+              {serviceReady && !contentGenerationReady && confirmedCount > 0 ? (
+                <p role="status">当前服务未配置内容生成，暂不能整理简历；资料核对和面试仍可继续。</p>
+              ) : null}
               {reviewComplete ? (
                 <section className="profile-ready-state" aria-label="核对完成">
                   <span className="completion-mark" aria-hidden="true">✓</span>
@@ -516,7 +550,10 @@ export function StartPage({ profileId, serviceReady, navigate }: {
       ) : null}
       {profile && (selection.length > 0 || isProcessingConfirm || (confirmOperationFailed && activation?.status !== "failed")) ? (
         <section className="fact-submit-bar" aria-label="提交核对选择">
-          <div role="status">{isProcessingConfirm ? "正在保存选择" : `${selection.length} 条待提交`}</div>
+          <div role="status">{isProcessingConfirm ? "正在保存选择" : `已选择 ${selection.length} 条，尚未提交`}</div>
+          {selection.length > 0 ? (
+            <p>采用 {acceptedSelectionCount} 条 · 更正 {correctedSelectionCount} 条 · 不采用 {rejectedSelectionCount} 条。提交后才会更新已确认经历；未选择的条目保持不变。</p>
+          ) : null}
           {selectionError ? <p className="field-error" role="alert">{selectionError}</p> : null}
           {invalidCorrection ? <p className="field-error">请填写更正正文。</p> : null}
           {confirmOperationFailed && activation?.status !== "failed" ? <p role="alert">{operation?.error?.message}</p> : null}

@@ -64,19 +64,22 @@
 
 ## 4. Operation、SSE 与刷新恢复
 
-1. 每个 202 响应的 `operation_id` 写入当前标签页 `sessionStorage`；正文不写入 storage。
+1. 每个 202 响应的 `operation_id` 写入当前标签页 `sessionStorage`；正文默认不写入 storage。用户明确勾选临时保存后，未提交 JD/回答及其未知响应的完整原命令可在本标签页恢复，详见下文。
 2. 浏览器同时连接 `GET /operations/{id}/events` 并轮询 `GET /operations/{id}`。SSE 只用于促使立即刷新，Operation snapshot 才是终态真值。
-3. 页面切换或资源 ID 变化时关闭旧 EventSource、取消旧 fetch、停止旧轮询。首次观察到 `succeeded/failed/interrupted/canceled` 后立即停止三类 transport；迟到的 `queued/running` 不得覆盖该终态快照。
-4. `queued/running` 禁止重复提交，但本地选择、取消和“取消全部选择”继续可用；资料确认栏只在请求发送、原 Operation retry 发送或真实 `profile.confirm` queued/running 时显示处理反馈。succeeded 显示短暂完成反馈并重新读取 Profile；failed/interrupted/canceled 立即停止动画并保留真实错误。仅 `retryable=true` 提供原 Operation 重试；不可重试表示确认裁决已保存、但本代资料激活无法继续 retry，应保留错误并刷新资料状态，不得引导重发 `POST /confirm`。不得用定时假百分比。
+3. 页面切换或资源 ID 变化时关闭旧 EventSource、取消旧 fetch、停止旧轮询。观察到 `succeeded/failed/interrupted/canceled` 且没有后继时停止三类 transport；若快照已有 `next_operation_id`，关闭父操作监听并只读跟随后继，不触发终态回调或重发原请求。迟到的父操作响应、旧资源 revision 不得覆盖当前后继或成功结果。
+4. `queued/running` 禁止重复提交，但本地选择、取消和“取消全部选择”继续可用；资料确认栏只在请求发送、原 Operation retry 发送或真实 `profile.confirm` queued/running 时显示处理反馈。succeeded 显示短暂完成反馈并重新读取 Profile；没有后继的 failed/interrupted/canceled 停止动画并保留真实错误。仅 `retryable=true` 提供原 Operation 重试；不可重试的资料确认表示裁决已保存、但本代资料激活无法继续 retry，应保留错误并刷新资料状态，不得引导重发 `POST /confirm`。不得用定时假百分比。
 5. 回答 202 后，`accepted_answer.raw_text` 来自服务端快照，因此刷新页面不要求重新填写。
 6. 失败恢复键以服务端视图为权威：回答使用 `accepted_answer.retry_operation_id`，Report/ResumeDraft 使用 failed 状态下保留的 `active_operation_id`；`sessionStorage` 只作同标签页加速。重试必须指向失败链尾 Operation，不能重发原回答或新建第二份内容任务。
 7. Report 改善稿、创建 ResumeDraft 及两页 operation retry 在发送前把不含正文的请求体标识与 `Idempotency-Key` 写入对应 sessionStorage scope。网络未取得明确响应时保留；用户显式重试必须逐字段复用原 body/key，不能生成新业务命令。观察到 202 或确定的不可重试 HTTP 错误后清理。
 8. Report 与 Resume 使用各自的 sessionStorage scope 恢复 operation ID；正文仍不进入 storage。generation failed 只能 retry 原 operation，不能以新 POST 绕过累计尝试预算。
 9. ResumeDraft 的 resource ID 在 202 响应中已固定；页面可先导航并显示 generating 状态，Operation succeeded 后重新读取同一 Draft，不创建第二份草稿。
 10. 资料页从 Profile.active_operation_id 与 snapshot_activation 恢复激活；retry 不重复裁决。document.import 未保存上传字节，确知失败/中断须重新选择文件，未知响应在当前内存保留 File/body/key。
-11. 独立简历、start、control/control-retry 安全命令使用各自 scope 跨刷新恢复；上传、更正、JD 和回答正文不写 storage。控制回调不能释放回答请求锁，反之亦然。
+11. 独立简历、start、control/control-retry 安全命令使用各自 scope 跨刷新恢复；上传字节、更正正文不写 storage。JD/回答仅在用户勾选临时保存后将正文与原请求标识一起暂存，禁止只恢复幂等键却换用新正文。控制回调不能释放回答请求锁，反之亦然。
 12. 业务资源快照优先于 `sessionStorage`；快照没有对应操作时清陈旧键。Operation GET 明确 404 `RESOURCE_NOT_FOUND` 时立即停止 fetch/interval/EventSource、清引用并解除假 busy；临时网络错误仍保留明确刷新。
 13. Profile 删除与 Interview control 的 failed/interrupted 操作按 `error.retryable` 分流：可重试只续原链，不可重试解除前端永久锁并根据最新资源快照提供可行动出口。应用 readiness 失败后必须允许用户显式重新检查，不能要求整页刷新或自动切运行模式。
+14. 回答优化与简历生成最多一次服务端自动重试/修正，自动和手动共享原链预算。`retry_trigger=automatic` 且后继仍 queued/running 时显示自动处理与真实累计尝试数；queued 尚未开始不虚增已调用次数。刷新以业务资源 active_operation_id 和 Operation 的 next_operation_id 恢复，前端定时器只读，不调用 retry。自动后继仍失败时才按链尾 error.retryable 开放手动重试；认证、缺失来源和预算耗尽不伪装成可重试。
+15. 自动后继的 retry_reason 分别显示“正在自动重试网络请求”或“正在自动修正输出”；累计模型尝试与 attempt_limit 配对，等待从 chain_started_at 起计，不能在每个后继重新归零。暂时读取失败不宣称后台已停止。
+16. 成功终态先完成业务快照读取，再释放当前监听引用；监听切换/离页取消信号仍阻止旧回调写回，不能让自己清理操作 ID 取消新题目读取。
 
 ## 5. 错误状态
 
@@ -101,7 +104,7 @@
 
 可由正文和主动作直接推导的就绪、等待、草稿标签不得重复常驻；题型由进度区单点表达。Planner/Seed 等实现明细不得进入用户主流程。字符计数在达到字段上限 80% 后才出现；报告限制默认折叠，总分不使用独立卡片容器。
 
-负责人明确要求移除模式徽章、fixture 提示条和文件要求说明，作为本轮界面规则覆盖旧版全局明示要求。后端 run_mode/data_mode/readiness 不变，不自动切模式；服务不可用仍显示真实错误。验收环境模式由测试记录说明，不将 fixture 结果当生产模型结果。
+模式徽章和 fixture 提示条仍不显示；2026-10-04 Web 体验优化恢复上传格式/限制与核对步骤说明。后端 run_mode/data_mode/readiness 不变，不自动切模式；验收记录必须说明 fixture 与真实模型结果的区别。
 
 ## 2026-09-25 岗位知识页（KnowledgePacksPage）与集成
 
@@ -120,3 +123,29 @@
 | 本场包摘要 | `InterviewView.knowledge_pack`（冻结字段） | 准备/面试/报告三页显示 frozen / frozen_unavailable / legacy_unresolved 三种真实状态 | 绝不从当前列表默认项倒推历史绑定 |
 
 能力就绪分离：岗位包列表/详情/导入不依赖模型或候选人 embedding；`serviceReady=false` 只锁模型相关流程（生成计划、开始面试、回答分析），知识页不因它整体禁用。候选人接口面（列表/详情/面试视图）不返回参考答案、rubric 明细或评分细则。
+
+## 2026-10-03 恢复、上下文与能力门禁
+
+- 资料页首次创建直接采用 POST Profile 快照，URL 补入 profile ID 不触发竞争性的 bootstrap GET；快照仅接受当前档案且 revision 不倒退。切换档案后，旧 GET/POST 不得覆盖页面或抢回路由。
+- 知识页 `returnTo` 只携带经校验的本地页面路径及资源标识，不包含正文。顶部与准备页入口、详情切换、返回均保留原 profile/interview 上下文。
+- 未提交岗位按 profile/interview、回答按 interview/question 隔离。默认只在 JS 内存保留；用户主动勾选后使用本标签页 sessionStorage，不使用 localStorage。正文与未知响应原命令一起恢复；服务端已受理文本优先，受理后清理对应草稿，换题/跳过/结束按服务端最新状态清理旧题。提供清除草稿与撤回暂存授权；删除档案成功后清理本标签页该档案草稿，清理失败明确提示。浏览器恢复标签页可能同时恢复存储，不承诺关闭即安全擦除。
+- 迟到回答请求仅在完整原命令（题目、revision、turn ID、幂等键、正文）仍拥有对应 pending 草稿时才能写回或清理。编辑、重置、换题、服务端已受理或旧会话卸载后，不得抢回后来编辑的正文；仍拥有的未知响应保留原 body/key。
+- 准备页正常 plan/start POST 期间只显示“正在提交”；只有不在发送中且上次响应未知时才显示原请求恢复提示，不能把普通提交渲染成网络异常。
+- 导入失败保留 Operation ID、错误与服务端 retryable 判定，关闭窗口或刷新不能抹掉失败。成功或实际选择替换文件后才清理旧终态。上传请求未受理时禁止关闭；202 已受理后允许关闭窗口，继续监控后台，禁止重复提交或换文件。
+- 仅在 succeeded 且结果包含有效 release 时展示完成。不可重试失败要求修正后换文件；可重试失败继续原 parent-linked 操作链，不重发旧文件创建新链。
+- 回答优化、简历生成及生成重试读取 `/health/ready.content_generation`；`absent` 明确禁用并说明依赖未配置。fixture 也可能配置生成器，live 也可能缺失，不能按模式猜。已有报告与已生成草稿的确认仍可用。
+- 本轮新增 DOM 交互回归，真实 AnyUI 浏览器验收和模型结果另记在 process.md；不把组件测试当作视觉或真实模型证明。
+- 默认标记来自服务端启动时固定的内置 release；导入更新版本不能改默认标记或无显式选择的新计划。列表和详情必须同时反映实际完整性错误，禁止“可用卡片、提交才失败”的不一致。
+- 820px 以下报告采用原生五题选择器，并将“下一步”概览默认收起；保留完整题干、原回答、所有页签和概览操作，不把第 3–5 题藏在横向滑轨或长题目列表后。桌面题目侧栏与概览保持展开。
+
+## 2026-10-04 桌面 Web 体验优化
+
+- 等待状态使用真实 Operation 状态与 `chain_started_at` 计算整条逻辑链已等待时间；不显示虚假百分比，不新增重试。计时文本不逐秒打断辅助技术播报。
+- 准备页先填写岗位，再展开岗位包设置；冻结版本摘要保持可查。宽屏面试题目与输入并排，窄屏仍按顺序显示完整题干。
+- 报告摘要只引用已有评分、未评分状态及生成结果中的待补事实。相同分数、单题评分、全未评分不推断相对强弱；入口定位原题和对应页签，不排序改写原记录或计算新评分。
+- 复制仅复制当前真实优化正文；剪贴板不可用或拒绝时提示手动复制，不伪报成功。
+- 上传提示实际 PDF 限制与提取—核对—提交步骤；事实选择显示尚未提交，服务端确认仍是唯一事实裁决。
+- 实际模型等待补充：文件发送阶段不承诺可刷新恢复；收到 document.import Operation 后，扫描动画下展示真实状态与耗时。模型识别失败给出重新上传/手填入口说明，原始错误仍可展开核对，不把服务失败归因于用户资料。
+- 回答优化页签内就地展示生成进度；切回评分页签仍可查看任务状态，同一时刻不重复渲染两份进度。
+- 简历 generation_failed 与 generating 分开：终态不再写“生成完成后”或无条件要求重试；无正文时不显示误导的“0 项来源”。原错误、预算和返回资料/报告入口保留，重试仍完全受服务端门禁控制。
+

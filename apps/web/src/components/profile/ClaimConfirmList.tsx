@@ -112,6 +112,11 @@ export function ClaimConfirmList({
                     <p className="preview-content">{decision.corrected_text}</p>
                   </div>
                 ) : null}
+                {decision ? (
+                  <p className="claim-selection-note">
+                    已选择{decision.action === "accept" ? "采用" : decision.action === "reject" ? "不采用" : "更正"} · 尚未提交
+                  </p>
+                ) : null}
 
                 {claim.source_quotes.some((quote) => quote.exact_quote) ? (
                   <details className="claim-source-details">

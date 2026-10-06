@@ -33,6 +33,16 @@ const accepted: OperationAccepted = {
   events_url: "/api/v1/operations/operation_contract_001/events",
 };
 
+const operationView: OperationView = {
+  id: "operation_contract_001", kind: "profile.confirm", status: "running",
+  resource_type: "profile", resource_id: "profile_contract_001",
+  parent_operation_id: null, retry_trigger: null, retry_reason: null,
+  next_operation_id: null, attempts: 1, attempt_limit: null,
+  chain_started_at: "2026-10-03T00:00:00Z",
+  result: null, error: null, last_event_seq: 1,
+  created_at: "2026-10-03T00:00:00Z", updated_at: "2026-10-03T00:00:01Z",
+};
+
 function ok<T>(data: T): Response {
   return new Response(JSON.stringify({ data, meta: { request_id: "request_test" } }), {
     status: 200,
@@ -360,19 +370,18 @@ describe("URL and presentation contracts", () => {
 
 
   it("treats only persisted operation terminal states as complete", () => {
-    const operation = (status: OperationView["status"]) => ({ status }) as OperationView;
-    expect(isTerminalOperation(operation("queued"))).toBe(false);
-    expect(isTerminalOperation(operation("running"))).toBe(false);
-    expect(isTerminalOperation(operation("succeeded"))).toBe(true);
-    expect(isTerminalOperation(operation("failed"))).toBe(true);
-    expect(isTerminalOperation(operation("interrupted"))).toBe(true);
-    expect(isTerminalOperation(operation("canceled"))).toBe(true);
+    expect(isTerminalOperation({ ...operationView, status: "queued" })).toBe(false);
+    expect(isTerminalOperation({ ...operationView, status: "running" })).toBe(false);
+    expect(isTerminalOperation({ ...operationView, status: "succeeded" })).toBe(true);
+    expect(isTerminalOperation({ ...operationView, status: "failed" })).toBe(true);
+    expect(isTerminalOperation({ ...operationView, status: "interrupted" })).toBe(true);
+    expect(isTerminalOperation({ ...operationView, status: "canceled" })).toBe(true);
   });
 
   it("keeps the first terminal operation snapshot when older transport data arrives", () => {
-    const running = { status: "running" } as OperationView;
-    const failed = { status: "failed" } as OperationView;
-    const succeeded = { status: "succeeded" } as OperationView;
+    const running: OperationView = { ...operationView, status: "running" };
+    const failed: OperationView = { ...operationView, status: "failed", last_event_seq: 2 };
+    const succeeded: OperationView = { ...operationView, status: "succeeded", last_event_seq: 2 };
 
     expect(preferObservedOperation(running, failed)).toBe(failed);
     expect(preferObservedOperation(failed, running)).toBe(failed);
@@ -446,10 +455,12 @@ describe("knowledge pack browser boundary", () => {
     expect(parseRoute("/knowledge-packs", "")).toEqual({
       page: "packs",
       releaseId: null,
+      returnTo: "/start",
     });
     expect(parseRoute("/knowledge-packs", "?release=kpr_abc")).toEqual({
       page: "packs",
       releaseId: "kpr_abc",
+      returnTo: "/start",
     });
     expect(knowledgePacksPath("kpr a")).toBe("/knowledge-packs?release=kpr%20a");
   });

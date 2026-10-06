@@ -75,6 +75,11 @@ export function DocumentUpload({
           {busy ? "正在提交" : "上传简历"}
         </Button>
       </div>
+      <div className="upload-guidance">
+        <p>支持 PDF，每份不超过 {MAX_PDF_BYTES / (1024 * 1024)} MiB、5 页；可点击上传或拖入一个文件。</p>
+        <p>上传后提取待核对经历 → 逐条选择采用、更正或不采用 → 提交选择后准备面试。</p>
+        <p>扫描版（图片式）PDF 暂不支持文字识别，可改用手动填写经历；加密文件请先解除密码保护。</p>
+      </div>
 
       {validation ? <p className="field-error" role="alert">{validation}</p> : null}
 

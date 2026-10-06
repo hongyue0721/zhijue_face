@@ -28,24 +28,35 @@ import {
 import {
   clearOperationId, loadOperationId, saveOperationId,
   clearRecoverableCommand, loadRecoverableCommand, saveRecoverableCommand,
-  loadPackSelection,
+  loadPackSelection, savePackSelection, clearPackSelection,
   type RecoverableCommand,
 } from "../storage";
+import { clearPrepareDraft, loadPrepareDraft, prepareDraftKey } from "../prepareDrafts";
+import { clearTemporaryDraft, loadTemporaryDraft, saveTemporaryDraft, temporaryDraftsEnabled } from "../temporaryDrafts";
 
 type PendingPlan = {
   profileId: string;
   revision: number;
   options: CreateInterviewOptions;
   key: string;
+  draftKey: string;
 };
 type PendingStart = Extract<RecoverableCommand, { kind: "prepare-start" }>;
 type PlanAttempt = {
   options: CreateInterviewOptions;
   failure: OperationView | null;
 };
-// Private JD bodies survive in-app route replacement only; never browser storage.
-const pendingPlans = new Map<string, PendingPlan>();
-const planAttempts = new Map<string, PlanAttempt>();
+function loadPendingPlan(profileId: string): PendingPlan | null {
+  const value = loadTemporaryDraft(`plan:${profileId}`) as PendingPlan | undefined;
+  return value?.profileId === profileId && typeof value.key === "string"
+    && typeof value.draftKey === "string" && Number.isInteger(value.revision)
+    && value.options && typeof value.options.jd_text === "string"
+    && typeof value.options.jd_source_name === "string" ? value : null;
+}
+
+function loadPlanAttempt(profileId: string): PlanAttempt | null {
+  return loadTemporaryDraft(`plan-attempt:${profileId}`) as PlanAttempt | undefined ?? null;
+}
 
 const REQUIREMENT_TIER_COPY = {
   required: { count: "核心要求", item: "核心要求" },
@@ -130,6 +141,7 @@ export function PreparePage({
   serviceReady: boolean;
   navigate: (path: string, replace?: boolean) => void;
 }) {
+  const draftKey = prepareDraftKey(profileId, interviewId);
   const [profile, setProfile] = useState<ProfileView | null>(null);
   const [interview, setInterview] = useState<InterviewView | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
@@ -137,10 +149,10 @@ export function PreparePage({
   const [error, setError] = useState<unknown>(null);
   const [settledOperation, setSettledOperation] = useState<OperationView | null>(null);
   const [planNotice, setPlanNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState(() => pendingPlans.get(profileId) ?? null);
+  const [editing, setEditing] = useState(() => Boolean(interviewId && loadPrepareDraft(draftKey)));
+  const [pendingPlan, setPendingPlan] = useState(() => loadPendingPlan(profileId));
   const [planAttempt, setPlanAttempt] = useState<PlanAttempt | null>(
-    () => planAttempts.get(profileId) ?? null,
+    () => loadPlanAttempt(profileId),
   );
   const [pendingStart, setPendingStart] = useState<PendingStart | null>(() => {
     const stored = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
@@ -152,6 +164,7 @@ export function PreparePage({
   const [selectedPackId, setSelectedPackId] = useState<string | null>(
     () => loadPackSelection(),
   );
+  const [draftStorageAvailable, setDraftStorageAvailable] = useState(true);
   const requestInFlight = useRef(false);
 
   const applyInterview = useCallback((next: InterviewView) => {
@@ -206,9 +219,9 @@ export function PreparePage({
   useEffect(() => {
     const controller = new AbortController();
     setInterview(null);
-    setEditing(false);
-    setPendingPlan(pendingPlans.get(profileId) ?? null);
-    setPlanAttempt(planAttempts.get(profileId) ?? null);
+    setEditing(Boolean(interviewId && loadPrepareDraft(prepareDraftKey(profileId, interviewId))));
+    setPendingPlan(loadPendingPlan(profileId));
+    setPlanAttempt(loadPlanAttempt(profileId));
     const storedStart = interviewId ? loadRecoverableCommand("prepare-start", interviewId) : null;
     setPendingStart(storedStart?.kind === "prepare-start" ? storedStart : null);
     const storedOperationId = loadOperationId("prepare", profileId);
@@ -245,7 +258,7 @@ export function PreparePage({
     try {
       if (settled.status === "succeeded") {
         setSettledOperation(null);
-        planAttempts.delete(profileId);
+        clearTemporaryDraft(`plan-attempt:${profileId}`);
         setPlanAttempt(null);
         const next = await api.getInterview(settled.resource_id);
         clearOperationId("prepare", profileId);
@@ -262,10 +275,10 @@ export function PreparePage({
       // 从 Interview.active_operation_id 挂回监控，否则会无限重读。
       setSettledOperation(settled);
       if (settled.kind === "interview.plan") {
-        const attempt = planAttempts.get(profileId);
+        const attempt = loadPlanAttempt(profileId);
         if (attempt) {
           const failedAttempt = { ...attempt, failure: settled };
-          planAttempts.set(profileId, failedAttempt);
+          saveTemporaryDraft(`plan-attempt:${profileId}`, profileId, failedAttempt, false);
           setPlanAttempt(failedAttempt);
         }
       }
@@ -311,33 +324,35 @@ export function PreparePage({
         // 省略 = 服务端解析默认包；服务器受理时冻结实际 release。
         pack_release_id: selectedPackId ?? undefined,
       },
+      draftKey,
       key: newCommandKey("plan"),
     };
-    pendingPlans.set(profile.id, command);
+    setDraftStorageAvailable(saveTemporaryDraft(`plan:${profile.id}`, profile.id, command));
     setPendingPlan(command);
     setSubmitting(true);
     requestInFlight.current = true;
     setSettledOperation(null);
-    planAttempts.delete(profile.id);
+    clearTemporaryDraft(`plan-attempt:${profile.id}`);
     setPlanAttempt(null);
     setPlanNotice(null);
     setError(null);
     try {
       const accepted = await api.createInterview(command.profileId, command.revision, command.options, command.key);
-      pendingPlans.delete(profile.id);
+      const commandCleared = clearTemporaryDraft(`plan:${profile.id}`);
       setPendingPlan(null);
+      setDraftStorageAvailable(clearPrepareDraft(command.draftKey) && commandCleared);
       setEditing(false);
       setInterview(null);
       saveOperationId("prepare", profile.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
       const attempt = { options: command.options, failure: null };
-      planAttempts.set(profile.id, attempt);
+      saveTemporaryDraft(`plan-attempt:${profile.id}`, profile.id, attempt, false);
       setPlanAttempt(attempt);
       navigate(preparePath(profile.id, accepted.resource_id), true);
     } catch (nextError) {
       setError(nextError);
       if (nextError instanceof ApiError && !requestRetryReason(nextError)) {
-        pendingPlans.delete(profile.id);
+        setDraftStorageAvailable(clearTemporaryDraft(`plan:${profile.id}`));
         setPendingPlan(null);
       }
     } finally {
@@ -407,14 +422,19 @@ export function PreparePage({
             {/* 本场包摘要来自冻结字段，不从“当前列表默认项”倒推（U7）。 */}
             <p className="interview-pack-line">
               {interview.knowledge_pack.binding === "frozen" ? (
-                <>岗位知识包：{interview.knowledge_pack.name} v{interview.knowledge_pack.version}
-                  （本场冻结 · {(interview.knowledge_pack.content_digest ?? "").slice(0, 23)}…）</>
+                <>岗位知识包：{interview.knowledge_pack.name} v{interview.knowledge_pack.version}（本场冻结）</>
               ) : interview.knowledge_pack.binding === "frozen_unavailable" ? (
                 <>本场冻结的岗位知识包当前不可用（内容缺失或损坏）；开始面试会被明确拒绝，不会换包顶替。</>
               ) : (
                 <>历史绑定未确定：这场面试创建时没有可证实的岗位包绑定；报告仍完整可读，继续练习请重新创建计划。</>
               )}
             </p>
+            {interview.knowledge_pack.binding === "frozen" ? (
+              <details className="prepare-pack-details">
+                <summary>岗位知识包技术详情</summary>
+                <p className="technical-value">内容摘要：{interview.knowledge_pack.content_digest}</p>
+              </details>
+            ) : null}
           </div>
           {interview.status === "ready" ? (
             <Button
@@ -440,66 +460,41 @@ export function PreparePage({
         operation={operation ?? settledOperation ?? planAttempt?.failure ?? null}
         label={(operation ?? settledOperation ?? planAttempt?.failure)?.kind === "interview.start" ? "开始面试" : "生成面试计划"}
       />
-      {pendingPlan || pendingStart ? (
-        <Alert type="warn" title="上次请求未确认完成">
-          已保留这次的内容和操作，点重试会原样续上，不会生成第二份计划或重复开始面试。岗位正文只存在本页面里，刷新前请先点重试。
+      {!draftStorageAvailable ? <Alert type="warn" title="浏览器暂存不可用">无法确认请求内容的临时保存或清除。请在离开或刷新前核对当前操作；需要移除旧副本时请清除此站点的浏览器数据。</Alert> : null}
+      {submitting && (pendingPlan || pendingStart) ? (
+        <Alert type="info" title={pendingPlan ? "正在提交面试计划" : "正在提交开始面试请求"}>
+          正在等待服务端受理，请勿重复提交。
+        </Alert>
+      ) : null}
+      {!submitting && !operationActive && (pendingPlan || pendingStart) ? (
+        <Alert type="warn" title={error instanceof ApiError ? "请求尚未受理" : "上次请求未确认完成"}>
+          {error instanceof ApiError
+            ? "已保留这次的内容和操作，服务恢复后可原样重试。"
+            : "已保留这次的内容和操作，点重试会原样续上，不会生成第二份计划或重复开始面试。"}
+          {pendingPlan ? temporaryDraftsEnabled() && draftStorageAvailable
+            ? "请求内容与重试标识已一同临时保存在本标签页，刷新后可恢复。"
+            : "浏览器暂存未开启或不可用，请在刷新前重试确认结果。" : null}
           <Button disabled={!serviceReady || busy} onClick={() => void (pendingPlan ? createPlan(pendingPlan.options) : startInterview())}>
             重试{pendingPlan ? "生成计划" : "开始面试"}
           </Button>
         </Alert>
       ) : null}
-      {!interview || editing ? (
-        <section className="pack-selector" aria-label="岗位知识包选择">
-          <label className="field-label">
-            本场新面试使用岗位知识包
-            <select
-              value={selectedPackId ?? ""}
-              disabled={Boolean(pendingPlan || pendingStart)}
-              onChange={(event) => setSelectedPackId(event.target.value || null)}
-            >
-              <option value="">
-                服务端默认（
-                {packs?.items.find((item) => item.pack_release_id === packs?.default_pack_release_id)?.name
-                  ?? (packsError ? "读取失败" : "读取中…")}
-                ）
-              </option>
-              {(packs?.items ?? [])
-                .filter((item) => item.selectable && item.pack_release_id !== packs?.default_pack_release_id)
-                .map((item) => (
-                  <option key={item.pack_release_id} value={item.pack_release_id}>
-                    {item.name} v{item.version}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <small>
-            选择只影响新创建的面试；已创建的面试永远使用它当时冻结的包。
-            {" "}
-            <Button size="small" type="text" onClick={() => navigate(knowledgePacksPath())}>
-              管理岗位知识包
-            </Button>
-          </small>
-          {packsError ? (
-            <Alert type="warn" title="岗位知识包列表读取失败">
-              无法确认哪些包可选；仍可尝试用服务端默认包生成，服务器受理时会再次校验。
-            </Alert>
-          ) : null}
-        </section>
-      ) : null}
-      {!interview || editing ? (
+      {!interviewId || (interview && editing) ? (
         <JDInput
-          key={interview?.id ?? "new"}
+          key={draftKey}
+          draftKey={draftKey}
           disabled={!serviceReady || !profileReady || Boolean(pendingPlan || pendingStart)}
           busy={busy}
+          draftLocked={Boolean(pendingPlan || pendingStart)}
           initialOptions={interview ? {
             jd_source_name: interviewRoleText(interview),
             jd_text: interview.jd_text ?? "",
           } : pendingPlan?.options ?? planAttempt?.options}
           regenerating={Boolean(interview)}
-          onCancel={interview ? () => setEditing(false) : undefined}
+          onCancel={interview ? () => { setDraftStorageAvailable(clearPrepareDraft(draftKey)); setEditing(false); } : undefined}
           onGenerate={createPlan}
         />
-      ) : (
+      ) : interview ? (
         <>
           <div className="prepare-workspace prepare-plan-review">
             <details className="prepare-context-disclosure">
@@ -531,7 +526,50 @@ export function PreparePage({
             />
           </div>
         </>
-      )}
+      ) : null}
+      {!interview || editing ? (
+        <section className="pack-selector" aria-label="岗位知识包选择">
+          <label className="field-label">
+            本场新面试使用岗位知识包
+            <select
+              value={selectedPackId ?? ""}
+              disabled={Boolean(pendingPlan || pendingStart)}
+              onChange={(event) => {
+                const id = event.target.value;
+                setSelectedPackId(id || null);
+                if (id) savePackSelection(id);
+                else clearPackSelection();
+              }}
+            >
+              <option value="">
+                服务端默认（
+                {packs?.items.find((item) => item.pack_release_id === packs?.default_pack_release_id)?.name
+                  ?? (packsError ? "读取失败" : "读取中…")}
+                ）
+              </option>
+              {(packs?.items ?? [])
+                .filter((item) => item.selectable)
+                .map((item) => (
+                  <option key={item.pack_release_id} value={item.pack_release_id}>
+                    {item.name} v{item.version}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <small>
+            选择只影响新创建的面试；已创建的面试永远使用它当时冻结的包。
+            {" "}
+            <Button size="small" type="text" onClick={() => navigate(knowledgePacksPath(undefined, preparePath(profileId, interviewId ?? undefined)))}>
+              管理岗位知识包
+            </Button>
+          </small>
+          {packsError ? (
+            <Alert type="warn" title="岗位知识包列表读取失败">
+              无法确认哪些包可选；仍可尝试用服务端默认包生成，服务器受理时会再次校验。
+            </Alert>
+          ) : null}
+        </section>
+      ) : null}
     </main>
   );
 }

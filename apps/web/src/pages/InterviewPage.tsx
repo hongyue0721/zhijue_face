@@ -16,6 +16,7 @@ import {
   clearRecoverableCommand, loadRecoverableCommand, saveRecoverableCommand,
   type RecoverableCommand,
 } from "../storage";
+import { loadAnswerDraft, ownsPendingAnswerDraft, reconcileAnswerDrafts, resolvePendingAnswerDraft, saveAnswerDraft, type PendingSubmission } from "../answerDrafts";
 
 type ControlCommand = Extract<RecoverableCommand, { kind: "interview-control" | "interview-control-retry" }>;
 
@@ -26,16 +27,11 @@ function restoreControl(interviewId: string): ControlCommand | null {
   return control?.kind === "interview-control" ? control : null;
 }
 
-type PendingSubmission = {
-  questionId: string;
-  expectedRevision: number;
-  clientTurnId: string;
-  idempotencyKey: string;
-  answerText: string;
-  retryReason: "network" | "capacity" | "service" | null;
-};
+export function InterviewPage(props: Parameters<typeof InterviewSession>[0]) {
+  return <InterviewSession key={props.interviewId} {...props} />;
+}
 
-export function InterviewPage({
+function InterviewSession({
   interviewId,
   serviceReady,
   navigate,
@@ -49,7 +45,14 @@ export function InterviewPage({
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [draftStorageAvailable, setDraftStorageAvailable] = useState(true);
   const submittingRef = useRef(false);
+  const mounted = useRef(false);
+  const interviewRef = useRef<InterviewView | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [controlOperationId, setControlOperationId] = useState<string | null>(() => loadOperationId("interview-control", interviewId));
   const [pendingControl, setPendingControl] = useState<ControlCommand | null>(() => restoreControl(interviewId));
   const [controlSubmitting, setControlSubmitting] = useState(false);
@@ -58,11 +61,10 @@ export function InterviewPage({
   const controlSubmittingRef = useRef(false);
 
   const applyInterview = useCallback((next: InterviewView) => {
+    if (!mounted.current || next.id !== interviewId
+      || (interviewRef.current && interviewRef.current.revision > next.revision)) return;
+    interviewRef.current = next;
     setInterview((current) => current?.id === next.id && current.revision > next.revision ? current : next);
-    setPendingSubmission((current) => current && (
-      next.current_question?.id !== current.questionId
-      || next.current_question?.accepted_answer?.client_turn_id === current.clientTurnId
-    ) ? null : current);
     const controlId = loadOperationId("interview-control", next.id);
     if (controlId && next.active_operation_id === controlId) {
       setControlOperationId(controlId);
@@ -81,7 +83,17 @@ export function InterviewPage({
       clearOperationId("interview", next.id);
       setOperationId(null);
     }
-  }, []);
+  }, [interviewId]);
+
+  useEffect(() => {
+    if (!interview || interview.id !== interviewId) return;
+    const question = interview.current_question;
+    const keepQuestion = interview.status === "active" && !interview.stop_requested && !question?.accepted_answer
+      ? question?.id ?? null : null;
+    setDraftStorageAvailable(reconcileAnswerDrafts(interview.id, keepQuestion));
+    const pending = keepQuestion ? loadAnswerDraft(interview.id, keepQuestion)?.pending : null;
+    setPendingSubmission(pending ? { ...pending, retryReason: pending.retryReason ?? "network" } : null);
+  }, [interview, interviewId]);
 
   const reload = useCallback(async () => {
     applyInterview(await api.getInterview(interviewId));
@@ -89,6 +101,8 @@ export function InterviewPage({
 
   useEffect(() => {
     const controller = new AbortController();
+    setInterview(null);
+    setPendingSubmission(null);
     setError(null);
     setPendingControl(restoreControl(interviewId));
     setControlOperationId(loadOperationId("interview-control", interviewId));
@@ -102,19 +116,21 @@ export function InterviewPage({
     return () => controller.abort();
   }, [applyInterview, interviewId]);
 
-  const operationSettled = useCallback(async (settled: OperationView) => {
+  const operationSettled = useCallback(async (settled: OperationView, signal: AbortSignal) => {
     try {
+      const next = await api.getInterview(interviewId, signal);
+      if (!mounted.current || signal.aborted) return;
+      if (!interviewRef.current || interviewRef.current.revision <= next.revision) interviewRef.current = next;
+      setInterview((current) => current && current.revision > next.revision ? current : next);
       if (settled.status === "succeeded") {
         if (loadOperationId("interview", interviewId) === settled.id) clearOperationId("interview", interviewId);
         setOperationId((current) => current === settled.id ? null : current);
       }
-      const next = await api.getInterview(interviewId);
-      setInterview((current) => current && current.revision > next.revision ? current : next);
       if (settled.kind.startsWith("interview.control.") && settled.status === "succeeded" && next.status === "completed" && next.report_id) {
         navigate(reportPath(next.id));
       }
     } catch (nextError) {
-      setError(nextError);
+      if (mounted.current && !signal.aborted) setError(nextError);
     }
   }, [interviewId, navigate]);
 
@@ -129,9 +145,11 @@ export function InterviewPage({
     operationUnavailable,
   );
 
-  const controlSettled = useCallback(async (settled: OperationView) => {
+  const controlSettled = useCallback(async (settled: OperationView, signal: AbortSignal) => {
     try {
       const next = await api.getInterview(interviewId);
+      if (!mounted.current || signal.aborted) return;
+      if (!interviewRef.current || interviewRef.current.revision <= next.revision) interviewRef.current = next;
       setInterview((current) => current && current.revision > next.revision ? current : next);
       if (settled.status === "succeeded") {
         if (loadOperationId("interview-control", interviewId) === settled.id) clearOperationId("interview-control", interviewId);
@@ -139,7 +157,7 @@ export function InterviewPage({
         if (next.status === "completed" && next.report_id) navigate(reportPath(next.id));
       }
     } catch (nextError) {
-      setControlError(nextError);
+      if (mounted.current && !signal.aborted) setControlError(nextError);
     }
   }, [interviewId, navigate]);
   const controlUnavailable = useCallback((nextError: ApiError) => {
@@ -225,6 +243,7 @@ export function InterviewPage({
     const question = interview?.current_question;
     if (!interview || !question || submittingRef.current || controlSubmittingRef.current || controlBlocked || answerOperationActive) return;
     const command: PendingSubmission = pendingSubmission?.questionId === question.id
+      && pendingSubmission.answerText === answerText
       ? pendingSubmission
       : {
           questionId: question.id,
@@ -235,9 +254,13 @@ export function InterviewPage({
           retryReason: null,
         };
     setPendingSubmission(command);
+    setDraftStorageAvailable(saveAnswerDraft(interview.profile_id, interview.id, question.id, {
+      text: command.answerText, pending: command,
+    }));
     setSubmitting(true);
     submittingRef.current = true;
     setError(null);
+    let answerAccepted = false;
     try {
       const accepted = await api.submitAnswer(
         interview.id,
@@ -249,30 +272,51 @@ export function InterviewPage({
         },
         command.idempotencyKey,
       );
+      answerAccepted = true;
+      const current = interviewRef.current;
+      if (current && (current.id !== interview.id || current.status !== "active"
+        || current.stop_requested || current.current_question?.id !== command.questionId
+        || current.current_question.accepted_answer)) return;
+      const cleared = resolvePendingAnswerDraft(interview.profile_id, interview.id, command, null);
+      if (cleared === null) return;
       saveOperationId("interview", interview.id, accepted.operation_id);
+      if (!mounted.current) return;
+      setDraftStorageAvailable(cleared);
       setOperationId(accepted.operation_id);
       setPendingSubmission(null);
       applyInterview(await api.getInterview(interview.id));
     } catch (nextError) {
+      if (answerAccepted) {
+        if (mounted.current) setError(nextError);
+        return;
+      }
+      if (!ownsPendingAnswerDraft(interview.id, command)) return;
+      const current = interviewRef.current;
+      if (current && (current.id !== interview.id || current.status !== "active"
+        || current.stop_requested || current.current_question?.id !== command.questionId
+        || current.current_question.accepted_answer)) return;
+      const retryReason = nextError instanceof ApiError ? requestRetryReason(nextError) : "network";
+      const retry: PendingSubmission | null = retryReason ? { ...command, retryReason } : null;
+      const saved = resolvePendingAnswerDraft(interview.profile_id, interview.id, command, {
+        text: command.answerText, pending: retry,
+      });
+      if (saved === null || !mounted.current) return;
       setError(nextError);
-      if (nextError instanceof ApiError && nextError.code === "REVISION_CONFLICT") {
-        setPendingSubmission(null);
-        await reload().catch(setError);
-      } else if (!(nextError instanceof ApiError)) {
-        setPendingSubmission({ ...command, retryReason: "network" });
-      } else {
-        const retryReason = requestRetryReason(nextError);
-        setPendingSubmission(retryReason ? { ...command, retryReason } : null);
+      setPendingSubmission(retry);
+      setDraftStorageAvailable(saved);
+      if (nextError instanceof ApiError
+        && (nextError.code === "REVISION_CONFLICT" || nextError.code === "OPERATION_IN_PROGRESS")) {
+        await reload().catch((reloadError) => { if (mounted.current) setError(reloadError); });
       }
     } finally {
       submittingRef.current = false;
-      setSubmitting(false);
+      if (mounted.current) setSubmitting(false);
     }
   };
 
   const retryAnalysis = async () => {
     if (!interview || submittingRef.current || controlSubmittingRef.current || controlBlocked || answerOperationActive) return;
-    // 链尾恢复键以服务端视图为权威；operation/localStorage 只是兜底。
+    // 链尾恢复键以服务端视图为权威；operation/sessionStorage 只是兜底。
     const failedOperationId = interview.current_question?.accepted_answer?.retry_operation_id
       ?? operation?.id ?? loadOperationId("interview", interview.id);
     if (!failedOperationId) return;
@@ -334,8 +378,8 @@ export function InterviewPage({
 
   return (
     <main className="page-container interview-page">
-      <header className="compact-page-heading interview-heading">
-        <div>
+      <header className="compact-page-heading interview-heading interview-heading-compact">
+        <div className="interview-heading-summary">
           <h1>{interviewRoleText(interview)}</h1>
           <InterviewProgress total={total} question={question} started={interviewStarted} />
           {/* 本场冻结包摘要；不从“当前列表默认项”倒推。 */}
@@ -350,6 +394,7 @@ export function InterviewPage({
       </header>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       <ErrorNotice error={controlError ?? controlOperationError} onReload={() => void reload()} />
+      {!draftStorageAvailable ? <Alert type="warn" title="浏览器草稿暂存不可用">无法确认当前草稿或提交标识的保存、清除。请勿依赖刷新恢复；如需移除旧副本，请清除此站点的浏览器数据。</Alert> : null}
       {interviewStarted && !isCompleted ? (
         <section className="interview-controls" aria-label="面试进程控制">
           <details className="interview-secondary-menu">
@@ -441,16 +486,27 @@ export function InterviewPage({
           <div className="interview-main-column">
             <QuestionCard question={question} />
             <AnswerComposer
+              profileId={interview.profile_id}
+              interviewId={interview.id}
               question={question}
               acceptedAnswer={acceptedAnswer}
               submitting={submitting}
               serviceReady={serviceReady && !controlBlocked && !answerOperationActive}
-              pendingRetryText={pendingSubmission?.retryReason ? pendingSubmission.answerText : null}
-              retryReason={pendingSubmission?.retryReason ?? null}
+              pendingRetryText={pendingSubmission?.questionId === question.id ? pendingSubmission.answerText : null}
+              retryReason={pendingSubmission?.questionId === question.id ? pendingSubmission.retryReason : null}
               canRetryAnalysis={canRetryAnalysis}
               retryBudgetExhausted={retryBudgetExhausted}
               onSubmit={submitAnswer}
-              onResetRetry={() => setPendingSubmission(null)}
+              onResetRetry={() => {
+                const pending = pendingSubmission;
+                if (pending?.questionId === question.id) {
+                  const saved = resolvePendingAnswerDraft(interview.profile_id, interview.id, pending, {
+                    text: pending.answerText, pending: null,
+                  });
+                  if (saved !== null) setDraftStorageAvailable(saved);
+                }
+                setPendingSubmission(null);
+              }}
               onRetryAnalysis={retryAnalysis}
             />
             {operation && ["queued", "running"].includes(operation.status)

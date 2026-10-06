@@ -1,5 +1,5 @@
 import { Alert, Button } from "@any-design/anyui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   newCommandKey,
@@ -27,10 +27,12 @@ type ResumeRetryCommand = Extract<RecoverableCommand, { kind: "resume-retry" }>;
 export function ResumeDraftPage({
   draftId,
   serviceReady,
+  contentGenerationReady,
   navigate,
 }: {
   draftId: string;
   serviceReady: boolean;
+  contentGenerationReady: boolean;
   navigate: (path: string) => void;
 }) {
   const [draft, setDraft] = useState<ResumeDraftView | null>(null);
@@ -39,8 +41,12 @@ export function ResumeDraftPage({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const draftRef = useRef<ResumeDraftView | null>(null);
+  const pageGeneration = useRef(0);
 
   const applyDraft = useCallback((next: ResumeDraftView) => {
+    if (next.id !== draftId || (draftRef.current?.id === next.id && draftRef.current.revision > next.revision)) return;
+    draftRef.current = next;
     setDraft(next);
     setSelectedItemId((current) => {
       const items = next.sections.flatMap((section) => section.items);
@@ -71,35 +77,44 @@ export function ResumeDraftPage({
       return;
     }
     setOperationId(loadOperationId("resume", next.id));
-  }, []);
+  }, [draftId]);
 
   const reload = useCallback(async () => {
-    applyDraft(await api.getResumeDraft(draftId));
+    const generation = pageGeneration.current;
+    const next = await api.getResumeDraft(draftId);
+    if (generation === pageGeneration.current) applyDraft(next);
   }, [applyDraft, draftId]);
 
   useEffect(() => {
     const controller = new AbortController();
+    pageGeneration.current += 1;
+    draftRef.current = null;
+    setDraft(null);
+    setOperationId(null);
+    setBusy(false);
     setError(null);
     api.getResumeDraft(draftId, controller.signal)
-      .then(applyDraft)
+      .then((next) => {
+        if (!controller.signal.aborted) applyDraft(next);
+      })
       .catch((nextError) => {
-        if (!(nextError instanceof DOMException && nextError.name === "AbortError")) {
+        if (!controller.signal.aborted && !(nextError instanceof DOMException && nextError.name === "AbortError")) {
           setError(nextError);
         }
       });
-    return () => controller.abort();
+    return () => {
+      pageGeneration.current += 1;
+      controller.abort();
+    };
   }, [applyDraft, draftId]);
 
   const operationSettled = useCallback(
-    async (settled: OperationView) => {
-      if (settled.status === "succeeded") {
-        clearOperationId("resume", draftId);
-        setOperationId(null);
-      }
+    async (_settled: OperationView, signal: AbortSignal) => {
       try {
-        applyDraft(await api.getResumeDraft(draftId));
+        const next = await api.getResumeDraft(draftId, signal);
+        if (!signal.aborted) applyDraft(next);
       } catch (nextError) {
-        setError(nextError);
+        if (!signal.aborted) setError(nextError);
       }
     },
     [applyDraft, draftId],
@@ -109,14 +124,22 @@ export function ResumeDraftPage({
     setOperationId(null);
     setError(nextError);
   }, [draftId]);
+  const operationSuccessor = useCallback((nextId: string) => {
+    saveOperationId("resume", draftId, nextId);
+    clearRecoverableCommand("resume-retry", draftId);
+    setPendingRetry(null);
+    setOperationId(nextId);
+  }, [draftId]);
   const { operation, error: operationError } = useOperationMonitor(
     operationId,
     operationSettled,
     operationUnavailable,
+    operationSuccessor,
   );
 
   const retryGeneration = async () => {
-    if (!draft || !operationId || busy) return;
+    if (!draft || !operationId || busy || !contentGenerationReady) return;
+    const generation = pageGeneration.current;
     const command: ResumeRetryCommand = pendingRetry ?? {
       kind: "resume-retry",
       idempotencyKey: newCommandKey("resume-retry"),
@@ -136,33 +159,38 @@ export function ResumeDraftPage({
         command.input.expected_revision,
         command.idempotencyKey,
       );
+      if (generation !== pageGeneration.current) return;
       responseObserved = true;
       clearRecoverableCommand("resume-retry", draft.id);
       setPendingRetry(null);
       saveOperationId("resume", draft.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
-      applyDraft(await api.getResumeDraft(draft.id));
+      const next = await api.getResumeDraft(draft.id);
+      if (generation === pageGeneration.current) applyDraft(next);
     } catch (nextError) {
+      if (generation !== pageGeneration.current) return;
       if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
         clearRecoverableCommand("resume-retry", draft.id);
         setPendingRetry(null);
       }
       setError(nextError);
     } finally {
-      setBusy(false);
+      if (generation === pageGeneration.current) setBusy(false);
     }
   };
 
   const acceptDraft = async () => {
     if (!draft || draft.status !== "draft" || busy) return;
+    const generation = pageGeneration.current;
     setBusy(true);
     setError(null);
     try {
-      applyDraft(await api.acceptResumeDraft(draft.id, draft.revision));
+      const next = await api.acceptResumeDraft(draft.id, draft.revision);
+      if (generation === pageGeneration.current) applyDraft(next);
     } catch (nextError) {
-      setError(nextError);
+      if (generation === pageGeneration.current) setError(nextError);
     } finally {
-      setBusy(false);
+      if (generation === pageGeneration.current) setBusy(false);
     }
   };
 
@@ -175,20 +203,25 @@ export function ResumeDraftPage({
     );
   }
 
-  const canRetry = draft.status === "generation_failed"
-    && Boolean(operationId)
-    && Boolean(operation?.error?.retryable);
   const operationLoading = Boolean(operationId && !operation && !operationError);
+  const generationActive = operationLoading || operation?.status === "queued" || operation?.status === "running";
+  const canRetry = draft.status === "generation_failed"
+    && operation?.id === operationId
+    && (operation?.status === "failed" || operation?.status === "interrupted")
+    && !operation.next_operation_id
+    && Boolean(operation.error?.retryable);
   const failureDetail = draft.status === "generation_failed"
     ? operationLoading
-      ? "正在读取这次失败的详细状态。"
-      : operation?.error?.retryable === false
-        ? "这次生成失败，服务端已确认重试次数用完。已确认的资料不受影响。"
-        : operationError
-          ? "失败详情暂时无法读取；页面已经停止重复查询，请刷新草稿状态。"
-          : !operationId
-            ? "服务端没有提供可恢复的操作记录；已确认的资料不受影响。"
-            : null
+      ? "正在读取这次处理的详细状态。"
+      : generationActive
+        ? null
+        : operation?.error?.retryable === false
+          ? "这次生成无法继续重试（次数已用完或需要处理失败原因）。已确认的资料不受影响。"
+          : operationError
+            ? "失败详情暂时无法读取；页面仍会继续查询处理状态，也可手动刷新草稿状态。"
+            : !operationId
+              ? "服务端没有提供可恢复的操作记录；已确认的资料不受影响。"
+              : null
     : null;
   const resumeItems = draft.sections.flatMap((section) => section.items);
   const selectedItem = resumeItems.find((item) => item.item_id === selectedItemId) ?? null;
@@ -218,10 +251,10 @@ export function ResumeDraftPage({
         <div>
 
           <h1>{draft.status === "accepted" ? "你的简历，已确认" : "把经历整理成简历"}</h1>
-          {draft.status === "generating" ? (
+          {draft.status === "generating" || generationActive ? (
             <p>正在整理你已确认的经历。</p>
           ) : draft.status === "generation_failed" ? (
-            <p>简历尚未生成，请查看失败原因后重试。</p>
+            <p>本次简历生成未完成，已确认经历仍保留。请查看下方处理结果。</p>
           ) : null}
 
         </div>
@@ -230,7 +263,7 @@ export function ResumeDraftPage({
             <Button
               type="primary"
               loading={busy}
-              disabled={!serviceReady || busy}
+              disabled={!contentGenerationReady || busy}
               onClick={() => void retryGeneration()}
             >
               {pendingRetry ? "继续未完成的重试" : "重试简历生成"}
@@ -251,12 +284,15 @@ export function ResumeDraftPage({
           ) : null}
         </div>
       </header>
+      {serviceReady && !contentGenerationReady && draft.status === "generation_failed" ? (
+        <p role="status">当前服务未配置内容生成，暂不能重试简历生成；已有草稿仍可查看和确认。</p>
+      ) : null}
 
       <div className="no-print">
         <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
         <OperationStatus operation={operation} label="简历生成" />
         {failureDetail && !canRetry ? (
-          <Alert type={operationLoading ? "info" : "danger"} title="简历生成未完成">
+          <Alert type={operationLoading ? "info" : "danger"} title={operationLoading ? "正在恢复简历生成状态" : "简历生成未完成"}>
             {failureDetail}
           </Alert>
         ) : null}
@@ -293,7 +329,9 @@ export function ResumeDraftPage({
               </ul>
             </section>
           )) : (
-            <p className="empty-state no-print">生成完成后，这里会显示简历正文。</p>
+            <p className="empty-state no-print">{draft.status === "generation_failed"
+              ? "本次没有生成可核对的简历正文。你可以返回资料核对，或查看已有面试报告。"
+              : "生成完成后，这里会显示简历正文。"}</p>
           )}
         </article>
 
@@ -302,7 +340,7 @@ export function ResumeDraftPage({
             <div>
               <h2 id="resume-audit-title">来源核对</h2>
             </div>
-            <span className="source-count">{selectedSources.length} 项来源</span>
+            {selectedItem ? <span className="source-count">{selectedSources.length} 项来源</span> : null}
           </div>
           {selectedItem ? (
             <div className="resume-source-reading">
@@ -331,7 +369,9 @@ export function ResumeDraftPage({
               ) : null}
             </div>
           ) : (
-            <p className="empty-state">正文生成后，可逐条查看引用的资料。</p>
+            <p className="empty-state">{draft.status === "generation_failed"
+              ? "尚无生成正文可关联来源；这不表示你的已确认经历为空。"
+              : "正文生成后，可逐条查看引用的资料。"}</p>
           )}
 
           {(draft.missing_facts.length || draft.cautions.length) ? (

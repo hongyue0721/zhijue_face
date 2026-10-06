@@ -2,7 +2,7 @@ import { Alert, Button } from "@any-design/anyui/react";
 
 export type ServiceState =
   | { status: "checking" }
-  | { status: "ready"; runMode: string; dataMode: string }
+  | { status: "ready"; runMode: string; dataMode: string; contentGeneration: "configured" | "absent" }
   | { status: "unavailable" };
 
 export function ServiceNotice({ state, onRetry }: { state: ServiceState; onRetry: () => void }) {

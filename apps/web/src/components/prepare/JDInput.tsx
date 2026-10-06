@@ -1,5 +1,5 @@
 import { Button, Input, Tag, Textarea } from "@any-design/anyui/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   JD_SOURCE_NAME_MAX_LENGTH,
   JD_TEXT_MAX_LENGTH,
@@ -12,6 +12,8 @@ import {
   splitJdText,
   type JDSections,
 } from "../../jdSections";
+import { clearPrepareDraft, loadPrepareDraft, savePrepareDraft } from "../../prepareDrafts";
+import { TemporaryDraftNotice } from "../common/TemporaryDraftNotice";
 
 const ASSIGN_TARGETS: { key: keyof JDSections; label: string }[] = [
   { key: "required", label: "必要项" },
@@ -22,15 +24,19 @@ const ASSIGN_TARGETS: { key: keyof JDSections; label: string }[] = [
 export function JDInput({
   disabled,
   busy,
+  draftLocked = false,
   onGenerate,
   initialOptions,
+  draftKey,
   regenerating = false,
   onCancel,
 }: {
   disabled: boolean;
   busy: boolean;
+  draftLocked?: boolean;
   onGenerate: (options: CreateInterviewOptions) => void;
   initialOptions?: CreateInterviewOptions;
+  draftKey: string;
   regenerating?: boolean;
   onCancel?: () => void;
 }) {
@@ -38,17 +44,27 @@ export function JDInput({
     () => splitJdText(initialOptions?.jd_text ?? ""),
     [initialOptions?.jd_text],
   );
-  const [jobName, setJobName] = useState(initialOptions?.jd_source_name ?? "");
-  const [sections, setSections] = useState<JDSections>({
+  const [savedDraft] = useState(() => loadPrepareDraft(draftKey));
+  const [jobName, setJobName] = useState(savedDraft?.jobName ?? initialOptions?.jd_source_name ?? "");
+  const [sections, setSections] = useState<JDSections>(savedDraft?.sections ?? {
     required: initial.required,
     preferred: initial.preferred,
     responsibilities: initial.responsibilities,
   });
   // 未分区原文必须可见、可归类；绝不静默丢弃（编辑旧 JD 时会发生数据丢失）。
-  const [unassigned, setUnassigned] = useState<string[]>(initial.unassigned);
+  const [unassigned, setUnassigned] = useState<string[]>(savedDraft?.unassigned ?? initial.unassigned);
   const [validation, setValidation] = useState<string | null>(null);
+  const [storageAvailable, setStorageAvailable] = useState(true);
+  const [restored, setRestored] = useState(Boolean(savedDraft));
   const assembled = assembleJdText(sections);
   const showCharacterCount = assembled.length >= JD_TEXT_MAX_LENGTH * 0.8;
+
+  useEffect(() => {
+    const hasText = Boolean(jobName || sections.required || sections.preferred || sections.responsibilities || unassigned.length);
+    setStorageAvailable(hasText
+      ? savePrepareDraft(draftKey, { jobName, sections, unassigned })
+      : clearPrepareDraft(draftKey));
+  }, [draftKey, jobName, sections, unassigned]);
 
   const setSection = (key: keyof JDSections) => (value: string) =>
     setSections((current) => ({ ...current, [key]: value }));
@@ -157,7 +173,7 @@ export function JDInput({
           "必要项（必备要求）",
           "例如：熟悉 C 语言指针、结构体与位操作",
         )}
-        <details className="jd-optional-fields" open={Boolean(initial.preferred || initial.responsibilities) || undefined}>
+        <details className="jd-optional-fields" open={Boolean(sections.preferred || sections.responsibilities) || undefined}>
           <summary>加分项与岗位职责（选填）</summary>
           {sectionField("preferred", "加分项（优先条件）", "例如：有 CAN、DMA 实际调试经历")}
           {sectionField("responsibilities", "岗位职责", "例如：参与嵌入式固件模块开发与联调")}
@@ -168,6 +184,20 @@ export function JDInput({
           岗位内容 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
         </span>
       ) : null}
+      <TemporaryDraftNotice
+        restored={restored}
+        storageAvailable={storageAvailable}
+        disabled={draftLocked || busy}
+        onStorageChange={setStorageAvailable}
+        onClear={() => {
+          setJobName("");
+          setSections({ required: "", preferred: "", responsibilities: "" });
+          setUnassigned([]);
+          setRestored(false);
+          setValidation(null);
+          setStorageAvailable(clearPrepareDraft(draftKey));
+        }}
+      />
       <div className="button-row split-actions">
         <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>
           {regenerating ? "确认修改并生成新计划" : "根据岗位生成面试计划"}

@@ -4,7 +4,7 @@ export type AppRoute =
   | { page: "interview"; interviewId: string }
   | { page: "report"; interviewId: string }
   | { page: "resume"; draftId: string }
-  | { page: "packs"; releaseId: string | null }
+  | { page: "packs"; releaseId: string | null; returnTo: string }
   | { page: "redirect"; path: string };
 
 function readQuery(search: string, name: string): string | null {
@@ -53,7 +53,7 @@ export function parseRoute(pathname: string, search: string): AppRoute {
       : { page: "redirect", path: "/start?notice=invalid_route" };
   }
   if (pathname === "/knowledge-packs") {
-    return { page: "packs", releaseId: readQuery(search, "release") };
+    return { page: "packs", releaseId: readQuery(search, "release"), returnTo: knowledgeReturnPath(readQuery(search, "returnTo")) };
   }
   return { page: "redirect", path: "/start?notice=invalid_route" };
 }
@@ -79,8 +79,17 @@ export function resumeDraftPath(draftId: string): string {
   return `/resume-drafts/${encodeURIComponent(draftId)}`;
 }
 
-export function knowledgePacksPath(releaseId?: string): string {
-  return releaseId
-    ? `/knowledge-packs?release=${encodeURIComponent(releaseId)}`
-    : "/knowledge-packs";
+export function knowledgeReturnPath(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\") || value.includes("#")) return "/start";
+  const [pathname, search = ""] = value.split("?", 2);
+  if (pathname === "/knowledge-packs") return "/start";
+  const route = parseRoute(pathname, search);
+  return route.page === "redirect" ? "/start" : value;
+}
+
+export function knowledgePacksPath(releaseId?: string, returnTo?: string): string {
+  const query = new URLSearchParams();
+  if (releaseId) query.set("release", releaseId);
+  if (returnTo) query.set("returnTo", knowledgeReturnPath(returnTo));
+  return `/knowledge-packs${query.size ? `?${query.toString().replace(/\+/g, "%20")}` : ""}`;
 }

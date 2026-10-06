@@ -9,7 +9,7 @@ import { StartPage } from "./pages/StartPage";
 import { ReportPage } from "./pages/ReportPage";
 import { ResumeDraftPage } from "./pages/ResumeDraftPage";
 import { KnowledgePacksPage } from "./pages/KnowledgePacksPage";
-import { parseRoute } from "./routing";
+import { knowledgePacksPath, parseRoute } from "./routing";
 
 function browserLocation(): string {
   return `${window.location.pathname}${window.location.search}`;
@@ -19,13 +19,21 @@ export default function App() {
   const [location, setLocation] = useState(browserLocation);
   const [service, setService] = useState<ServiceState>({ status: "checking" });
   const readinessRequest = useRef<AbortController | null>(null);
+  const startPageInstance = useRef(0);
   const route = useMemo(
     () => parseRoute(window.location.pathname, window.location.search),
     [location],
   );
 
   const navigate = useCallback((path: string, replace = false) => {
+    const previous = parseRoute(window.location.pathname, window.location.search);
     window.history[replace ? "replaceState" : "pushState"]({}, "", path);
+    const next = parseRoute(window.location.pathname, window.location.search);
+    // A newly-created profile adopts its URL without discarding an in-flight
+    // upload/file retry. Other navigation owns a fresh profile page instance.
+    if (!(replace && previous.page === "start" && !previous.profileId && next.page === "start" && next.profileId)) {
+      startPageInstance.current += 1;
+    }
     setLocation(browserLocation());
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
@@ -37,7 +45,10 @@ export default function App() {
     } else if (route.page === "redirect") {
       navigate(route.path, true);
     }
-    const onPopState = () => setLocation(browserLocation());
+    const onPopState = () => {
+      startPageInstance.current += 1;
+      setLocation(browserLocation());
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [navigate, route]);
@@ -50,7 +61,7 @@ export default function App() {
     api.ready(controller.signal)
       .then((ready) => {
         if (readinessRequest.current !== controller) return;
-        setService({ status: "ready", runMode: ready.run_mode, dataMode: ready.data_mode });
+        setService({ status: "ready", runMode: ready.run_mode, dataMode: ready.data_mode, contentGeneration: ready.content_generation });
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -73,11 +84,12 @@ export default function App() {
           ? 4
           : null;
   const serviceReady = service.status === "ready";
+  const contentGenerationReady = service.status === "ready" && service.contentGeneration === "configured";
   const invalidRoute = new URLSearchParams(window.location.search).get("notice") === "invalid_route";
 
   return (
     <div className="app-shell">
-      <AppHeader currentStep={currentStep} onOpenPacks={() => navigate("/knowledge-packs")} />
+      <AppHeader currentStep={currentStep} onOpenPacks={() => navigate(knowledgePacksPath(undefined, route.page === "packs" ? route.returnTo : location))} />
       <ServiceNotice state={service} onRetry={checkService} />
       {invalidRoute ? (
         <div className="global-notice">
@@ -87,9 +99,10 @@ export default function App() {
         </div>
       ) : null}
       {route.page === "start" ? (
-        <StartPage profileId={route.profileId} serviceReady={serviceReady} navigate={navigate} />
+        <StartPage key={startPageInstance.current} profileId={route.profileId} serviceReady={serviceReady} contentGenerationReady={contentGenerationReady} navigate={navigate} />
       ) : route.page === "prepare" ? (
         <PreparePage
+          key={route.profileId}
           profileId={route.profileId}
           interviewId={route.interviewId}
           serviceReady={serviceReady}
@@ -105,12 +118,13 @@ export default function App() {
         <ReportPage
           interviewId={route.interviewId}
           serviceReady={serviceReady}
+          contentGenerationReady={contentGenerationReady}
           navigate={navigate}
         />
       ) : route.page === "resume" ? (
-        <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} navigate={navigate} />
+        <ResumeDraftPage draftId={route.draftId} serviceReady={serviceReady} contentGenerationReady={contentGenerationReady} navigate={navigate} />
       ) : route.page === "packs" ? (
-        <KnowledgePacksPage releaseId={route.releaseId} navigate={navigate} />
+        <KnowledgePacksPage releaseId={route.releaseId} returnTo={route.returnTo} navigate={navigate} />
       ) : null}
     </div>
   );

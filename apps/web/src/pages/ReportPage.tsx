@@ -34,15 +34,53 @@ import {
 type ImprovementsCommand = Extract<RecoverableCommand, { kind: "report-improvements" }>;
 type ResumeCommand = Extract<RecoverableCommand, { kind: "report-resume" }>;
 type ReportRetryCommand = Extract<RecoverableCommand, { kind: "report-retry" }>;
+function ImprovedAnswerCopy({ text }: { text: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "success" | "failure">("idle");
+  const [message, setMessage] = useState("");
+
+  const copy = async () => {
+    setCopyState("copying");
+    setMessage("");
+    try {
+      if (!navigator.clipboard?.writeText) {
+        setCopyState("failure");
+        setMessage("当前浏览器无法使用剪贴板，请选中优化后的正文手动复制。");
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setCopyState("success");
+      setMessage("已复制优化后的回答。");
+    } catch {
+      setCopyState("failure");
+      setMessage("复制失败，可能未获剪贴板权限。请重试或选中正文手动复制。");
+    }
+  };
+
+  return (
+    <div className="report-copy-action">
+      <Button
+        type="secondary"
+        size="small"
+        disabled={!text.trim() || copyState === "copying"}
+        onClick={() => void copy()}
+      >
+        {copyState === "copying" ? "正在复制" : "复制优化后的回答"}
+      </Button>
+      <p role="status" aria-live="polite" aria-atomic="true">{message}</p>
+    </div>
+  );
+}
 
 
 export function ReportPage({
   interviewId,
   serviceReady,
+  contentGenerationReady,
   navigate,
 }: {
   interviewId: string;
   serviceReady: boolean;
+  contentGenerationReady: boolean;
   navigate: (path: string) => void;
 }) {
   const [interview, setInterview] = useState<InterviewView | null>(null);
@@ -55,12 +93,26 @@ export function ReportPage({
   const [activeReportTab, setActiveReportTab] = useState<"assessment" | "improvement">(
     "assessment",
   );
+  const [narrowReport, setNarrowReport] = useState(
+    () => window.matchMedia("(max-width: 820px)").matches,
+  );
+  const [overviewExpanded, setOverviewExpanded] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)");
+    const update = () => setNarrowReport(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const assessmentTabRef = useRef<HTMLButtonElement>(null);
   const improvementTabRef = useRef<HTMLButtonElement>(null);
+  const reportRef = useRef<ReportView | null>(null);
+  const pageGeneration = useRef(0);
 
   const applyReport = useCallback((next: ReportView) => {
+    if (next.interview_id !== interviewId || (reportRef.current?.id === next.id && reportRef.current.revision > next.revision)) return;
+    reportRef.current = next;
     setReport(next);
     setSelectedRootId((current) => {
       if (current && next.root_assessments.some((item) => item.root_question_id === current)) {
@@ -104,63 +156,83 @@ export function ReportPage({
       return;
     }
     setOperationId(storedOperationId);
-  }, []);
+  }, [interviewId]);
 
   const reload = useCallback(async () => {
+    const generation = pageGeneration.current;
     const [nextInterview, nextReport] = await Promise.all([
       api.getInterview(interviewId),
       api.getReport(interviewId),
     ]);
+    if (generation !== pageGeneration.current) return;
     setInterview(nextInterview);
     applyReport(nextReport);
   }, [applyReport, interviewId]);
 
   useEffect(() => {
     const controller = new AbortController();
+    pageGeneration.current += 1;
+    reportRef.current = null;
+    setReport(null);
+    setInterview(null);
+    setOperationId(null);
+    setBusy(false);
     setError(null);
     Promise.all([
       api.getInterview(interviewId, controller.signal),
       api.getReport(interviewId, controller.signal),
     ])
       .then(([nextInterview, nextReport]) => {
+        if (controller.signal.aborted) return;
         setInterview(nextInterview);
         applyReport(nextReport);
       })
       .catch((nextError) => {
-        if (!(nextError instanceof DOMException && nextError.name === "AbortError")) {
+        if (!controller.signal.aborted && !(nextError instanceof DOMException && nextError.name === "AbortError")) {
           setError(nextError);
         }
       });
-    return () => controller.abort();
+    return () => {
+      pageGeneration.current += 1;
+      controller.abort();
+    };
   }, [applyReport, interviewId]);
 
   const operationSettled = useCallback(
-    async (settled: OperationView) => {
-      if (settled.status === "succeeded" && report) {
-        clearOperationId("report", report.id);
-        setOperationId(null);
-      }
+    async (_settled: OperationView, signal: AbortSignal) => {
       try {
-        applyReport(await api.getReport(interviewId));
+        const next = await api.getReport(interviewId, signal);
+        if (!signal.aborted) applyReport(next);
       } catch (nextError) {
-        setError(nextError);
+        if (!signal.aborted) setError(nextError);
       }
     },
-    [applyReport, interviewId, report],
+    [applyReport, interviewId],
   );
   const operationUnavailable = useCallback((nextError: unknown) => {
     if (report) clearOperationId("report", report.id);
     setOperationId(null);
     setError(nextError);
   }, [report]);
+  const operationSuccessor = useCallback((nextId: string) => {
+    if (!report) return;
+    saveOperationId("report", report.id, nextId);
+    clearRecoverableCommand("report-retry", report.id);
+    clearRecoverableCommand("report-improvements", report.id);
+    setPendingImprovements(null);
+    setPendingRetry(null);
+    setOperationId(nextId);
+  }, [report]);
   const { operation, error: operationError } = useOperationMonitor(
     operationId,
     operationSettled,
     operationUnavailable,
+    operationSuccessor,
   );
 
   const generateImprovements = async () => {
-    if (!report || busy) return;
+    if (!report || busy || !contentGenerationReady) return;
+    const generation = pageGeneration.current;
     const command: ImprovementsCommand = pendingImprovements ?? {
       kind: "report-improvements",
       idempotencyKey: newCommandKey("coaching"),
@@ -177,25 +249,29 @@ export function ReportPage({
         command.input.expected_revision,
         command.idempotencyKey,
       );
+      if (generation !== pageGeneration.current) return;
       responseObserved = true;
       clearRecoverableCommand("report-improvements", report.id);
       setPendingImprovements(null);
       saveOperationId("report", report.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
-      applyReport(await api.getReport(interviewId));
+      const next = await api.getReport(interviewId);
+      if (generation === pageGeneration.current) applyReport(next);
     } catch (nextError) {
+      if (generation !== pageGeneration.current) return;
       if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
         clearRecoverableCommand("report-improvements", report.id);
         setPendingImprovements(null);
       }
       setError(nextError);
     } finally {
-      setBusy(false);
+      if (generation === pageGeneration.current) setBusy(false);
     }
   };
 
   const retryImprovements = async () => {
-    if (!report || !operationId || busy) return;
+    if (!report || !operationId || busy || !contentGenerationReady) return;
+    const generation = pageGeneration.current;
     const command: ReportRetryCommand = pendingRetry ?? {
       kind: "report-retry",
       idempotencyKey: newCommandKey("coaching-retry"),
@@ -215,25 +291,29 @@ export function ReportPage({
         command.input.expected_revision,
         command.idempotencyKey,
       );
+      if (generation !== pageGeneration.current) return;
       responseObserved = true;
       clearRecoverableCommand("report-retry", report.id);
       setPendingRetry(null);
       saveOperationId("report", report.id, accepted.operation_id);
       setOperationId(accepted.operation_id);
-      applyReport(await api.getReport(interviewId));
+      const next = await api.getReport(interviewId);
+      if (generation === pageGeneration.current) applyReport(next);
     } catch (nextError) {
+      if (generation !== pageGeneration.current) return;
       if (!responseObserved && !shouldPreserveWriteCommand(nextError)) {
         clearRecoverableCommand("report-retry", report.id);
         setPendingRetry(null);
       }
       setError(nextError);
     } finally {
-      setBusy(false);
+      if (generation === pageGeneration.current) setBusy(false);
     }
   };
 
   const createResumeDraft = async () => {
-    if (!report || !interview || busy) return;
+    if (!report || !interview || busy || !contentGenerationReady) return;
+    const generation = pageGeneration.current;
     setBusy(true);
     setError(null);
     let command = pendingResume;
@@ -241,6 +321,7 @@ export function ReportPage({
     try {
       if (!command) {
         const profile = await api.getProfile(interview.profile_id);
+        if (generation !== pageGeneration.current) return;
         command = {
           kind: "report-resume",
           idempotencyKey: newCommandKey("resume"),
@@ -263,19 +344,21 @@ export function ReportPage({
         },
         command.idempotencyKey,
       );
+      if (generation !== pageGeneration.current) return;
       responseObserved = true;
       clearRecoverableCommand("report-resume", report.id);
       setPendingResume(null);
       saveOperationId("resume", accepted.resource_id, accepted.operation_id);
       navigate(resumeDraftPath(accepted.resource_id));
     } catch (nextError) {
+      if (generation !== pageGeneration.current) return;
       if (command && !responseObserved && !shouldPreserveWriteCommand(nextError)) {
         clearRecoverableCommand("report-resume", report.id);
         setPendingResume(null);
       }
       setError(nextError);
     } finally {
-      setBusy(false);
+      if (generation === pageGeneration.current) setBusy(false);
     }
   };
 
@@ -288,20 +371,25 @@ export function ReportPage({
     );
   }
 
-  const canRetry = report.improvements_status === "failed"
-    && Boolean(operationId)
-    && Boolean(operation?.error?.retryable);
   const operationLoading = Boolean(operationId && !operation && !operationError);
+  const generationActive = operationLoading || operation?.status === "queued" || operation?.status === "running";
+  const canRetry = report.improvements_status === "failed"
+    && operation?.id === operationId
+    && (operation?.status === "failed" || operation?.status === "interrupted")
+    && !operation.next_operation_id
+    && Boolean(operation.error?.retryable);
   const failureDetail = report.improvements_status === "failed"
     ? operationLoading
-      ? "正在读取这次失败的详细状态。"
-      : operation?.error?.retryable === false
-        ? "这次生成失败，服务端已确认重试次数用完。已有报告和原回答不受影响。"
-        : operationError
-          ? "失败详情暂时无法读取；页面已经停止重复查询，请刷新报告状态。"
-          : !operationId
-            ? "服务端没有提供可恢复的操作记录；已有报告和原回答不受影响。"
-            : null
+      ? "正在读取这次处理的详细状态。"
+      : generationActive
+        ? null
+        : operation?.error?.retryable === false
+          ? "这次生成无法继续重试（次数已用完或需要处理失败原因）。已有报告和原回答不受影响。"
+          : operationError
+            ? "失败详情暂时无法读取；页面仍会继续查询处理状态，也可手动刷新报告状态。"
+            : !operationId
+              ? "服务端没有提供可恢复的操作记录；已有报告和原回答不受影响。"
+              : null
     : null;
   const selectReportTab = (
     tab: "assessment" | "improvement",
@@ -333,6 +421,33 @@ export function ReportPage({
       ) ?? null
     : null;
   const limitations = report.limitations.map(reportLimitationText);
+  const scoredAssessments = report.root_assessments.filter(
+    (assessment) => assessment.status === "scored" && assessment.score !== null,
+  );
+  const lowestScored = scoredAssessments.reduce<ReportView["root_assessments"][number] | null>(
+    (lowest, assessment) => !lowest || assessment.score! < lowest.score! ? assessment : lowest,
+    null,
+  );
+  const hasScoreDifference = lowestScored !== null && scoredAssessments.some(
+    (assessment) => assessment.score !== lowestScored.score,
+  );
+  const unscoredAssessment = report.root_assessments.find(
+    (assessment) => assessment.status !== "scored",
+  );
+  const missingFactsAssessment = report.root_assessments.find((assessment) =>
+    report.improved_answers.some(
+      (answer) => answer.root_question_id === assessment.root_question_id && answer.missing_facts.length > 0,
+    ),
+  );
+  const missingFactsAnswer = missingFactsAssessment
+    ? report.improved_answers.find((answer) => answer.root_question_id === missingFactsAssessment.root_question_id)
+    : null;
+  const reviewQuestion = (rootId: string, tab: "assessment" | "improvement") => {
+    setSelectedRootId(rootId);
+    selectReportTab(tab, true);
+  };
+  const questionNumber = (rootId: string) =>
+    report.root_assessments.findIndex((assessment) => assessment.root_question_id === rootId) + 1;
 
   return (
     <main className="page-container report-page">
@@ -359,10 +474,65 @@ export function ReportPage({
       </header>
 
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
-      <OperationStatus operation={operation} label="回答优化" />
+      {activeReportTab !== "improvement" ? <OperationStatus operation={operation} label="回答优化" /> : null}
+      <details className="report-action-overview surface-card" open={!narrowReport || overviewExpanded}
+        onToggle={(event) => { if (narrowReport) setOverviewExpanded(event.currentTarget.open); }}>
+        <summary id="report-overview-title" tabIndex={narrowReport ? 0 : -1}>下一步，先看这里</summary>
+        <p className="report-overview-note">仅根据已有评分、题目状态和回答优化中的待补充项整理，不是新的评价。</p>
+        <div className="report-overview-actions">
+          <article>
+            <h3>{hasScoreDifference ? "先核对较低分题的依据" : "按原题顺序回看"}</h3>
+            <p>
+              {hasScoreDifference && lowestScored
+                ? `第 ${questionNumber(lowestScored.root_question_id)} 题为本场已评分题中的最低分（${scoreText(lowestScored.score, "未评分")}）。先对照原回答与评分依据。`
+                : scoredAssessments.length === 0
+                  ? "本场暂无可评分题，不能据此判断强弱；可先查看题目状态和原回答。"
+                  : scoredAssessments.length === 1
+                    ? "本场只有一道已评分题，不能比较题目强弱；可先核对这道题的评分依据。"
+                    : "本场已评分题得分相同，不据此区分强弱；可按原题顺序核对评分依据。"}
+            </p>
+            {lowestScored ? (
+              <Button type="secondary" onClick={() => reviewQuestion(lowestScored.root_question_id, "assessment")}>
+                查看第 {questionNumber(lowestScored.root_question_id)} 题评分依据
+              </Button>
+            ) : null}
+          </article>
+          {unscoredAssessment ? (
+            <article>
+              <h3>查看未评分原因</h3>
+              <p>第 {questionNumber(unscoredAssessment.root_question_id)} 题：{rootAssessmentStatusText[unscoredAssessment.status]}。未评分不等于零分。</p>
+              <Button type="secondary" onClick={() => reviewQuestion(unscoredAssessment.root_question_id, "assessment")}>
+                查看第 {questionNumber(unscoredAssessment.root_question_id)} 题状态与回答
+              </Button>
+            </article>
+          ) : null}
+          {missingFactsAssessment && missingFactsAnswer ? (
+            <article>
+              <h3>补充真实细节，再练一次</h3>
+              <p>第 {questionNumber(missingFactsAssessment.root_question_id)} 题有 {missingFactsAnswer.missing_facts.length} 项待本人补充：{missingFactsAnswer.missing_facts[0].prompt}</p>
+              <Button type="secondary" onClick={() => reviewQuestion(missingFactsAssessment.root_question_id, "improvement")}>
+                查看第 {questionNumber(missingFactsAssessment.root_question_id)} 题待补充项
+              </Button>
+            </article>
+          ) : null}
+        </div>
+      </details>
 
       <section className="report-workspace" aria-label="逐题报告">
         <aside className="question-rail report-question-navigation" aria-label="题目导航">
+          <label className="report-question-chooser">
+            逐题查看
+            <select value={selectedAssessment?.root_question_id ?? ""}
+              onChange={(event) => setSelectedRootId(event.target.value)}>
+              {report.root_assessments.map((assessment, index) => (
+                <option key={assessment.root_question_id} value={assessment.root_question_id}>
+                  问题 {index + 1} · {assessment.score === null
+                    ? rootAssessmentStatusText[assessment.status]
+                    : scoreText(assessment.score, "本题未评分")} · {assessment.question_text}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="question-rail-heading">
             <span>逐题查看</span>
           </div>
@@ -523,13 +693,17 @@ export function ReportPage({
                 <div>
                   <h2>{selectedImprovement ? "让表达更清楚" : "整理本场回答"}</h2>
                 </div>
-                <Tag>{improvementsStatusText[report.improvements_status]}</Tag>
+                <Tag>{improvementsStatusText[generationActive ? "generating" : report.improvements_status]}</Tag>
               </div>
-              {report.improvements_status !== "ready" && (report.improvements_status === "not_requested" || pendingImprovements) ? (
+              <OperationStatus operation={operation} label="回答优化" />
+              {serviceReady && !contentGenerationReady && report.improvements_status !== "ready" ? (
+                <p role="status">当前服务未配置内容生成，暂不能生成或重试回答优化；已有评分和报告仍可查看。</p>
+              ) : null}
+              {!generationActive && report.improvements_status !== "ready" && (report.improvements_status === "not_requested" || pendingImprovements) ? (
                 <Button
                   type="primary"
                   loading={busy}
-                  disabled={!serviceReady || busy}
+                  disabled={!contentGenerationReady || busy}
                   onClick={() => void generateImprovements()}
                 >
                   {pendingImprovements ? "继续未完成的生成" : "生成本场回答优化"}
@@ -539,14 +713,14 @@ export function ReportPage({
                 <Button
                   type="primary"
                   loading={busy}
-                  disabled={!serviceReady || busy}
+                  disabled={!contentGenerationReady || busy}
                   onClick={() => void retryImprovements()}
                 >
                   {pendingRetry ? "继续未完成的生成" : "重试回答优化"}
                 </Button>
               ) : null}
               {failureDetail && !canRetry ? (
-                <Alert type={operationLoading ? "info" : "danger"} title="回答优化未完成">
+                <Alert type={operationLoading ? "info" : "danger"} title={operationLoading ? "正在恢复回答优化状态" : "回答优化未完成"}>
                   {failureDetail}
                 </Alert>
               ) : null}
@@ -562,6 +736,7 @@ export function ReportPage({
                     <div>
                       <h3>优化后</h3>
                       <p>{selectedImprovement.rewritten_answer}</p>
+                      <ImprovedAnswerCopy key={selectedImprovement.root_question_id} text={selectedImprovement.rewritten_answer} />
                     </div>
                   </div>
                   {selectedImprovement.changes.length ? (
@@ -569,7 +744,7 @@ export function ReportPage({
                   ) : null}
                   {(selectedImprovement.missing_facts.length
                     || selectedImprovement.cautions.length) ? (
-                    <details className="compact-details">
+                    <details className="compact-details" open key={selectedImprovement.root_question_id}>
                       <summary>
                         待补充 {selectedImprovement.missing_facts.length} 项
                         {" · "}注意 {selectedImprovement.cautions.length} 项
@@ -622,10 +797,11 @@ export function ReportPage({
                 : "岗位知识包：历史绑定未确定，报告不追认版本。"}
           </p>
         </div>
+        {serviceReady && !contentGenerationReady ? <p role="status">当前服务未配置内容生成，暂不能生成简历草稿。</p> : null}
         <Button
           type="secondary"
           loading={busy}
-          disabled={!serviceReady || busy}
+          disabled={!contentGenerationReady || busy}
           onClick={() => void createResumeDraft()}
         >
           {pendingResume ? "继续未完成的简历生成" : "生成简历草稿"}

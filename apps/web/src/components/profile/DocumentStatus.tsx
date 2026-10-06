@@ -17,6 +17,7 @@ export function DocumentStatus({ selectedName, operation, document }: {
   if (!selectedName && !operation && !document) return null;
   const active = operation?.status === "queued" || operation?.status === "running";
   const failed = operation && ["failed", "interrupted", "canceled"].includes(operation.status);
+  const modelFailure = failed && ["UPSTREAM_FAILED", "UPSTREAM_TIMEOUT"].includes(operation.error?.code ?? "");
   return (
     <section className="document-status material-summary" aria-labelledby="document-status-title">
       <div className="material-summary-row">
@@ -24,7 +25,19 @@ export function DocumentStatus({ selectedName, operation, document }: {
         <span>{active ? "识别中" : failed ? "识别未完成" : document ? extractLabels[document.extract_status] ?? "解析状态待确认" : "等待上传"}</span>
         {document?.extract_status === "parsed" ? <DocumentBlocksDrawer document={document} /> : null}
       </div>
-      {failed ? <Alert type="danger" title="材料处理未完成">{operation.error?.message ?? "文件处理失败，请重新选择 PDF。"}</Alert> : null}
+      {failed ? (
+        <Alert type="danger" title="材料处理未完成">
+          {modelFailure ? (
+            <>
+              <p>自动识别未完成。可以重新上传，或手动填写经历继续；已有确认资料不受影响。</p>
+              <details>
+                <summary>查看失败详情</summary>
+                <p>{operation.error?.message}</p>
+              </details>
+            </>
+          ) : operation.error?.message ?? "文件处理失败，请重新选择 PDF。"}
+        </Alert>
+      ) : null}
       {document?.extract_status === "requires_text" ? <Alert type="warn" title="这份 PDF 里没有可读文字">请手动填写经历，或上传能复制文字的 PDF。</Alert> : null}
       {document?.warnings.map((warning) => <p className="warning-text" key={warning}>{warning}</p>)}
     </section>

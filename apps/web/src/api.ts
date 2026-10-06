@@ -82,6 +82,11 @@ export interface OperationView {
   resource_type: string;
   resource_id: string;
   parent_operation_id: string | null;
+  retry_trigger: "automatic" | "manual" | null;
+  retry_reason: "transient" | "correction" | null;
+  chain_started_at: string;
+  attempt_limit: number | null;
+  next_operation_id: string | null;
   attempts: number;
   result: Record<string, unknown> | null;
   error: { code: string; message: string; retryable: boolean } | null;
@@ -97,6 +102,7 @@ export interface ReadinessView {
   database: string;
   knowledge: string;
   model: string;
+  content_generation: "configured" | "absent";
   seed_bank_version: string;
   // §6.4：包管理可用性与面试生成就绪分开报告；连接失败 ≠ 面试未就绪。
   knowledge_packs?: {

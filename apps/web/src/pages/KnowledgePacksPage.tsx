@@ -109,9 +109,11 @@ function PackValidationSummary({ detail }: { detail: KnowledgePackDetail }) {
 
 export function KnowledgePacksPage({
   releaseId,
+  returnTo,
   navigate,
 }: {
   releaseId: string | null;
+  returnTo: string;
   navigate: (path: string, replace?: boolean) => void;
 }) {
   const [list, setList] = useState<KnowledgePackList | null>(null);
@@ -126,6 +128,7 @@ export function KnowledgePacksPage({
   );
   const [importResult, setImportResult] = useState<Record<string, unknown> | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const detailSeq = useRef(0);
   const submitInFlight = useRef(false);
 
@@ -179,29 +182,39 @@ export function KnowledgePacksPage({
   }, [selectedId]);
 
   const importSettled = useCallback((settled: OperationView) => {
-    clearOperationId("packs", "import");
-    setImportOperationId(null);
     if (settled.status === "succeeded") {
+      clearOperationId("packs", "import");
+      setImportOperationId(null);
       setImportResult(settled.result);
       setDialogOpen(false);
       reloadList();
     }
   }, [reloadList]);
 
-  const importUnavailable = useCallback(() => {
+  const importUnavailable = useCallback((error: unknown) => {
     clearOperationId("packs", "import");
     setImportOperationId(null);
+    setPageError(error);
   }, []);
 
-  const { operation: importOperation } = useOperationMonitor(
+  const { operation: importOperation, error: importMonitorError } = useOperationMonitor(
     importOperationId,
     importSettled,
     importUnavailable,
   );
 
+  const changeImportFile = () => {
+    if (submitInFlight.current) return;
+    clearOperationId("packs", "import");
+    setImportOperationId(null);
+    setPageError(null);
+    setImportResult(null);
+  };
+
   const submitImport = async (file: File) => {
     if (submitInFlight.current) return;
     submitInFlight.current = true;
+    setSubmitting(true);
     setPageError(null);
     setImportResult(null);
     try {
@@ -212,6 +225,7 @@ export function KnowledgePacksPage({
       setPageError(error);
     } finally {
       submitInFlight.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -219,6 +233,7 @@ export function KnowledgePacksPage({
     if (!importOperation || submitInFlight.current) return;
     submitInFlight.current = true;
     setPageError(null);
+    setSubmitting(true);
     try {
       const accepted = await api.retryOperation(
         importOperation.id,
@@ -231,6 +246,7 @@ export function KnowledgePacksPage({
       setPageError(error);
     } finally {
       submitInFlight.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -245,14 +261,14 @@ export function KnowledgePacksPage({
     }
   };
 
-  const busy = importOperation !== null
-    && (importOperation.status === "queued" || importOperation.status === "running");
+  const busy = submitting || Boolean(importOperationId && !importOperation && !importMonitorError)
+    || importOperation?.status === "queued" || importOperation?.status === "running";
   const connectionLost = listError !== null && !(listError instanceof ApiError);
 
   return (
     <main className="page-container packs-page">
       <div className="prepare-navigation">
-        <Button onClick={() => navigate("/start")}>返回资料</Button>
+        <Button onClick={() => navigate(returnTo)}>返回上一页</Button>
         <Button
           type="primary"
           onClick={() => {
@@ -281,8 +297,11 @@ export function KnowledgePacksPage({
             : "尚不可用于新面试（格式通过 ≠ 审核通过）。"}
         </Alert>
       ) : null}
-      <ErrorNotice error={pageError} onReload={() => reloadList()} />
+      <ErrorNotice error={pageError ?? importMonitorError} onReload={() => reloadList()} />
       <OperationStatus operation={importOperation} label="导入岗位包" />
+      {importOperation?.error?.retryable ? (
+        <Button disabled={busy} onClick={() => void retryImport()}>重试导入</Button>
+      ) : null}
       {listLoading && !list ? (
         <p className="packs-loading" role="status">正在读取岗位知识包列表…</p>
       ) : null}
@@ -305,7 +324,7 @@ export function KnowledgePacksPage({
           <KnowledgePackListPanel
             list={list}
             selectedId={selectedId}
-            onSelect={(id) => navigate(knowledgePacksPath(id))}
+            onSelect={(id) => navigate(knowledgePacksPath(id, returnTo))}
           />
           <section className="pack-detail" aria-label="岗位包详情">
             {detail ? (
@@ -398,7 +417,9 @@ export function KnowledgePacksPage({
       <KnowledgePackImportDialog
         isOpen={dialogOpen}
         limits={list?.import_limits ?? null}
+        onFileChange={changeImportFile}
         busy={busy}
+        submitting={submitting}
         operationError={importOperation?.error ?? null}
         retryable={Boolean(importOperation?.error?.retryable)}
         onClose={() => setDialogOpen(false)}

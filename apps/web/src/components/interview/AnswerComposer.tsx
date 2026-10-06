@@ -1,8 +1,17 @@
 import { Alert, Button, Spinner, Textarea } from "@any-design/anyui/react";
 import { useEffect, useState } from "react";
 import type { AcceptedAnswerView, QuestionView } from "../../api";
+import { answerDraftKey, loadAnswerDraft, saveAnswerDraft } from "../../answerDrafts";
+import { clearTemporaryDraft } from "../../temporaryDrafts";
+import { TemporaryDraftNotice } from "../common/TemporaryDraftNotice";
 
-export function AnswerComposer({
+export function AnswerComposer(props: Parameters<typeof AnswerEditor>[0]) {
+  return <AnswerEditor key={answerDraftKey(props.interviewId, props.question.id)} {...props} />;
+}
+
+function AnswerEditor({
+  profileId,
+  interviewId,
   question,
   acceptedAnswer,
   submitting,
@@ -15,6 +24,8 @@ export function AnswerComposer({
   onResetRetry,
   onRetryAnalysis,
 }: {
+  profileId: string;
+  interviewId: string;
   question: QuestionView;
   acceptedAnswer: AcceptedAnswerView | null;
   submitting: boolean;
@@ -27,13 +38,25 @@ export function AnswerComposer({
   onResetRetry: () => void;
   onRetryAnalysis: () => void;
 }) {
-  const [text, setText] = useState(pendingRetryText ?? "");
+  const [savedDraft] = useState(() => acceptedAnswer ? undefined : loadAnswerDraft(interviewId, question.id));
+  const [text, setText] = useState(pendingRetryText ?? savedDraft?.text ?? "");
+  const [restored, setRestored] = useState(Boolean(savedDraft));
+  const [storageAvailable, setStorageAvailable] = useState(true);
   const [validation, setValidation] = useState<string | null>(null);
 
   useEffect(() => {
-    setText("");
-    setValidation(null);
-  }, [question.id]);
+    if (acceptedAnswer) {
+      setStorageAvailable(clearTemporaryDraft(answerDraftKey(interviewId, question.id)));
+      return;
+    }
+    const pending = loadAnswerDraft(interviewId, question.id)?.pending ?? null;
+    // A pending request owns both its exact body and key until resolved/reset.
+    setStorageAvailable(pending
+      ? saveAnswerDraft(profileId, interviewId, question.id, { text: pending.answerText, pending })
+      : text
+        ? saveAnswerDraft(profileId, interviewId, question.id, { text, pending: null })
+        : clearTemporaryDraft(answerDraftKey(interviewId, question.id)));
+  }, [acceptedAnswer, interviewId, profileId, question.id, text]);
 
   const submit = () => {
     const value = (pendingRetryText ?? text).trim();
@@ -61,6 +84,7 @@ export function AnswerComposer({
           <h2 id="accepted-answer-title">已保存的回答</h2>
         </div>
         <p className="saved-answer-text">{acceptedAnswer.raw_text}</p>
+        {!storageAvailable ? <p className="field-error" role="status">服务端回答已保存，但浏览器草稿清除无法确认；请清除此站点的浏览器数据以移除旧副本。</p> : null}
         {processing ? <div className="loading-row"><Spinner size="small" />回答已保存，正在分析</div> : null}
         {failed ? (
           <Alert type="danger" title="回答分析没有完成">
@@ -115,6 +139,18 @@ export function AnswerComposer({
           disabled={submitting || !serviceReady}
         />
       </label>
+      <TemporaryDraftNotice
+        restored={restored}
+        storageAvailable={storageAvailable}
+        disabled={submitting || pendingRetryText !== null}
+        onStorageChange={setStorageAvailable}
+        onClear={() => {
+          setText("");
+          setRestored(false);
+          setValidation(null);
+          setStorageAvailable(clearTemporaryDraft(answerDraftKey(interviewId, question.id)));
+        }}
+      />
       {retry ? (
         <Alert type="warn" title={retryCopy.title}>
           {retryCopy.detail}
