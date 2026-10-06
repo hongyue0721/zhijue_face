@@ -23,19 +23,75 @@ M0 在独立目录创建 Python 3.11 环境、Node 24 LTS 环境；不要修改�
 | `make setup` | 锁定依赖安装：后端 `uv sync --frozen --python 3.11`、前端 `pnpm install --frozen-lockfile`；零模型调用 |
 | `make doctor` | 三档画像检查（offline/toolchain/live）；不打印密钥 |
 | `make check` | `lint` + `test` + `spec` + `integrity` + `doctor`，默认不花模型费用 |
+| `make spec` | 规范资产校验；新记录写入 ignored `runtime/validation-report.md`，不改发行源码的静态报告或 checksum；`BUNDLE_MANIFEST.json` 是发行元数据，不参与规范资产扫描 |
 | `make test` | 后端离线回归，显式排除 `integration_live` |
 | `make test-live` | 显式真实 SDK/embedding smoke；需要私密 env 与负责人授权 |
-| `make demo-fixture` | `scripts/demo.sh fixture`：隔离 runtime 目录 `runtime/demo-fixture/`，合成 Knowledge/脚本分析端口，子进程剥离模型 env，绝不触发真实调用；端口占用友好失败，退出只清理自己的子进程 |
-| `make demo-live` | `scripts/demo.sh live`：独立 runtime `runtime/demo-live/`，要求显式导出私密 env 文件路径；启动后不自动发送任何测试请求，不打印密钥 |
+| `make demo-fixture` | `scripts/demo.sh fixture`：默认 `runtime/demo-fixture/`，合成 Knowledge/脚本分析，剥离模型 env 文件配置，零模型调用；不提供回答优化/简历草稿成功结果 |
+| `make demo-live` | `scripts/demo.sh live`：默认 `runtime/demo-live/`，要求显式导出私密 env 文件路径；启动只检查 HTTP 存活，不发送模型测试请求，不打印密钥 |
 | `make api` / `make web` | 分别前台启动后端（127.0.0.1:8000）与 Vite（5199，/api 代理）；使用 PATH 中真实 node，不依赖仓库外私有目录 |
 | `make openapi` | 由运行时代码导出 `contracts/openapi.json`（契约测试断言与实时 document 一致） |
-| `make checksums` | 重建 `CHECKSUMS.sha256`（与 doctor 口径一致：`git ls-files -c -o --exclude-standard`） |
+| `make checksums` | `scripts/write_checksums.py` 重建 `CHECKSUMS.sha256`；与 doctor/打包共用索引+未忽略源码清单，排除工作区已删除路径，不改 Git 索引或恢复文件 |
 | `make competition-bundle` | `scripts/build_bundle.py`：源码发行包 zip + 逐文件 sha256 manifest + 包指纹 |
-| `make verify-bundle` | `scripts/verify_bundle.sh`：干净临时目录解压、防目录穿越、逐文件校验、doctor bundle 档复验 |
+| `make verify-bundle` | `scripts/verify_bundle.sh`：干净临时目录解压、防目录穿越、逐文件校验、排除 env/runtime/缓存；锁定安装、`make check`、前端测试/构建，再实际启动隔离 fixture，经 Vite 代理走确认/激活/冻结计划/五题/报告；结束回收自身进程 |
+
+需要更新随源码冻结的静态记录时，在仓库根显式执行 `services/api/.venv/bin/python tools/validate_spec.py --report validation-report.md`，通过后再 `make checksums` 并重新打包。验证既有发行包时不要重签解包目录的 checksum。
 
 仍是目标契约、未实现前不写入 Makefile：`make migrate`（当前由 API 启动时执行或手工 alembic）、`make seed-demo`、`make build`、`make up`、`make backup`、`make export-demo`、`make test-e2e`（浏览器闭环当前以验收脚本+人工证据记录，不是一键目标）。
 
 AI 必须维护命令真实行为；不把“建议手动做的步骤”藏在一键启动宣传后面。
+
+### 3.1 启动、隔离与退出
+
+在仓库根目录执行：
+
+```bash
+make demo-fixture
+```
+
+launcher 必须保留在前台：Ctrl-C 或向 **launcher PID** 发送 SIGTERM 会结束并回收它创建的前后端进程组；任一服务退出（包括前端正常退出或启动失败）也会停止另一方。先 TERM，最多等待 5 秒再 KILL；不杀占用端口的既有用户进程。端口释放后可再次执行同一启动命令。Linux 需要 Bash、`setsid`、`python3`、`curl`、Node，以及已安装的项目 venv/Vite。不要把 launcher 最后一行改成 `exec` 替换 shell。
+
+真实 live 启动示例（私密文件自行准备，不将密钥写入命令行或 VITE_ 配置）：
+
+```bash
+export ZHIJUE_MODEL_ENV_FILE=./.env.local
+export ZHIJUE_EMBEDDING_ENV_FILE=./.env.embedding.local
+export ZHIJUE_RUNTIME_DIR="$PWD/runtime/competition-accept"
+make demo-live
+```
+
+两个 env 文件必须存在且可读；**相对路径按执行 launcher 时的调用者 cwd 解析**，不是 `services/api`。launcher 不 source/打印文件内容；后端按配置加载。文本模型自身 `MODEL_TIMEOUT` 在私密模型配置里设置；所有模型 Workflow（事实提取、回答分析、回答优化、简历生成）的外层 deadline 统一从对应适配器解析，默认 `max(60, MODEL_TIMEOUT + 30)` 秒。例如 240 秒请求超时对应 270 秒 Workflow；没有请求超时事实的 fixture 适配器默认 60 秒。
+
+可选正有限值 `ZHIJUE_MODEL_WORKFLOW_TIMEOUT_SECONDS` 显式覆盖全部模型 Workflow；它可以刻意短于请求超时，此时会更早取消，不能把它误当仅回答分析的设置。旧 `ZHIJUE_ANSWER_WORKFLOW_TIMEOUT_SECONDS` 已移除，部署配置须切换新名称；通常不设置覆盖值即可随 `MODEL_TIMEOUT` 变化。SDK session deadline 与外层 asyncio 等待使用同一解析值，事实提取的每个批次也必须传入，不依赖 SDK 默认 60 秒。当前 embedding 使用授权远端 BGE-M3，不需要本地 embedding shim。
+
+`ZHIJUE_RUNTIME_DIR` 可指定独立目录（相对路径也按调用者 cwd）；未指定才使用 `runtime/demo-fixture` 或 `runtime/demo-live`。launcher 强制将业务库和 Milvus Lite 分别定位为该目录的 `business.db`、`knowledge.db`，覆盖宿主遗留的 `ZHIJUE_DATABASE_URL`/`ZHIJUE_MILVUS_URI`，避免跨实例写入。**验证、恢复试验使用全新隔离目录，不复用已有 `runtime/demo-live`。**
+
+端口默认 API 8000、Web 5199，可分别通过 `ZHIJUE_DEMO_API_PORT`/`ZHIJUE_DEMO_WEB_PORT` 覆盖。启动存活探测默认 30 秒，可用正整数秒 `ZHIJUE_DEMO_STARTUP_TIMEOUT` 覆盖；每次 curl 连接与总请求均限制 1 秒。超时或 API 提前退出明确失败并清理，不启动前端、不输出就绪假象。`/api/v1/health/live` 成功只表示 HTTP 存活，**不证明**模型、Knowledge、岗位包或业务 readiness 通过；请检查 `/api/v1/health/ready` 与页面能力状态。
+
+### 3.2 岗位包审核 CLI 的数据库选择
+
+`scripts/manage_knowledge_pack.py` 复用 API 的 `AppConfig`：数据库优先级为 `--database-url` > `ZHIJUE_DATABASE_URL` > `<ZHIJUE_RUNTIME_DIR 或 ./runtime>/business.db`。runtime 同样来自 `ZHIJUE_RUNTIME_DIR`，不会从显式数据库文件的父目录另猜内容存储路径。相对路径与 API 一样相对于当前 cwd；`make api` 会切到 `services/api`，而从仓库根直接运行 CLI 不会。操作已有实例时应显式给出相同的绝对 runtime 与库路径：
+
+```bash
+ZHIJUE_RUNTIME_DIR="$PWD/runtime/competition-accept" \
+ZHIJUE_DATABASE_URL="sqlite:///$PWD/runtime/competition-accept/business.db" \
+services/api/.venv/bin/python scripts/manage_knowledge_pack.py list
+```
+
+CLI 不再隐式迁移或创建数据库。`list` 使用 SQLite 只读连接；库不存在、尚未初始化或版本不兼容时失败，先核对目标实例并由 API 启动流程迁移。`review` 仍要求负责人实际核对、期望 digest、身份/备注及 `--confirm-content-reviewed`；未确认不会打开库。此入口不能替代来源审核，也不能让执行 Agent 自行批准新题。
+
+### 3.3 显式付费 live 闭环
+
+服务使用上面的隔离 runtime 启动后，可另开终端执行：
+
+```bash
+cd services/api
+PYTHONPATH=src .venv/bin/python -m smoke.demo \
+  --base-url http://127.0.0.1:8000/api/v1 \
+  --output ../../runtime/competition-accept/full-live.json \
+  --allow-model-spend
+```
+
+该命令调用正在运行的 live API，**会产生真实模型/embedding 费用**，需授权额度。验收目标包括五道根问题自然结束、至少一次追问、报告、全场回答优化与简历草稿确认；失败也保存证据。命令存在不代表本轮已通过，结论必须以实际运行产物为准。它不应纳入默认离线 CI 或 launcher 自动启动流程。
 
 ## 4. 推荐容器形态
 
@@ -49,7 +105,7 @@ API 一个 Uvicorn worker，非 root；可写目录仅 runtime 和受控临时�
 
 **live**：真实 LLM 与真实 Knowledge，供最终核心演示。
 
-**fixture**：固定输入输出，供单元/界面测试，显著标签；不用于性能和智能效果声明。
+**fixture**：内存合成 Knowledge 回执与脚本回答分析，仍使用真实安装的 openJiuwen Workflow 编排，供界面/流程测试，显著标注 synthetic；不调用真实 LLM/embedding，不证明真实检索、模型效果或性能。回答优化与简历草稿没有 fixture 生成器，相应能力显式 `SERVICE_NOT_READY`，不能把 fixture 当完整 live 演示。已有审核和来源约束仍生效。
 
 **replay**：播放已记录真实历史轨迹，显示录制时间/版本与“非实时”；网络故障时只能显式选择，不自动冒充 live。
 

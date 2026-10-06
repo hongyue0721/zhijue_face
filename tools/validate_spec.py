@@ -7,6 +7,7 @@ This is a specification consistency check, not a business acceptance suite.
 
 from __future__ import annotations
 
+import argparse
 import copy
 import importlib.metadata
 import json
@@ -39,6 +40,7 @@ EXCLUDED_DIRS = {
     "v",
 }
 EXCLUDED_PREFIXES = (("toolchain", "node24"),)
+EXCLUDED_ROOT_FILES = {"BUNDLE_MANIFEST.json"}
 
 
 def iter_assets(pattern: str) -> list[Path]:
@@ -47,6 +49,8 @@ def iter_assets(pattern: str) -> list[Path]:
         if not path.is_file():
             continue
         parts = path.relative_to(ROOT).parts
+        if len(parts) == 1 and parts[0] in EXCLUDED_ROOT_FILES:
+            continue
         if any(part in EXCLUDED_DIRS for part in parts):
             continue
         if any(parts[: len(prefix)] == prefix for prefix in EXCLUDED_PREFIXES):
@@ -67,7 +71,8 @@ def rejects(validator: Draft202012Validator, value: Any) -> bool:
     return bool(list(validator.iter_errors(value)))
 
 
-def main() -> int:
+def main(report_path: Path | None = None) -> int:
+    report_path = report_path or ROOT / "runtime" / "validation-report.md"
     required = [
         "README.md",
         "AGENTS.md",
@@ -488,7 +493,7 @@ def main() -> int:
         "",
         f"结果：**{len(results) - failed}/{len(results)} 项通过；{failed} 项失败。**",
         "",
-        "实际命令：`python tools/validate_spec.py`",
+        "校验入口：`python tools/validate_spec.py`；可用 `--report PATH` 显式指定记录文件。",
         "",
         f"环境：Python {sys.version.split()[0]}；jsonschema {importlib.metadata.version('jsonschema')}；PyYAML {importlib.metadata.version('PyYAML')}。",
         "",
@@ -509,14 +514,15 @@ def main() -> int:
         "",
         "通过这些检查只证明文件路径、编号、Schema、示例和若干配置约束相互一致，不证明没有设计缺陷，也不证明 Demo 已经完成。人工设计复核和真实集成测试仍是后续里程碑。",
         "",
-        "校验器只扫描人写的规范资产：依赖树（node_modules/.venv）、vendored Node runtime（toolchain/node24）与运行期产物（runtime/）不参与，避免依赖自带文档造成假失败。",
+        "校验器只扫描人写的规范资产：依赖树（node_modules/.venv）、vendored Node runtime（toolchain/node24）、运行期产物（runtime/）与发行元数据（BUNDLE_MANIFEST.json）不参与。",
         "",
         "任务板检查已从规划期的“全部 PLANNED”基线改为施工期不变量：状态必须在枚举内，且 VERIFIED/ACCEPTED 必须带产物说明；不为通过校验把已完成任务退回 PLANNED。",
         "",
-        "本报告每次运行覆盖重写。业务验收状态以 process.md 与 docs/handoffs/ 为准，本报告不构成业务验收。",
+        "默认记录写入 runtime/validation-report.md，不改写发行源码中的静态报告或校验和。业务验收状态以 process.md 与 docs/handoffs/ 为准，本报告不构成业务验收。",
         "",
     ]
-    (ROOT / "validation-report.md").write_text("\n".join(lines), encoding="utf-8")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Checks: {len(results) - failed}/{len(results)} passed; {failed} failed")
     for name, ok, details in results:
         if not ok:
@@ -525,4 +531,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--report",
+        type=Path,
+        help="记录输出路径；默认 runtime/validation-report.md，不修改发行源码",
+    )
+    raise SystemExit(main(parser.parse_args().report))

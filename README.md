@@ -1,11 +1,54 @@
-# 职觉 ZhiJue｜Demo 工程规划与 AI 施工规范
+# 职觉 ZhiJue｜嵌入式软件岗位面试陪练
 
-**规范版本：1.0.0 · 编制日期：2026-09-18 · 当前日期：2026-09-20 · 状态：M3 全部 VERIFIED；M4-01 VERIFIED；M4-02 功能、五页 Product Polish 与生产 Content Generator synthetic live 已完成，负责人独立验收待做。**
+以经用户确认的材料为起点，通过 openJiuwen Knowledge 与 Workflow 完成五题面试、有限追问、可追溯评分和不编造经历的回答优化。React/Vite/AnyUI 前端，单一 FastAPI/SQLite 业务数据库；结构化岗位 Seed 不强制向量化。
 
-这是供项目负责人和 Coding Agent 共用的工程规范与当前施工记录。项目已有真实 openJiuwen Workflow/Knowledge、单一 FastAPI/SQLite 业务链，以及资料导入确认→岗位准备→五题作答→评分报告→回答优化→简历草稿的 React 纵切面。M4-02 已实现受事实约束的生成 Workflow、Operation/恢复、五页首屏收口和确认后打印；生产内容模型已用 synthetic 输入分别跑通 coaching/resume，但不把单样本外推为质量、稳定性、成本或负责人验收，也尚未部署。
+**当前状态（2026-10-03）：功能已实现；本地离线与实际浏览器已验证；live 存在成功链和明确失败样本，尚未完成最终版本全新上传闭环及负责人独立验收。没有公网发布。**
+
+## 首次运行
+
+准备 Python 3.11、uv、Node 24 和 pnpm；精确依赖及来源见 `config/versions.lock.json`、`services/api/uv.lock`、`apps/web/pnpm-lock.yaml`。在仓库根目录执行：
+
+```bash
+make setup                          # 锁定安装，不发送模型请求
+make check                          # 后端离线回归、规范、完整性、doctor
+pnpm --dir apps/web test
+pnpm --dir apps/web build
+make demo-fixture                    # 仅合成状态演示，默认 loopback
+```
+
+fixture 的 Knowledge/分析结果是合成实现，不能证明模型质量；默认没有内容生成器，“回答优化/生成简历”会如实提示依赖未配置。live 需要独立私密配置和外部服务，启动、预算与材料外发边界见 [运行手册](docs/11-runbook.md)。有 API key 不等于授权使用真实材料或额外模型预算。
+
+最小流程：资料导入或手填 → 逐条确认事实 → 等待当前快照知识激活 → 填写岗位要求并选择可用知识包 → 生成五题计划 → 回答及受控追问 → 报告 → 配置生成能力后优化回答/生成简历 → 人工确认后打印。用户确认不等于履历认证；评分不是招聘录用结论。
+
+## 岗位知识与数据边界
+
+- 当前只支持嵌入式初级领域，一个能力配置与六条历史已审 Seed；不宣称任意职业换包即用。
+- 岗位包 ZIP 是结构化出题资料，不是候选人文档索引。格式通过、负责人审核、可用于新面试是三个独立状态；上传自带 `approved` 不构成授权。
+- 选择只影响新建面试。受理时冻结 release、实际内容摘要与当时批准范围；导入新版不全局切换默认包，历史场次不追随当前审核。
+- 未经明确授权，不迁移真实业务库、不批准新知识、不发送真实材料、不公开部署。
+
+## 当前验证与演示证据
+
+- 后端离线：**476 passed / 2 deselected**；Ruff check/format 全范围通过（96 文件）。
+- 前端：**44 passed**；TypeScript/Vite 构建通过（122 modules）。
+- 实际 Chromium：六页 × 四个尺寸，以及导入恢复、JD 往返、慢响应、空态/连接失败、拒绝/损坏状态、键盘焦点与浅色方案，见 [本轮验收及边界](docs/aic/2026-10-03-acceptance.md)。
+- 正常 live launcher 使用 qwen3.8-flash 与已确认、真实 BGE-M3 索引资料：五根题、两次追问、87 分完整报告、五条优化建议已取得真实结果；简历复用同快照同目标的既有 accepted 草稿。**这不覆盖全新上传：两次独立上传分别失败于事实来源校验和上游请求。**
+
+![正常 live 报告实拍，合成资料、既有确认快照，不是全新上传端到端证明](docs/aic/evidence/2026-10-03/live-report-desktop.png)
+
+![存储损坏的岗位包被明确阻断，隔离 fixture](docs/aic/evidence/2026-10-03/fixture-corrupt-release.png)
+
+源码发行及独立解压验证：
+
+```bash
+make competition-bundle
+make verify-bundle
+```
+
+最终发行物指纹及独立安装/回归/fixture 验收结果记录在包外 `dist/bundles/*.verification.json`；源码文档不预先为尚未验证的 ZIP 签发通过结论。迁移与回滚步骤见本轮验收记录。
 
 
-## 当前工程快照（2026-09-25，岗位知识包轮次后）
+## 历史工程快照（2026-09-25；以下记录按原日期与原验证范围理解）
 
 - `M0-02`：真实 openJiuwen Workflow/WorkflowAgent smoke 已实现并完成本地回归，状态 `IMPLEMENTED`；额外官方 Base Agent/starter 要求仍 `BLOCKED / UNCONFIRMED`。
 - `M0-03 / M0-03-DEL`：真实 Knowledge 四进程生命周期 `VERIFIED`，覆盖解析、入库、检索、provenance、重启、删除和删除后重启零命中。项目临时锁定到基于 openJiuwen v0.1.18 和官方 PR #1344 的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`；不得描述成官方新发布版。
@@ -24,7 +67,7 @@
 - 模型实测：BGE-M3 embedding 已 live；`deepseek-flash` Answer Analyzer 成功样本为 10.650749 秒、usage 1156/2544/3700；Content Generator 成功 coaching/resume 分别为 27.727351/10.839200 秒、usage 669/6377/7046 与 535/2325/2860。provider 未返回价格，cost 均为 null / NOT_MEASURED；不估造费用。
 - `AIC-PACKS`：结构化岗位知识包契约（manifest/competencies 声明镜像/sources/内容摘要）、不可变 release 与包外负责人审核（CLI 登记，逐条绑定 Seed 内容 hash）、ZIP 安全解压上限、`GET/POST /knowledge-packs*` 异步导入（202+Operation+回执持久）、面试受理时冻结 `pack_release_id+content_digest+competency_profile_id`、`/knowledge-packs` 知识页与准备页选择器已实现；ADR-014 记录决策边界。离线回归 395 passed / 0 failed，前端 29/29 + build，真实浏览器 fixture 纵切面（导入→unreviewed→负责人批准→冻结出题）通过。2026-09-27 负责人授权后 live 模型端到端已 VERIFIED（见 process.md §63：真实 P-EXTRACT/分析/评分/优化/草稿全链通过，浏览器实拍 live 报告页；embedding 腿为本地隔离 shim，非 BGE-M3 等价声明）。负责人对审核 CLI 结论与本批网关兼容变更的独立复核仍 NOT_RUN。
 
-当前事实、证据和唯一下一任务以 [process.md §62](process.md) 的岗位知识包交接为准；上一轮桌面交接见 [process.md §43](process.md#43-2026-09-20m4-02-desktop-桌面业务闭环整改implemented)，历史生产模型记录见 [Content Generator live handoff](docs/handoffs/2026-09-20-m4-02-content-live.md)，验收矩阵见 [测试与验收](docs/07-test-and-acceptance.md)。现有业务库部署前须明确选择数据库并执行新迁移（`a7c4e1f29b58` 增加岗位包三表与 interview 三个可空绑定列，旧行保持 null，不回填）；本轮没有迁移或重启负责人真实 runtime。
+当前事实与待验收项以 [process.md §64](process.md#64-2026-10-03竞赛工作区集成与验收收口implemented本地范围-verified) 和 [本轮验收记录](docs/aic/2026-10-03-acceptance.md) 为准；历史模型和系统记录不能替代本轮。已有数据库部署前需显式选择、停写备份，再执行 `a7c4e1f29b58` 和 `c91f8b34d602` 迁移；后者新增的旧行审核快照保持 null，不倒填今天的审核。本轮迁移 smoke 仅使用自建 synthetic 库的副本，未迁移负责人真实业务库。
 
 ## 项目一句话
 
@@ -56,13 +99,19 @@
 
 ## 阅读顺序
 
-喜欢连续阅读时可打开 [离线阅读版](阅读版.html)，但该 HTML 与 [静态检查结果](validation-report.md) 属于 1.0.0 初始规范快照；当前施工事实以 `process.md`、`CHANGELOG.md` 和最新 handoff 为准。
+喜欢连续阅读时可打开 [离线阅读版](阅读版.html)，该 HTML 保留 1.0.0 初始规范快照。[静态检查记录](validation-report.md) 是随源码冻结的发布记录；`make spec` 的新记录写入 `runtime/validation-report.md`，不改发行源码校验和。当前施工事实以 `process.md`、`CHANGELOG.md` 和最新 handoff 为准。
 
 **负责人先读：** [给鸿岳的实施规划与准备清单](docs/00-owner-guide.md) → [产品需求](docs/01-prd.md) → [里程碑与演示](docs/12-plan-and-demo.md)。
 
 **施工 AI 先读：** [AGENTS.md](AGENTS.md) → [process.md](process.md) → [产品需求](docs/01-prd.md) → [架构](docs/02-architecture.md) → [api.md](api.md) → 当前任务关联文档。
 
 **首次启动任务：** 将 [首次施工指令](ai-prompts/01-start.md) 交给 AI。首次只完成 M0 技术验证与环境锁定，不允许一次铺开全部功能。
+
+## 合成演示数据
+
+演示输入、契约样例与受控验收产物另存于私有仓库：[zhijue-face-demo-data](https://github.com/hongyue0721/zhijue-face-demo-data)。仅获授权的 GitHub 账号可访问；该仓库 README 登记文件来源、用途、复现步骤及验证边界。
+
+合成简历/JD 不是真实候选人经历或企业招聘公告；静态契约样例不是应用实测输出，受控生成器产物不证明真实模型质量。登记中的 Demo Resume v1 是真实私有 PDF，并非合成数据，不进入演示数据仓库；密钥、私密配置和运行数据库也不上传。
 
 ## 文档导航
 
@@ -93,7 +142,7 @@
 | `contracts/`、`examples/` | 可校验的数据契约和合成示例；不是产品运行结果 |
 | `templates/` | 任务、变更、审核、验收与交接模板 |
 | `ai-prompts/` | 首次开工、续接和独立验收指令 |
-| `validation-report.md` | 当前规范资产静态检查结果；不是业务运行或 Level 2 技术审核的替代品 |
+| `validation-report.md` | 随源码冻结的规范检查记录；新运行记录在 `runtime/validation-report.md`；均不能替代业务运行或 Level 2 技术审核 |
 
 ## 规范术语
 
@@ -101,4 +150,4 @@ MUST＝必须执行；SHOULD＝默认执行，偏离要记录原因；MAY＝可�
 
 `PLANNED / IN_PROGRESS / BLOCKED / IMPLEMENTED / VERIFIED / ACCEPTED` 是六种不同状态。写出了代码只能叫 IMPLEMENTED，必须有测试记录才叫 VERIFIED，负责人确认后才叫 ACCEPTED。
 
-文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已包含 M0 探针、业务持久层、资料确认链、面试计划、M3 回答链、M4-01 确定性评分，以及 M4-02 回答优化/简历草稿 Workflow、API 与生产模型 live smoke；`apps/web` 已实现资料导入确认、岗位准备、五题模拟面试、报告和简历草稿五页。当前唯一下一任务为负责人独立验收，不自动启动题库扩展。
+文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已实现资料确认、岗位包、面试、确定性评分和受事实约束的内容生成；`apps/web` 保留原五页并新增轻量岗位知识页。仍需最终版本全新资料 live 闭环和负责人独立验收；不自动扩大题库或职业领域。

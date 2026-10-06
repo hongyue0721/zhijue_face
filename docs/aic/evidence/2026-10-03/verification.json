@@ -1,0 +1,854 @@
+{
+  "recorded_at": "2026-10-03T17:09:22.997Z",
+  "source": {
+    "head": "d1b217f49d1c22e31ded623d5a00305ca1c1e5ec",
+    "dirty_worktree": true,
+    "document_baseline": "d91023ac10cd50a78d766284f05300b2e817b120",
+    "source_hashes": {
+      "services/api/src/zhijue/adapters/model.py": "bbe00d0d0d70d449014fc4b9d956a777ecd47a702bcb8252328d2496533d66b4",
+      "services/api/src/zhijue/application/knowledge_packs.py": "fd0a27f0cb971e07ce04453c989b4c82f198bb38a48700fe974177b1d81dd8f3",
+      "services/api/smoke/demo.py": "1fb8ac904831c2767140269a7e0f4e7f65ac9891b15fcf23a2ac3d6aaf44bce7",
+      "apps/web/src/pages/KnowledgePacksPage.tsx": "d20ca4d73da87f7d9d605aa564e31a201b3352f17de6b4fd84d94d03d38fd943",
+      "apps/web/src/workspace.css": "44ee0d8c6873290bfd4eb92a5680924a87ec841cdb6748e2d4d25bfa8f164eb2",
+      "services/api/migrations/versions/c91f8b34d602_interview_review_snapshot.py": "cd0c3f7d09d5a4479764fec793c1c7d98811afd6cbd50bae81b5bb1cde43c688",
+      "scripts/doctor.py": "1b2ba767ebb16ead9454a9bc7c57f3e3b50f329fa6bc9ea8892e207f0c9ab55a",
+      "scripts/build_bundle.py": "2773bcf1b0d831e9647337f068645cb733876a98180432126c70a52373bf3877",
+      "scripts/write_checksums.py": "eee13cb14a983698ece5a81cc7469a64a9442b098678e0ae6f3b27cd7e17b4ca",
+      "Makefile": "bc2165bc5ecae78c4ec3460a02d2253ac6de800af1ea2d5927e629286890e992",
+      "services/api/tests/test_bundle_source_inventory.py": "96f052fdef89bf19ddad6e862ff6a116eb30ba21b5b875af39d54118b2a67c65",
+      "tools/validate_spec.py": "046721c0c07dd4ebdd4efe8b1598da9eda68ddc9224e51f3c0bf0bd7c8a78833"
+    }
+  },
+  "platform": {
+    "os": "Linux 7.2.7-arch1-1",
+    "arch": "x86_64"
+  },
+  "offline": {
+    "backend": {
+      "command": ".venv/bin/python -m pytest tests -q -m 'not integration_live'",
+      "cwd": "services/api",
+      "exit_code": 0,
+      "passed": 476,
+      "deselected": 2
+    },
+    "ruff": {
+      "command": "ruff check src tests smoke migrations && ruff format --check src tests smoke migrations",
+      "exit_code": 0,
+      "formatted_files": 96
+    },
+    "frontend": {
+      "command": "pnpm test && pnpm build",
+      "cwd": "apps/web",
+      "exit_code": 0,
+      "passed": 44,
+      "test_files": 4,
+      "build_modules": 122
+    },
+    "packaging_regression": {
+      "test": "tests/test_bundle_source_inventory.py::test_current_source_artifacts_respect_deletions_untracked_and_ignored_files",
+      "before": {
+        "exit_code": 1,
+        "error": "FileNotFoundError for indexed-but-deleted source"
+      },
+      "after": {
+        "exit_code": 0,
+        "passed": 1
+      },
+      "scope": "Actual temporary Git, checksum generation, and ZIP byte/manifest verification; no index changes to user repository"
+    },
+    "bundle_spec_integrity_regression": {
+      "test": "tests/test_bundle_source_inventory.py::test_spec_check_in_extracted_bundle_preserves_source_integrity",
+      "before": {
+        "exit_code": 1,
+        "error": "Original source checksum failed after normative CLI rewrote validation-report.md in extracted ZIP"
+      },
+      "after": {
+        "exit_code": 0,
+        "packaging_tests_passed": 2
+      },
+      "behavior": "Default specification output stays in ignored runtime; distribution metadata is not a normative source asset; original signed source checksums remain unchanged"
+    },
+    "prior_bundle_failure": {
+      "sha256": "d6ca8ba603c0dbb62ba20146a72425c2bb47cc372a1b330ff4bdb73b1950f884",
+      "exit_code": 2,
+      "status": "FAIL",
+      "cause": "Packaging metadata BUNDLE_MANIFEST.json was counted as a normative source asset; make spec overwrote the signed source report (216 to 217 scanned files).",
+      "retained_receipt": "dist/bundles/zhijue-aic-source-2026-10-03.failed-d6ca8ba6.verification.json",
+      "retained_full_log": "dist/bundles/zhijue-aic-source-2026-10-03.failed-d6ca8ba6.verification.log"
+    }
+  },
+  "browser": {
+    "layout": [
+      {
+        "page": "start",
+        "mode": "fixture",
+        "width": 1440,
+        "height": 900,
+        "innerWidth": 1440,
+        "scrollWidth": 1440,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "start",
+        "mode": "fixture",
+        "width": 1366,
+        "height": 768,
+        "innerWidth": 1366,
+        "scrollWidth": 1366,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "start",
+        "mode": "fixture",
+        "width": 1024,
+        "height": 768,
+        "innerWidth": 1024,
+        "scrollWidth": 1024,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "start",
+        "mode": "fixture",
+        "width": 390,
+        "height": 844,
+        "innerWidth": 390,
+        "scrollWidth": 390,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "prepare",
+        "mode": "fixture",
+        "width": 1440,
+        "height": 900,
+        "innerWidth": 1440,
+        "scrollWidth": 1440,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "prepare",
+        "mode": "fixture",
+        "width": 1366,
+        "height": 768,
+        "innerWidth": 1366,
+        "scrollWidth": 1366,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "prepare",
+        "mode": "fixture",
+        "width": 1024,
+        "height": 768,
+        "innerWidth": 1024,
+        "scrollWidth": 1024,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "prepare",
+        "mode": "fixture",
+        "width": 390,
+        "height": 844,
+        "innerWidth": 390,
+        "scrollWidth": 390,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "interview",
+        "mode": "fixture",
+        "width": 1440,
+        "height": 900,
+        "innerWidth": 1440,
+        "scrollWidth": 1440,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "interview",
+        "mode": "fixture",
+        "width": 1366,
+        "height": 768,
+        "innerWidth": 1366,
+        "scrollWidth": 1366,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "interview",
+        "mode": "fixture",
+        "width": 1024,
+        "height": 768,
+        "innerWidth": 1024,
+        "scrollWidth": 1024,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "interview",
+        "mode": "fixture",
+        "width": 390,
+        "height": 844,
+        "innerWidth": 390,
+        "scrollWidth": 390,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "resume",
+        "mode": "live",
+        "width": 1440,
+        "height": 900,
+        "innerWidth": 1440,
+        "scrollWidth": 1440,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "resume",
+        "mode": "live",
+        "width": 1366,
+        "height": 768,
+        "innerWidth": 1366,
+        "scrollWidth": 1366,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "resume",
+        "mode": "live",
+        "width": 1024,
+        "height": 768,
+        "innerWidth": 1024,
+        "scrollWidth": 1024,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "resume",
+        "mode": "live",
+        "width": 390,
+        "height": 844,
+        "innerWidth": 390,
+        "scrollWidth": 390,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "report",
+        "mode": "live",
+        "url": "/interviews/interview_9ae3362df48f2bc051e6/report",
+        "width": 1440,
+        "height": 900,
+        "scrollWidth": 1440,
+        "rootButtons": 5,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "report",
+        "mode": "live",
+        "url": "/interviews/interview_9ae3362df48f2bc051e6/report",
+        "width": 1366,
+        "height": 768,
+        "scrollWidth": 1366,
+        "rootButtons": 5,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "report",
+        "mode": "live",
+        "url": "/interviews/interview_9ae3362df48f2bc051e6/report",
+        "width": 1024,
+        "height": 768,
+        "scrollWidth": 1024,
+        "rootButtons": 5,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "report",
+        "mode": "live",
+        "url": "/interviews/interview_9ae3362df48f2bc051e6/report",
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 390,
+        "rootButtons": 5,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "packs",
+        "mode": "fixture",
+        "url": "/knowledge-packs",
+        "width": 1440,
+        "height": 900,
+        "scrollWidth": 1440,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "packs",
+        "mode": "fixture",
+        "url": "/knowledge-packs",
+        "width": 1366,
+        "height": 768,
+        "scrollWidth": 1366,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "packs",
+        "mode": "fixture",
+        "url": "/knowledge-packs",
+        "width": 1024,
+        "height": 768,
+        "scrollWidth": 1024,
+        "overflow": false,
+        "offscreenButtons": []
+      },
+      {
+        "page": "packs",
+        "mode": "fixture",
+        "url": "/knowledge-packs",
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 390,
+        "overflow": false,
+        "offscreenButtons": []
+      }
+    ],
+    "loading": {
+      "url": "/knowledge-packs",
+      "loading": true,
+      "falseEmpty": false,
+      "falseZero": false
+    },
+    "empty": {
+      "text": "职\n职觉 ZhiJue\n岗位知识\n返回上一页\n导入岗位包\n岗位知识包\n\n管理面试出题使用的结构化岗位知识。选择只影响新创建的面试； 已创建的面试永远使用它当时冻结的包。\n\n尚无岗位知识包\n还没有导入任何岗位包。导入不依赖面试模型是否就绪，可以现在导入。\n\n选择左侧岗位知识包查看详情。",
+      "importEnabled": true
+    },
+    "api_error": {
+      "text": "职\n职觉 ZhiJue\n岗位知识\n返回上一页\n导入岗位包\n岗位知识包\n\n管理面试出题使用的结构化岗位知识。选择只影响新创建的面试； 已创建的面试永远使用它当时冻结的包。\n\n无法连接服务\n\n岗位知识包列表读取失败；这不是“没有包”，请稍后重试连接。\n\n重试连接",
+      "empty": false
+    },
+    "keyboard": {
+      "closed": true,
+      "focus": "导入岗位包"
+    },
+    "appearance": {
+      "dark": true,
+      "reduced": true,
+      "background": "rgb(255, 255, 255)",
+      "color": "rgb(28, 38, 56)",
+      "overflow": false
+    },
+    "slow_response": {
+      "heading": "嵌入式软件初级岗位 v1.0.0",
+      "id": "kpr_5b3dbc4e800e18e7",
+      "url": "http://127.0.0.1:5210/knowledge-packs?release=kpr_5b3dbc4e800e18e7&returnTo=%2Fstart"
+    },
+    "jd_round_trip": {
+      "name": "合成岗位：嵌入式软件实习生",
+      "required": "熟悉 C 指针和内存管理\n掌握 STM32 UART/DMA 排障\n理解 FreeRTOS Queue 与互斥量",
+      "preferred": "有 SPI/I2C 调试练习",
+      "url": "http://127.0.0.1:5210/profiles/profile_5ef24a649ea0fcfe2c12/prepare"
+    },
+    "literal_html": {
+      "heading": "<img src=x onerror=alert('XSS')> 合成安全样例 v1.0.2",
+      "injectedImageCount": 0,
+      "alerts": 0,
+      "sourceLinks": [
+        {
+          "href": "https://www.freertos.org/media/2018/FreeRTOS_Reference_Manual_V10.0.0.pdf",
+          "rel": "noopener noreferrer nofollow"
+        },
+        {
+          "href": "https://www.st.com/resource/en/reference_manual/rm0433-stm32h742-stm32h743-753-and-750-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+          "rel": "noopener noreferrer nofollow"
+        },
+        {
+          "href": "https://www.st.com/resource/en/reference_manual/dm00031020-stm32f405-415-stm32f407-417-stm32f427-437-and-stm32f429-439-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf",
+          "rel": "noopener noreferrer nofollow"
+        },
+        {
+          "href": "https://www.st.com/resource/en/reference_manual/dm00355726-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+          "rel": "noopener noreferrer nofollow"
+        },
+        {
+          "href": "https://www.st.com/resource/en/programming_manual/pm0214-stm32-cortexm4-mcus-and-mpus-programming-manual-stmicroelectronics.pdf",
+          "rel": "noopener noreferrer nofollow"
+        }
+      ],
+      "automaticSourceFetches": 0
+    },
+    "corrupt_release": {
+      "validation": "failed",
+      "selectable": false,
+      "reasons": [
+        {
+          "code": "PACK_CONTENT_CORRUPTED",
+          "message": "内容完整性校验失败（PACK_CONTENT_CORRUPTED），该 release 不可用。"
+        },
+        {
+          "code": "PACK_REVIEW_REJECTED",
+          "message": "负责人审核未通过。"
+        }
+      ],
+      "checks": [
+        {
+          "check": "storage_integrity",
+          "status": "failed",
+          "detail": "内容完整性异常：PACK_CONTENT_CORRUPTED"
+        }
+      ]
+    },
+    "default_after_import": {
+      "status": "ready",
+      "binding": {
+        "binding": "frozen",
+        "pack_release_id": "kpr_5b3dbc4e800e18e7",
+        "pack_id": "embedded-software-junior",
+        "name": "嵌入式软件初级岗位",
+        "version": "1.0.0",
+        "content_digest": "sha256:5b3dbc4e800e18e77d47d4c40d365263d0becdfc44c9ec1db57c94a88e1715a6",
+        "competency_profile_id": "embedded-junior-v1"
+      }
+    },
+    "concurrent_import": {
+      "operation_ids": [
+        "operation_2d210ef3fb10906bacf8",
+        "operation_cbb6f30141ceecdae636"
+      ],
+      "results": [
+        {
+          "release_id": "kpr_caf02d36992cd899",
+          "pack_id": "embedded-software-junior",
+          "version": "1.0.3",
+          "content_digest": "sha256:caf02d36992cd8998514dc41189275d251acb7725aff4eb56f992264e1bf2701",
+          "reused": false,
+          "review_status": "unreviewed",
+          "selectable_for_new_interview": false
+        },
+        {
+          "release_id": "kpr_caf02d36992cd899",
+          "pack_id": "embedded-software-junior",
+          "version": "1.0.3",
+          "content_digest": "sha256:caf02d36992cd8998514dc41189275d251acb7725aff4eb56f992264e1bf2701",
+          "reused": true,
+          "review_status": "unreviewed",
+          "selectable_for_new_interview": false
+        }
+      ],
+      "registered_releases": 1,
+      "default_release": "kpr_5b3dbc4e800e18e7"
+    }
+  },
+  "migration": {
+    "status": "PASS",
+    "scope": "own synthetic fixture SQLite backup copy only",
+    "downgrade_to": "a7c4e1f29b58",
+    "upgrade_to": "c91f8b34d602",
+    "preserved_rows": {
+      "profile": 1,
+      "interview": 3,
+      "report": 1
+    },
+    "review_snapshot_null_after_reupgrade": 3,
+    "foreign_key_violations": 0,
+    "model_calls": 0
+  },
+  "fixture_profiles": [
+    {
+      "sample": "合成 UART 排障样例",
+      "input_fact": "合成资料：在 STM32 课程项目中观察 UART DMA 接收日志，记录缓冲区边界问题和验证步骤。",
+      "flow": "normal",
+      "profile_id": "profile_0d52d82cbdeffdfa17d8",
+      "interview_id": "interview_ed55b52d1eabc9776362",
+      "completion": "complete",
+      "coverage": {
+        "planned_root_count": 5,
+        "asked_root_count": 5,
+        "answered_root_count": 5,
+        "scored_root_count": 5,
+        "insufficient_root_count": 0,
+        "disputed_root_count": 0,
+        "skipped_root_count": 0,
+        "unmeasured_root_count": 0,
+        "skipped_question_count": 0,
+        "overall_eligible": true
+      },
+      "overall_score": 67,
+      "root_statuses": [
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        }
+      ],
+      "run_mode": "fixture",
+      "data_mode": "synthetic",
+      "model_calls": 0,
+      "embedding_calls": 0
+    },
+    {
+      "sample": "合成 FreeRTOS 队列样例",
+      "input_fact": "合成资料：在 FreeRTOS 练习中使用 Queue 传递任务消息，检查生产消费节奏并保存串口日志。",
+      "flow": "skip",
+      "profile_id": "profile_8ad04107bf8f60fbc264",
+      "interview_id": "interview_149eb29571baeb2b3a11",
+      "completion": "incomplete",
+      "coverage": {
+        "planned_root_count": 5,
+        "asked_root_count": 5,
+        "answered_root_count": 4,
+        "scored_root_count": 4,
+        "insufficient_root_count": 0,
+        "disputed_root_count": 0,
+        "skipped_root_count": 1,
+        "unmeasured_root_count": 0,
+        "skipped_question_count": 1,
+        "overall_eligible": true
+      },
+      "overall_score": 67,
+      "root_statuses": [
+        {
+          "status": "skipped",
+          "score": null
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "scored",
+          "score": 67
+        }
+      ],
+      "run_mode": "fixture",
+      "data_mode": "synthetic",
+      "model_calls": 0,
+      "embedding_calls": 0
+    },
+    {
+      "sample": "合成 TIM 状态机样例",
+      "input_fact": "合成资料：在 TIM 定时器项目中实现 LED 状态机，只负责状态转换与观察记录。",
+      "flow": "end",
+      "profile_id": "profile_6a69a857e3bbfa32e4a7",
+      "interview_id": "interview_4e2f147d94b4aaa3acf6",
+      "completion": "incomplete",
+      "coverage": {
+        "planned_root_count": 5,
+        "asked_root_count": 2,
+        "answered_root_count": 1,
+        "scored_root_count": 1,
+        "insufficient_root_count": 0,
+        "disputed_root_count": 0,
+        "skipped_root_count": 0,
+        "unmeasured_root_count": 4,
+        "skipped_question_count": 0,
+        "overall_eligible": false
+      },
+      "overall_score": null,
+      "root_statuses": [
+        {
+          "status": "scored",
+          "score": 67
+        },
+        {
+          "status": "unmeasured",
+          "score": null
+        },
+        {
+          "status": "unmeasured",
+          "score": null
+        },
+        {
+          "status": "unmeasured",
+          "score": null
+        },
+        {
+          "status": "unmeasured",
+          "score": null
+        }
+      ],
+      "run_mode": "fixture",
+      "data_mode": "synthetic",
+      "model_calls": 0,
+      "embedding_calls": 0
+    }
+  ],
+  "live": {
+    "status": "PARTIAL",
+    "data_mode": "synthetic",
+    "chat_model": "qwen3.8-flash",
+    "embedding": {
+      "provider": "SiliconFlow",
+      "model": "BAAI/bge-m3",
+      "dimensions": 1024,
+      "indexing_logical_calls": 14,
+      "total_http_calls": null,
+      "cost": null
+    },
+    "diagnostic": {
+      "source": "runtime/competition-accept/full-live-diagnostic.json",
+      "status": "passed",
+      "started_at": "2026-10-03T15:26:14+00:00",
+      "finished_at": "2026-10-03T15:34:28+00:00",
+      "instrumented": true,
+      "scope": "Full extraction/activation/interview/coaching/resume diagnostic; not the normal final-launcher acceptance"
+    },
+    "normal_launcher": {
+      "source": "runtime/competition-accept/current-profile-live.json",
+      "raw_status": "failed",
+      "raw_failure": {
+        "type": "RuntimeError",
+        "message": "resume draft did not retain confirmed claim provenance"
+      },
+      "started_at": "2026-10-03T15:41:09+00:00",
+      "finished_at": "2026-10-03T15:47:10+00:00",
+      "input_provenance": "Reuse the unchanged confirmed and real-BGE-M3-indexed profile from full-live-diagnostic.json; this run does not re-test document extraction. Normal launcher, no diagnostic instrumentation.",
+      "report": {
+        "id": "report_824ad699f6d8cf472528",
+        "completion": "complete",
+        "score": 87,
+        "coverage": {
+          "planned_root_count": 5,
+          "asked_root_count": 5,
+          "answered_root_count": 5,
+          "scored_root_count": 5,
+          "insufficient_root_count": 0,
+          "disputed_root_count": 0,
+          "skipped_root_count": 0,
+          "unmeasured_root_count": 0,
+          "skipped_question_count": 0,
+          "overall_eligible": true
+        }
+      },
+      "followups": 2,
+      "operations": [
+        {
+          "id": "operation_675948a169f6340bd17a",
+          "kind": "interview.plan",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:41:10.005321Z",
+          "updated_at": "2026-10-03T15:41:10.058605Z"
+        },
+        {
+          "id": "operation_2ced1fb8ff929520c561",
+          "kind": "interview.start",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:41:10.545768Z",
+          "updated_at": "2026-10-03T15:41:10.605314Z"
+        },
+        {
+          "id": "operation_ec4419128875a7f6afa7",
+          "kind": "interview.answer",
+          "status": "failed",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:41:11.092854Z",
+          "updated_at": "2026-10-03T15:41:39.213186Z"
+        },
+        {
+          "id": "operation_79760b9c6290841ed9b8",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 2,
+          "created_at": "2026-10-03T15:41:39.368684Z",
+          "updated_at": "2026-10-03T15:41:59.811195Z"
+        },
+        {
+          "id": "operation_09f291b5c54dae61703f",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:42:00.070429Z",
+          "updated_at": "2026-10-03T15:42:24.860445Z"
+        },
+        {
+          "id": "operation_de95fcfbfcd4d197ee65",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:42:25.261430Z",
+          "updated_at": "2026-10-03T15:42:58.133278Z"
+        },
+        {
+          "id": "operation_21e73240a94a228c2167",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:42:58.486425Z",
+          "updated_at": "2026-10-03T15:43:20.091776Z"
+        },
+        {
+          "id": "operation_2ee8a4fff3ba1f02244f",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:43:20.153594Z",
+          "updated_at": "2026-10-03T15:43:53.723652Z"
+        },
+        {
+          "id": "operation_90b0a60e439935affd6b",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:43:53.894162Z",
+          "updated_at": "2026-10-03T15:44:23.710621Z"
+        },
+        {
+          "id": "operation_a568891c701e9b1124df",
+          "kind": "interview.answer",
+          "status": "failed",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:44:24.085806Z",
+          "updated_at": "2026-10-03T15:44:47.383400Z"
+        },
+        {
+          "id": "operation_b8474e9cf71e8f4571e6",
+          "kind": "interview.answer",
+          "status": "succeeded",
+          "attempts": 2,
+          "created_at": "2026-10-03T15:44:47.783340Z",
+          "updated_at": "2026-10-03T15:45:16.900842Z"
+        },
+        {
+          "id": "operation_40374a162e7ed1c2ce04",
+          "kind": "report.coach",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:45:17.004503Z",
+          "updated_at": "2026-10-03T15:47:10.014444Z"
+        },
+        {
+          "id": "operation_9f5d2974a1c7a79dfc28",
+          "kind": "resume.compose",
+          "status": "succeeded",
+          "attempts": 1,
+          "created_at": "2026-10-03T15:33:58.792917Z",
+          "updated_at": "2026-10-03T15:34:28.196728Z"
+        }
+      ],
+      "note": "resume.compose returned a previously accepted draft with matching confirmed snapshot and target; no new resume generation"
+    },
+    "ready_reuse_verification": {
+      "source": "runtime/competition-accept/current-profile-reuse-verification.json",
+      "status": "passed",
+      "scope": "Verify already-ready coaching and accepted resume reuse only; no fresh generation or extraction.",
+      "finished_at": "2026-10-03T15:49:54+00:00",
+      "resume_id": "resume_8435c38985b529084a34"
+    },
+    "new_document_upload_failures": [
+      {
+        "source": "full-live-final.json",
+        "status": "failed",
+        "started_at": "2026-10-03T15:36:43+00:00",
+        "finished_at": "2026-10-03T15:37:12+00:00",
+        "failure": {
+          "type": "RuntimeError",
+          "message": "document.import failed: UPSTREAM_FAILED"
+        },
+        "document_operations": [
+          {
+            "id": "operation_1089e2ab15bc0e52a926",
+            "status": "failed",
+            "error": {
+              "code": "UPSTREAM_FAILED",
+              "message": "P-EXTRACT 结果未通过事实来源校验。 请重新选择并上传文件。",
+              "retryable": false
+            },
+            "attempts": 1
+          }
+        ]
+      },
+      {
+        "source": "full-live-final-recovered.json",
+        "status": "failed",
+        "started_at": "2026-10-03T15:39:46+00:00",
+        "finished_at": "2026-10-03T15:39:52+00:00",
+        "failure": {
+          "type": "RuntimeError",
+          "message": "document.import failed: UPSTREAM_FAILED"
+        },
+        "document_operations": [
+          {
+            "id": "operation_1089e2ab15bc0e52a926",
+            "status": "failed",
+            "error": {
+              "code": "UPSTREAM_FAILED",
+              "message": "P-EXTRACT 结果未通过事实来源校验。 请重新选择并上传文件。",
+              "retryable": false
+            },
+            "attempts": 1
+          },
+          {
+            "id": "operation_02071245e0e83c8774f3",
+            "status": "failed",
+            "error": {
+              "code": "UPSTREAM_FAILED",
+              "message": "P-EXTRACT 模型服务请求失败，请重新选择并上传文件。 请重新选择并上传文件。",
+              "retryable": false
+            },
+            "attempts": 1
+          }
+        ]
+      }
+    ],
+    "known_successful_usage": {
+      "coaching": {
+        "input_tokens": 1851,
+        "output_tokens": 7095,
+        "total_tokens": 8946,
+        "cost": null
+      },
+      "resume_diagnostic": {
+        "input_tokens": 1081,
+        "output_tokens": 1500,
+        "total_tokens": 2581,
+        "cost": null
+      }
+    },
+    "total_model_http_calls": null,
+    "total_cost": null,
+    "not_run": [
+      "Fresh complete normal-launcher upload-to-printed-resume acceptance after the final fixes",
+      "Current openEuler/UOS/Kylin or domestic-CPU live compatibility",
+      "Owner independent acceptance",
+      "Public deployment and release submission",
+      "Remote CI"
+    ]
+  },
+  "finalized_at": "2026-10-03T18:11:27.525Z"
+}

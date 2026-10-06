@@ -1280,3 +1280,31 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - **embedding 事实边界**：该网关无 `/embeddings`（8 个模型名全 404）。Knowledge 腿用负责人本机隔离的 OpenAI 兼容 HTTPS 本地 shim（fastembed `bge-small-zh-v1.5`，512 维，自签证书经 `SSL_CERT_FILE` 固定信任，loopback only，验收基础设施而非产品代码，全部在 gitignored `runtime/live-accept/`）。真实 openJiuwen 索引/检索/激活生命周期为真；**embedding 模型质量非 BGE-M3，不宣称等价**，赛事提交前需按原契约接真实 embedding 供应商。
 - 离线回归同步增长：后端 **395 passed / 0 failed**（+9：/v1 正负例、非流契约、fence 边界、bundle 档、SDK 超时还原、会话预算同源、配置解析），前端 29/29 不变；`make check` 全绿；CHECKSUMS 重建后 bundle/verify-bundle 复验。
 - 仍未授权/未做：真实简历材料（M2-02 私有件）live 复验、统信 UOS/麒麟 OS、公网发布、远端 CI 触发、负责人对本轮提示词与网关策略变更的独立复核。
+
+## 64. 2026-10-03｜竞赛工作区集成与验收收口（IMPLEMENTED，本地范围 VERIFIED）
+
+- 继续主文件任务与本轮缺陷收口，未回退任何新改动。恢复时实际 HEAD `d1b217f49d1c22e31ded623d5a00305ca1c1e5ec`，有未提交工作区；审查基线仍为 `d91023a`。本轮未提交、推送、发布或迁移真实业务库。
+- 永久修复覆盖：资料快照竞态/组合视图；主问题重复及主题丢失；ZIP 目录误拒绝、导入失败恢复；知识页返回资料/JD 上下文；旧答案/旧 parent 重试与累计预算；内容生成失败重启；计划幂等键输入冲突；受理审核范围冻结与内置历史 hash；Knowledge 部分写入清理；启动停止/配置路径/健康超时；审核 CLI 选库、CI 完整性与 OpenAPI 导出。模型分析提示区分来源 reference ID 与解释 point_id，仍保留严格语义校验。
+- 浏览器后追加的根因修复：默认 release 固定为启动时内置资产，导入同 pack_id 新版本不变默认；列表和详情每次核对实际完整性，损坏不再显示可用；820px 以下报告原五题按钮两列换行，不把后三题挤到隐蔽横向轨道。针对新版默认不激活及损坏详情的回归通过。
+- 发行命令真实暴露索引内未提交删除仍被算入源码清单；统一复用 `doctor.tracked_files(root)` 当前存在的源码，新增 `scripts/write_checksums.py`，打包/扫描/校验和同口径。没有恢复已删除测试或更新用户索引；实际 checksum/ZIP 回归修复前 FileNotFoundError，修复后 passed。
+- 独立发行候选 `d6ca8ba6…` 的锁定安装/475 后端回归通过，但规范检查把 ZIP 新增 `BUNDLE_MANIFEST.json` 算入资产并覆盖静态报告，原 checksum 因 216→217 文件计数差异失败；该失败包、完整日志和回执保留在 ignored `dist/bundles/`。根因修复为规范输出与发行源码分离（默认 `runtime/validation-report.md`，可显式 `--report PATH`），发行元数据不参与规范资产扫描。真实 ZIP→规范 CLI→原 checksum 回归修复前 exit 1、修复后 passed；不删除完整性门禁、不重新签名解包中的变动。
+- 最终本地代码回归：后端 `pytest tests -q -m 'not integration_live'` **476 passed / 2 deselected / 109 warnings**（exit 0）；Ruff 全范围 check/format **96 files**（exit 0）；前端 **44 passed**、4 文件，TypeScript/Vite **122 modules**（exit 0）。不是历史测试数量，也不把编译当实际 UI 证明。
+- 实际 Chromium：原五页 + 岗位知识页，1440×900 / 1366×768 / 1024×768 / 390×844 共 24 测量，无页面横溢/按钮横向出界；真实空态/加载/断连、unreviewed/rejected/损坏、慢响应竞争、关闭刷新恢复、未提交多行 JD 往返、Esc 焦点、dark/reduced-motion、HTML 纯文本与来源不自动抓取。实际第 5 题选择、live 优化/accepted 简历、2 页打印已观察。
+- 三份不同 synthetic fixture HTTP 已走 normal/skip/end：完整 5 根；skip 为 null；提前结束 4 根 unmeasured 且总分 null，模型/embedding 调用 0。两个并发新内容导入 Operation 只登记一个 release（新建一次/复用一次），都 unreviewed，默认包不变，没有批准新知识。
+- `c91f8b34d602` 只新增可空审核快照。真实 Alembic smoke 在自建 synthetic SQLite 的一致性备份副本 downgrade `a7c4e1f29b58` 再 upgrade head，Profile/Interview/Report ID 与 FK 保留；重新升级后的历史审核仍 null。回滚会丢该列事实，正式回滚须停写恢复同一时点备份及匹配版本，不能宣传无损 downgrade。
+- **当前 live 范围必须拆开**：15:26–15:34 UTC 的诊断完整链用真实 qwen3.8-flash + SiliconFlow BAAI/bge-m3（1024 维；索引 14 logical calls），83 分/5 根 scored/两追问/优化/简历生成，诊断包装不能替代最终 launcher。正常 launcher 15:41–15:47 UTC 复用既有确认索引资料，87 分/5 根 scored/两追问/五条优化 ready；两条失败分析沿原答有限重试成功。简历命令复用同快照同目标 accepted 草稿，不是新生成。
+- 原正常链 smoke 因只允许 draft、误拒合法 accepted 而记 failed，原 JSON/错误未改写；永久 smoke 现接受 draft/accepted 且检查全部确认 claim。15:49 UTC 只读/幂等核对现有结果 passed，不重测抽取。两个全新导入实际失败分别为事实来源校验、上游请求失败；**最终版本全新上传完整 live 路径仍未通过/待重新验收**。所有费用和精确总 HTTP 调用数缺乏完整计量，保持 null，不估造。
+- 证据/迁移/演示/验收矩阵统一见 `docs/aic/2026-10-03-acceptance.md` 与 `docs/aic/evidence/2026-10-03/verification.json`；合成截图可随源码携带，本机原 live JSON/录屏/打印保留在 gitignored runtime，私密配置不打包。最终 ZIP 指纹与独立安装/离线/前端/实际 fixture 结果在包外 `dist/bundles/*.verification.json`，本文不预签未执行的发行物验证。
+- NOT_RUN：最终正常全新上传→确认→真索引→五题→优化→新简历→确认打印；当前 openEuler/UOS/麒麟/国产 CPU 及 live 系统复验；负责人独立验收；完整第三方再分发许可/正式匿名材料；远端 CI；真实业务库迁移；公网发布/正式发行提交。历史 openEuler 与旧 live shim 证据保留原范围，不扩写为当前兼容或 BGE-M3 等价。
+- 下一任务：负责人按本文明确范围复核最终发行物，并在当前预算/材料授权下做全新资料正常 live 验收；不自动改供应商、降低事实/评分门槛、扩大职业领域或批准包。普通代码与可隔离验证已执行，不以待授权项阻塞它们。
+
+## 65. 2026-10-05｜流程一致性与模型 deadline 收口（离线/受控浏览器 VERIFIED）
+
+- 接续五项已复现故障及三项体验问题，不回退已有工作区。修复回答草稿完整 pending 命令所有权、各阶段模型 Workflow 超时、预算耗尽的重启恢复判定、简历原创建回执、最后 skip/end 的持久化报告终态；准备页正常提交与未知响应分开，窄屏报告压缩导航，自动网络重试/输出修正显示真实原因、额度与整链等待。
+- 浏览器额外捕获成功终态先清监听 ID 导致自己的取消信号丢弃新题目读取；新增回归实际失败后修复读取/释放顺序。旧回调仍受挂载、当前会话和取消信号约束，不移除竞态保护。
+- 配置 clean cutover：`ZHIJUE_MODEL_WORKFLOW_TIMEOUT_SECONDS` 显式正有限值覆盖；未设置按对应适配器请求超时加 30 秒且至少 60 秒，无超时事实为 60 秒。旧回答专用变量已移除；SDK session 与外层等待同源，事实提取逐批传递。未修改私密模型配置。
+- Operation GET 新增 retry_reason、attempt_limit、chain_started_at，公开 retryable 与内容生成受理共用当前策略；原始失败原因和旧记录不改写。api.md、OpenAPI、TS 消费与恢复分支及回归同步；无需数据库迁移。
+- 后端 **586 passed / 2 deselected**，前端 **89 passed**，TypeScript/Vite **125 modules**，Ruff check/format **97 files** 通过。真实 Chromium + FastAPI + SQLite + openJiuwen：晚失败不覆盖新草稿；五根题、67 分、五条优化且评分不变；自动网络恢复、简历确认/刷新/打印；创建原回执复用且不同 body 冲突；最后 skip/end 同报告；第三次中断后 GET 不可重试、无按钮、POST 409、重启后新增模型调用 0。
+- 390×844 报告无横向溢出，五题选择器可切第 5 题，概览默认收起、页签顶部 **528px**。受控 61 秒事实提取在真实 SDK **61.319 秒成功**，不再被默认 60 秒截断。打印 PDF 实际只有 accepted 正文，没有操作/来源核对区。
+- 证据保留于 ignored `runtime/flow-fixes-current/verification.json`、deadline-result.json、截图与 accepted-resume.pdf；临时脚本和验证服务清理。合成输入、受控模型边界，付费模型调用 **0**；本轮真实供应商成功率、最终全新资料正常 live 验收仍 NOT_RUN，不覆盖历史 live 失败。未修改既有用户运行库、发布或更新旧发行 ZIP。
+

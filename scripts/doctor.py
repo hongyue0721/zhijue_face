@@ -298,14 +298,20 @@ def check_runtime_dirs(report: Report, root: Path) -> None:
 
 
 def tracked_files(root: Path) -> list[str]:
-    """仓库可能尚无 commit：-c 索引 + -o 未被 ignore 的工作区文件，与 CHECKSUMS 口径一致。"""
+    """当前源码清单：索引与未忽略文件合并；未提交删除不属于发行输入。"""
     result = subprocess.run(
         ["git", "ls-files", "-z", "-c", "-o", "--exclude-standard"],
         cwd=root,
         capture_output=True,
         check=True,
     )
-    return [p for p in result.stdout.decode("utf-8").split("\0") if p]
+    return sorted(
+        {
+            path
+            for path in result.stdout.decode("utf-8").split("\0")
+            if path and (root / path).is_file()
+        }
+    )
 
 
 def scan_file_for_secrets(path: Path) -> list[str]:

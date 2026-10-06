@@ -40,7 +40,7 @@ jobs:
       - name: Spec and repo integrity (offline profile)
         run: |
           .venv/bin/python ../../tools/validate_spec.py
-          sha256sum -c ../../CHECKSUMS.sha256
+          (cd ../.. && sha256sum -c CHECKSUMS.sha256)
 
       - name: Doctor offline readiness (source + locked deps; no network, no secrets)
         run: .venv/bin/python ../../scripts/doctor.py

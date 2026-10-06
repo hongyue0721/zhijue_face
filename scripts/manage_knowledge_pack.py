@@ -16,39 +16,51 @@
         --note "已对照 S24/S26/S28/S29/S30 完成 Level 2 核对" \
         --confirm-content-reviewed
 
-数据库只取显式 ZHIJUE_DATABASE_URL（默认 runtime/business.db），
-不提供“顺手迁移真实库”的隐式路径。
+数据库优先级：--database-url > ZHIJUE_DATABASE_URL > AppConfig 默认值。
+runtime 与 API 同取 ZHIJUE_RUNTIME_DIR（默认调用者 cwd 下的 runtime）。
+只打开已有数据库，list 使用 SQLite 只读连接；任何命令都不隐式迁移。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
 
+from sqlalchemy.engine import make_url  # noqa: E402
+from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
+
 from zhijue.adapters.db.engine import make_engine  # noqa: E402
-from zhijue.adapters.db.migrations import upgrade_database  # noqa: E402
+from zhijue.api.app import AppConfig  # noqa: E402
 from zhijue.application.knowledge_packs import KnowledgePackService  # noqa: E402
 from zhijue.domain.knowledge_packs import PackLimits  # noqa: E402
 
 
-def build_service(database_url: str) -> KnowledgePackService:
-    # 岗位包内容存储与业务库同属一个实例的 runtime 目录：显式
-    # ZHIJUE_RUNTIME_DIR 优先，SQLite 否则取库文件父目录；不猜第三处。
-    env_runtime = os.environ.get("ZHIJUE_RUNTIME_DIR")
-    if env_runtime:
-        runtime_dir = Path(env_runtime).resolve()
-    elif database_url.startswith("sqlite:///"):
-        runtime_dir = Path(database_url.removeprefix("sqlite:///")).resolve().parent
-    else:
-        raise SystemExit(
-            "非 SQLite 数据库必须显式设置 ZHIJUE_RUNTIME_DIR（岗位包内容存储位置）。"
-        )
+def build_service(
+    database_url: str | None = None, *, read_only: bool = False
+) -> KnowledgePackService:
+    config = AppConfig.from_env()
+    database_url = database_url or config.database_url
+    runtime_dir = config.runtime_dir.resolve()
+    url = make_url(database_url)
+    if url.get_backend_name() == "sqlite":
+        if not url.database or url.database == ":memory:":
+            raise SystemExit("审核入口需要已初始化的 SQLite 文件数据库。")
+        database_path = Path(url.database).resolve()
+        if not database_path.is_file():
+            raise SystemExit(
+                "目标数据库不存在；请核对 --database-url / ZHIJUE_DATABASE_URL / "
+                "ZHIJUE_RUNTIME_DIR，并先由 API 初始化目标实例。未创建或迁移数据库。"
+            )
+        # SQLite URI mode 防止只读 list 写库，也防止文件消失后隐式新建库。
+        database_url = url.set(
+            database=database_path.as_uri(),
+            query={"mode": "ro" if read_only else "rw", "uri": "true"},
+        ).render_as_string(hide_password=False)
     import yaml
 
     demo = yaml.safe_load((ROOT / "config" / "demo.yaml").read_text(encoding="utf-8"))
@@ -58,8 +70,7 @@ def build_service(database_url: str) -> KnowledgePackService:
     limits = PackLimits(
         **{k: int(v) for k, v in (pack_section.get("limits") or {}).items()}
     )
-    upgrade_database(database_url)
-    engine = make_engine(database_url, wal=True)
+    engine = make_engine(database_url)
     return KnowledgePackService(
         engine,
         runtime_dir=runtime_dir,
@@ -76,8 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database-url",
-        default="sqlite:///./services/api/runtime/business.db",
-        help="目标业务库（SQLite URL）；审核登记不会触碰其他库。",
+        default=None,
+        help="目标业务库；优先于 ZHIJUE_DATABASE_URL，否则采用 API AppConfig 默认值。",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -105,10 +116,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    service = build_service(args.database_url)
-
     if args.command == "list":
-        view = service.list_view()
+        service = build_service(args.database_url, read_only=True)
+        try:
+            view = service.list_view()
+        except SQLAlchemyError:
+            print(
+                "读取岗位包失败：请核对目标库及迁移版本；请由 API 初始化/迁移，"
+                "本入口未执行迁移。",
+                file=sys.stderr,
+            )
+            return 1
         print(json.dumps(view, ensure_ascii=False, indent=2))
         return 0
 
@@ -119,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    service = build_service(args.database_url)
     result = service.record_review(
         release_id=args.release_id,
         expected_digest=args.expect_digest,

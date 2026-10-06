@@ -4,7 +4,7 @@
 
 结果：**48/48 项通过；0 项失败。**
 
-实际命令：`python tools/validate_spec.py`
+校验入口：`python tools/validate_spec.py`；可用 `--report PATH` 显式指定记录文件。
 
 环境：Python 3.11.16；jsonschema 4.26.0；PyYAML 6.0.3。
 
@@ -13,8 +13,8 @@
 | 检查 | 结果 | 说明 |
 |---|---|---|
 | 关键文件存在 | PASS | 11 项存在 |
-| UTF-8 与 LF | PASS | 208 文件检查通过 |
-| Markdown 本地链接 | PASS | 24 条路径存在 |
+| UTF-8 与 LF | PASS | 216 文件检查通过 |
+| Markdown 本地链接 | PASS | 33 条路径存在 |
 | 来源编号 | PASS | 引用 14 种；登记 30 种；未登记 [] |
 | 需求和测试编号 | PASS | 需求 19，测试 34；未知 [] |
 | 任务依赖无悬空/环 | PASS | 18 个任务，无环 |
@@ -67,8 +67,8 @@
 
 通过这些检查只证明文件路径、编号、Schema、示例和若干配置约束相互一致，不证明没有设计缺陷，也不证明 Demo 已经完成。人工设计复核和真实集成测试仍是后续里程碑。
 
-校验器只扫描人写的规范资产：依赖树（node_modules/.venv）、vendored Node runtime（toolchain/node24）与运行期产物（runtime/）不参与，避免依赖自带文档造成假失败。
+校验器只扫描人写的规范资产：依赖树（node_modules/.venv）、vendored Node runtime（toolchain/node24）、运行期产物（runtime/）与发行元数据（BUNDLE_MANIFEST.json）不参与。
 
 任务板检查已从规划期的“全部 PLANNED”基线改为施工期不变量：状态必须在枚举内，且 VERIFIED/ACCEPTED 必须带产物说明；不为通过校验把已完成任务退回 PLANNED。
 
-本报告每次运行覆盖重写。业务验收状态以 process.md 与 docs/handoffs/ 为准，本报告不构成业务验收。
+默认记录写入 runtime/validation-report.md，不改写发行源码中的静态报告或校验和。业务验收状态以 process.md 与 docs/handoffs/ 为准，本报告不构成业务验收。

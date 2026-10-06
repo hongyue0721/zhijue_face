@@ -58,10 +58,10 @@ demo-live: ## 显式受控 live 配置启动（需私密 env 文件；不自动�
 	./scripts/demo.sh live
 
 openapi: ## 重新导出 contracts/openapi.json（路由/DTO 变更后必须执行）
-	$(PY) ../../scripts/export_openapi.py
+	$(PY) scripts/export_openapi.py
 
 checksums: ## 重新生成 CHECKSUMS.sha256（与 doctor 口径一致）
-	git -c core.quotepath=false ls-files -z -c -o --exclude-standard | grep -zv '^CHECKSUMS.sha256$$' | xargs -0 sha256sum > CHECKSUMS.sha256
+	$(PY) scripts/write_checksums.py
 
 competition-bundle: ## 生成参赛源码发行包（zip + sha256）
 	$(PY) scripts/build_bundle.py
