@@ -1,0 +1,16 @@
+/*
+ * 样式入口，按层级顺序引入：令牌 → 基础 → 组件库覆盖 → 骨架 → 共享组件 → 页面 → 打印。
+ * 页面文件只写本页作用域的规则，跨页面复用的外观放在 components.css。
+ */
+@import "./tokens.css";
+@import "./base.css";
+@import "./anyui.css";
+@import "./layout.css";
+@import "./components.css";
+@import "./pages/profile.css";
+@import "./pages/prepare.css";
+@import "./pages/interview.css";
+@import "./pages/report.css";
+@import "./pages/resume.css";
+@import "./pages/packs.css";
+@import "./print.css";

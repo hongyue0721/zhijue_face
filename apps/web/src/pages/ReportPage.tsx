@@ -1,4 +1,5 @@
-import { Alert, Button, Tag } from "@any-design/anyui/react";
+import { Tag } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
@@ -11,11 +12,15 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
+import { ImprovementComparison } from "../components/report/ImprovementComparison";
+import { BackLink, PageHeading, PageNav } from "../components/layout/PageNav";
 import {
   criterionDisplayName,
   criterionFindingText,
   criterionLevelText,
+  frozenCompetencyLabels,
   improvementsStatusText,
+  interviewRoleText,
   reportLimitationText,
   rootAssessmentStatusText,
   scoreText,
@@ -44,7 +49,7 @@ function ImprovedAnswerCopy({ text }: { text: string }) {
     try {
       if (!navigator.clipboard?.writeText) {
         setCopyState("failure");
-        setMessage("当前浏览器无法使用剪贴板，请选中优化后的正文手动复制。");
+        setMessage("当前浏览器无法使用剪贴板，请选中优化后的回答手动复制。");
         return;
       }
       await navigator.clipboard.writeText(text);
@@ -384,11 +389,11 @@ export function ReportPage({
       : generationActive
         ? null
         : operation?.error?.retryable === false
-          ? "这次生成无法继续重试（次数已用完或需要处理失败原因）。已有报告和原回答不受影响。"
+          ? "这次生成无法再重试（次数已用完，或失败原因需要先处理）。已有的报告和回答不受影响。"
           : operationError
             ? "失败详情暂时无法读取；页面仍会继续查询处理状态，也可手动刷新报告状态。"
             : !operationId
-              ? "服务端没有提供可恢复的操作记录；已有报告和原回答不受影响。"
+              ? "没有找到可以恢复的处理记录；已有的报告和回答不受影响。"
               : null
     : null;
   const selectReportTab = (
@@ -420,7 +425,8 @@ export function ReportPage({
         (item) => item.root_question_id === selectedAssessment.root_question_id,
       ) ?? null
     : null;
-  const limitations = report.limitations.map(reportLimitationText);
+  const competencyLabels = frozenCompetencyLabels(report.knowledge_pack);
+  const limitations = report.limitations.map((note) => reportLimitationText(note, competencyLabels));
   const scoredAssessments = report.root_assessments.filter(
     (assessment) => assessment.status === "scored" && assessment.score !== null,
   );
@@ -451,45 +457,51 @@ export function ReportPage({
 
   return (
     <main className="page-container report-page">
-      <nav className="page-backlinks" aria-label="报告返回导航">
-        <Button type="secondary" size="small" onClick={() => navigate(startPath(interview.profile_id))}>
-          返回资料
-        </Button>
-        <Button type="secondary" size="small" onClick={() => navigate(preparePath(interview.profile_id))}>
-          重新准备面试
-        </Button>
-      </nav>
-      <header className="compact-page-heading report-heading">
-        <div>
-
-          <h1>回看这一场，找到下一步</h1>
-          <p>
-            已回答 {report.coverage.answered_root_count}/{report.coverage.planned_root_count}
-            {" · "}可评分 {report.coverage.scored_root_count}/{report.coverage.planned_root_count}
-          </p>
-        </div>
-        <div className="score-summary" aria-label="本场总分">
-          <strong>{scoreText(report.overall_score, "未形成总分")}</strong>
-        </div>
-      </header>
+      <PageNav
+        label="报告返回导航"
+        actions={(
+          <Button type="secondary" size="small" onClick={() => navigate(preparePath(interview.profile_id))}>
+            重新准备一场面试
+          </Button>
+        )}
+      >
+        <BackLink onClick={() => navigate(startPath(interview.profile_id))}>返回资料</BackLink>
+      </PageNav>
+      <PageHeading
+        className="report-heading"
+        eyebrow="面试复盘"
+        title="回看这一场，找到下一步"
+        aside={(
+          <div className="score-summary" aria-label="本场总分">
+            <span>本场总分</span>
+            <strong>{scoreText(report.overall_score, "未形成总分")}</strong>
+          </div>
+        )}
+      >
+        <ul className="plan-facts" aria-label="本场完成情况">
+          <li>已回答 <strong>{report.coverage.answered_root_count}/{report.coverage.planned_root_count}</strong></li>
+          <li>可评分 <strong>{report.coverage.scored_root_count}/{report.coverage.planned_root_count}</strong></li>
+          <li>{interviewRoleText(interview)}</li>
+        </ul>
+      </PageHeading>
 
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       {activeReportTab !== "improvement" ? <OperationStatus operation={operation} label="回答优化" /> : null}
       <details className="report-action-overview surface-card" open={!narrowReport || overviewExpanded}
         onToggle={(event) => { if (narrowReport) setOverviewExpanded(event.currentTarget.open); }}>
         <summary id="report-overview-title" tabIndex={narrowReport ? 0 : -1}>下一步，先看这里</summary>
-        <p className="report-overview-note">仅根据已有评分、题目状态和回答优化中的待补充项整理，不是新的评价。</p>
+        <p className="report-overview-note">根据本场已有的评分和待补充项整理，不是新的评价。</p>
         <div className="report-overview-actions">
           <article>
-            <h3>{hasScoreDifference ? "先核对较低分题的依据" : "按原题顺序回看"}</h3>
+            <h3>{hasScoreDifference ? "先看得分最低的一题" : "按题目顺序回看"}</h3>
             <p>
               {hasScoreDifference && lowestScored
-                ? `第 ${questionNumber(lowestScored.root_question_id)} 题为本场已评分题中的最低分（${scoreText(lowestScored.score, "未评分")}）。先对照原回答与评分依据。`
+                ? `第 ${questionNumber(lowestScored.root_question_id)} 题得分最低（${scoreText(lowestScored.score, "未评分")}），建议先对照你的回答看评分依据。`
                 : scoredAssessments.length === 0
-                  ? "本场暂无可评分题，不能据此判断强弱；可先查看题目状态和原回答。"
+                  ? "本场暂无可评分的题目，无法判断强弱；可以先看各题状态和你的回答。"
                   : scoredAssessments.length === 1
-                    ? "本场只有一道已评分题，不能比较题目强弱；可先核对这道题的评分依据。"
-                    : "本场已评分题得分相同，不据此区分强弱；可按原题顺序核对评分依据。"}
+                    ? "本场只有一道题完成评分，无法比较强弱；可以先看这道题的评分依据。"
+                    : "各题得分相同，看不出明显短板；可以按题目顺序回看评分依据。"}
             </p>
             {lowestScored ? (
               <Button type="secondary" onClick={() => reviewQuestion(lowestScored.root_question_id, "assessment")}>
@@ -509,7 +521,7 @@ export function ReportPage({
           {missingFactsAssessment && missingFactsAnswer ? (
             <article>
               <h3>补充真实细节，再练一次</h3>
-              <p>第 {questionNumber(missingFactsAssessment.root_question_id)} 题有 {missingFactsAnswer.missing_facts.length} 项待本人补充：{missingFactsAnswer.missing_facts[0].prompt}</p>
+              <p>第 {questionNumber(missingFactsAssessment.root_question_id)} 题有 {missingFactsAnswer.missing_facts.length} 项需要你补充真实细节，例如：{missingFactsAnswer.missing_facts[0].prompt}</p>
               <Button type="secondary" onClick={() => reviewQuestion(missingFactsAssessment.root_question_id, "improvement")}>
                 查看第 {questionNumber(missingFactsAssessment.root_question_id)} 题待补充项
               </Button>
@@ -571,7 +583,7 @@ export function ReportPage({
               <p className="eyebrow">第 {selectedIndex + 1} 题</p>
               <h2>{selectedAssessment.question_text}</h2>
               {activeReportTab === "assessment" ? <details className="report-original-answers" open key={selectedAssessment.root_question_id}>
-                <summary>你的原回答（{selectedAssessment.answers.length} 次）</summary>
+                <summary>你的回答（{selectedAssessment.answers.length} 条）</summary>
                 {selectedAssessment.answers.length ? selectedAssessment.answers.map((answer) => (
                   <article key={answer.answer_id}>
                     {answer.question_kind !== "main" ? (
@@ -630,14 +642,19 @@ export function ReportPage({
                 </div>
                 <div className="assessment-score">
                   <strong>{scoreText(selectedAssessment.score, "未评分")}</strong>
-                  <span>覆盖 {Math.round(selectedAssessment.coverage * 100)}%</span>
+                  <span>评分覆盖 {Math.round(selectedAssessment.coverage * 100)}%</span>
                 </div>
               </div>
               <div className="criterion-list">
-                {selectedAssessment.criterion_results.map((criterion, criterionIndex) => (
+                {selectedAssessment.criterion_results.map((criterion, criterionIndex, all) => (
                   <article className="criterion-result" key={criterion.criterion_id}>
                     <div className="criterion-summary">
-                      <strong>{criterionDisplayName(criterion.kind, criterionIndex)}</strong>
+                      <strong>{criterionDisplayName(
+                        criterion.kind,
+                        all.filter((item) => item.kind === criterion.kind).length > 1
+                          ? all.slice(0, criterionIndex + 1).filter((item) => item.kind === criterion.kind).length
+                          : null,
+                      )}</strong>
                       <span>
                         {criterionFindingText[criterion.finding]}
                         {" · "}{criterionLevelText(criterion.level)}
@@ -652,7 +669,7 @@ export function ReportPage({
                     ) : null}
                     {(criterion.answer_quotes.length || criterion.knowledge_refs.length) ? (
                       <details className="compact-details">
-                        <summary>查看来源与技术详情</summary>
+                        <summary>查看回答引用与参考资料</summary>
                         {criterion.answer_quotes.length ? (
                           <div>
                             <h3>回答引用</h3>
@@ -665,7 +682,7 @@ export function ReportPage({
                         ) : null}
                         {criterion.knowledge_refs.length ? (
                           <div>
-                            <h3>技术资料引用</h3>
+                            <h3>参考资料</h3>
                             <ul>
                               {criterion.knowledge_refs.map((reference, index) => (
                                 <li key={reference}>资料 {index + 1}：{reference}</li>
@@ -725,33 +742,26 @@ export function ReportPage({
                 </Alert>
               ) : null}
               {selectedImprovement ? (
-                <div className="selected-improvement">
-                  <div className="answer-comparison answer-reading-comparison">
-                    <div>
-                      <h3>原回答</h3>
-                      {selectedImprovement.original_answers.map((answer) => (
-                        <p key={answer.answer_id}>{answer.raw_text}</p>
-                      ))}
-                    </div>
-                    <div>
-                      <h3>优化后</h3>
-                      <p>{selectedImprovement.rewritten_answer}</p>
-                      <ImprovedAnswerCopy key={selectedImprovement.root_question_id} text={selectedImprovement.rewritten_answer} />
-                    </div>
-                  </div>
+                // 以题目为 key 整体重建：换题时分段选中与“待补充”展开状态一起复位。
+                <div className="selected-improvement" key={selectedImprovement.root_question_id}>
+                  <ImprovementComparison
+                    improvement={selectedImprovement}
+                    sourceClaims={report.source_claims}
+                    copyAction={<ImprovedAnswerCopy text={selectedImprovement.rewritten_answer} />}
+                  />
                   {selectedImprovement.changes.length ? (
                     <p className="change-note">{selectedImprovement.changes.join("；")}</p>
                   ) : null}
                   {(selectedImprovement.missing_facts.length
                     || selectedImprovement.cautions.length) ? (
-                    <details className="compact-details" open key={selectedImprovement.root_question_id}>
+                    <details className="compact-details" open>
                       <summary>
                         待补充 {selectedImprovement.missing_facts.length} 项
                         {" · "}注意 {selectedImprovement.cautions.length} 项
                       </summary>
                       {selectedImprovement.missing_facts.length ? (
                         <div>
-                          <h3>仍需本人补充</h3>
+                          <h3>需要你补充的真实细节</h3>
                           <ul>
                             {selectedImprovement.missing_facts.map((fact) => (
                               <li key={fact.prompt}>{fact.prompt}：{fact.reason}</li>
@@ -788,14 +798,25 @@ export function ReportPage({
               <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
             </details>
           ) : null}
-          {/* 本场包摘要来自 Interview 冻结字段，不受“当前默认包”影响。 */}
+          {/* 报告直接读取本场冻结摘要，不受当前列表或默认包影响。 */}
           <p className="interview-pack-line">
-            {interview.knowledge_pack?.binding === "frozen"
-              ? `岗位知识包：${interview.knowledge_pack.name} v${interview.knowledge_pack.version}（本场冻结）`
-              : interview.knowledge_pack?.binding === "frozen_unavailable"
-                ? "岗位知识包：本场冻结的包当前不可用（内容缺失或损坏）。"
-                : "岗位知识包：历史绑定未确定，报告不追认版本。"}
+            {report.knowledge_pack.binding === "frozen"
+              ? `岗位知识包：${report.knowledge_pack.name} v${report.knowledge_pack.version}（本场固定使用）`
+              : report.knowledge_pack.binding === "frozen_unavailable"
+                ? "岗位知识包：本场使用的知识包当前不可用（内容缺失或损坏）。"
+                : "岗位知识包：这场面试没有记录当时使用的版本。"}
           </p>
+          {report.knowledge_pack.binding === "frozen" ? (
+            <details className="compact-details">
+              <summary>本场能力范围与规则版本</summary>
+              <p>能力规则版本：{report.knowledge_pack.profile_version ?? "未提供"}</p>
+              <p className="technical-value">规则摘要：{report.knowledge_pack.profile_digest ?? "未提供"}</p>
+              <p>以下是知识包声明的能力范围，不表示本轮全部问到或已证实。</p>
+              <ul>{report.knowledge_pack.capabilities.map((capability) => (
+                <li key={capability.competency_id}>{capability.label || capability.competency_id}</li>
+              ))}</ul>
+            </details>
+          ) : null}
         </div>
         {serviceReady && !contentGenerationReady ? <p role="status">当前服务未配置内容生成，暂不能生成简历草稿。</p> : null}
         <Button

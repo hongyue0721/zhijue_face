@@ -1,4 +1,5 @@
-import { Alert, Button, Tag } from "@any-design/anyui/react";
+import { Tag } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -17,12 +18,17 @@ import { OperationStatus } from "../components/common/OperationStatus";
 import { InterviewPlan } from "../components/prepare/InterviewPlan";
 import { JDInput } from "../components/prepare/JDInput";
 import { JDSourceBadge } from "../components/prepare/JDSourceBadge";
+import { PackSelector } from "../components/prepare/PackSelector";
+import { BackLink, PageHeading, PageNav } from "../components/layout/PageNav";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
 import { interviewPath, knowledgePacksPath, preparePath, startPath } from "../routing";
 import {
+  competencyDisplayName,
+  frozenCompetencyLabels,
   coverageExplanation,
   coverageStatusText,
   interviewRoleText,
+  reportLimitationText,
   requirementTitle,
 } from "../presentation";
 import {
@@ -76,29 +82,37 @@ function JobSummary({ interview }: { interview: InterviewView }) {
   };
   for (const requirement of interview.jd_requirements) counts[requirement.tier] += 1;
   for (const entry of interview.coverage_map) coverageCounts[entry.status] += 1;
+  const coverageTone: Record<CoverageEntryView["status"], string> = {
+    supported: "success",
+    claimed: "primary",
+    unverified: "primary",
+    unknown: "warn",
+    contradicted: "danger",
+  };
+  const competencyLabels = frozenCompetencyLabels(interview.knowledge_pack);
   return (
     <section className="job-summary prepare-section" aria-labelledby="job-summary-title">
-      <div className="job-summary-heading">
-        <div>
-          <h2 id="job-summary-title">要求与资料覆盖</h2>
-        </div>
+      <div className="section-title">
+        <h2 id="job-summary-title">要求与资料覆盖</h2>
         <JDSourceBadge source={interview.jd_source} />
       </div>
-      <div className="requirement-counts" aria-label="岗位要求分类统计">
+      <p className="requirement-counts" aria-label="岗位要求分类统计">
         {Object.entries(counts).map(([tier, count]) => (
-          <span key={tier}>
-            <strong>{REQUIREMENT_TIER_COPY[tier as keyof typeof counts].count}</strong> {count}
+          <span key={tier} className={count ? undefined : "is-zero"}>
+            {REQUIREMENT_TIER_COPY[tier as keyof typeof counts].count} <strong>{count}</strong>
           </span>
         ))}
-      </div>
-      <div className="coverage-counts" aria-label="资料覆盖统计">
-        <span><strong>已有支持</strong> {coverageCounts.supported}</span>
-        <span><strong>材料自述</strong> {coverageCounts.claimed}</span>
-        <span><strong>待验证</strong> {coverageCounts.unverified}</span>
-        <span><strong>材料未体现</strong> {coverageCounts.unknown}</span>
-        <span><strong>存在冲突</strong> {coverageCounts.contradicted}</span>
-      </div>
-      <details className="requirement-details">
+      </p>
+      <ul className="coverage-counts" aria-label="资料覆盖统计">
+        {(Object.keys(coverageCounts) as Array<CoverageEntryView["status"]>).map((status) => (
+          <li key={status} className={`coverage-count coverage-count--${coverageTone[status]} ${coverageCounts[status] ? "" : "is-zero"}`}>
+            <strong>{coverageCounts[status]}</strong>
+            <span>{coverageStatusText[status]}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="coverage-note">“材料未体现”只表示简历里没有写到，不代表不会；面试会请你用经历补充说明。</p>
+      <details className="requirement-details compact-details">
         <summary>
           查看完整岗位要求与覆盖详情（{interview.jd_requirements.length}）
         </summary>
@@ -116,9 +130,10 @@ function JobSummary({ interview }: { interview: InterviewView }) {
           <ul className="requirement-list coverage-detail-list">
             {interview.coverage_map.map((entry) => (
               <li key={entry.competency_id}>
-                <Tag>{coverageStatusText[entry.status]}</Tag>
+                <Tag className={`status-tag--${coverageTone[entry.status]}`}>{coverageStatusText[entry.status]}</Tag>
                 <span>
-                  <strong>{requirementTitle(interview.jd_requirements, entry.requirement_ids)}</strong>
+                  <strong>{competencyDisplayName(entry.competency_id, competencyLabels)}</strong>
+                  <p>{requirementTitle(interview.jd_requirements, entry.requirement_ids)}</p>
                   <small>{coverageExplanation(entry)}</small>
                 </span>
               </li>
@@ -400,43 +415,41 @@ export function PreparePage({
             ? "你确认的经历还在处理中。请回资料页查看进度，如果处理失败了可以在那里重试；准备完成后再来创建和开始面试。"
             : "请先回资料页核对并确认至少一条经历，等资料准备完成后再来。"}
         </Alert>
-        <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回资料页</Button>
+        <div className="button-row">
+          <Button type="primary" onClick={() => navigate(startPath(profile.id))}>返回资料页</Button>
+        </div>
       </main>
     );
   }
 
+  const packSelector = (
+    <PackSelector
+      packs={packs}
+      packsError={packsError}
+      selectedPackId={selectedPackId}
+      disabled={Boolean(pendingPlan || pendingStart)}
+      onSelect={(id) => {
+        setSelectedPackId(id);
+        if (id) savePackSelection(id);
+        else clearPackSelection();
+      }}
+      onManage={() => navigate(knowledgePacksPath(undefined, preparePath(profileId, interviewId ?? undefined)))}
+    />
+  );
+  const competencyLabels = frozenCompetencyLabels(interview?.knowledge_pack);
+  const planNotes = interview ? interview.limitations.map((note) => reportLimitationText(note, competencyLabels)) : [];
+
   return (
-    <main className="page-container prepare-page">
-      <div className="prepare-navigation">
-        <Button disabled={submitting || Boolean(pendingPlan || pendingStart)} onClick={() => navigate(startPath(profileId))}>返回资料</Button>
-      </div>
+    <main className="page-container page-container--reading prepare-page">
+      <PageNav label="准备页导航">
+        <BackLink disabled={submitting || Boolean(pendingPlan || pendingStart)} onClick={() => navigate(startPath(profileId))}>返回资料</BackLink>
+      </PageNav>
       {interview ? (
-        <header className="compact-page-heading prepare-ready-heading">
-          <div>
-            <h1>{interviewRoleText(interview)}</h1>
-            <p>
-              {interview.jd_requirements.length} 项岗位要求
-              {" · "}{interview.root_plan.slots.length} 个主问题方向
-              {" · "}后续追问按回答动态决定
-            </p>
-            {/* 本场包摘要来自冻结字段，不从“当前列表默认项”倒推（U7）。 */}
-            <p className="interview-pack-line">
-              {interview.knowledge_pack.binding === "frozen" ? (
-                <>岗位知识包：{interview.knowledge_pack.name} v{interview.knowledge_pack.version}（本场冻结）</>
-              ) : interview.knowledge_pack.binding === "frozen_unavailable" ? (
-                <>本场冻结的岗位知识包当前不可用（内容缺失或损坏）；开始面试会被明确拒绝，不会换包顶替。</>
-              ) : (
-                <>历史绑定未确定：这场面试创建时没有可证实的岗位包绑定；报告仍完整可读，继续练习请重新创建计划。</>
-              )}
-            </p>
-            {interview.knowledge_pack.binding === "frozen" ? (
-              <details className="prepare-pack-details">
-                <summary>岗位知识包技术详情</summary>
-                <p className="technical-value">内容摘要：{interview.knowledge_pack.content_digest}</p>
-              </details>
-            ) : null}
-          </div>
-          {interview.status === "ready" ? (
+        <PageHeading
+          className="prepare-ready-heading"
+          eyebrow="面试计划已生成"
+          title={interviewRoleText(interview)}
+          aside={interview.status === "ready" ? (
             <Button
               type="primary"
               size="large"
@@ -447,12 +460,35 @@ export function PreparePage({
               开始模拟面试
             </Button>
           ) : null}
-        </header>
+        >
+          <ul className="plan-facts" aria-label="计划概况">
+            <li><strong>{interview.jd_requirements.length}</strong> 项岗位要求</li>
+            <li><strong>{interview.root_plan.slots.length}</strong> 个主问题方向</li>
+            <li>追问按你的回答决定</li>
+          </ul>
+          {/* 本场包摘要来自冻结字段，不从“当前列表默认项”倒推（U7）。 */}
+          <p className="interview-pack-line">
+            {interview.knowledge_pack.binding === "frozen" ? (
+              <>岗位知识包：{interview.knowledge_pack.name} v{interview.knowledge_pack.version}（本场固定使用）</>
+            ) : interview.knowledge_pack.binding === "frozen_unavailable" ? (
+              <>本场使用的岗位知识包当前不可用（内容缺失或损坏），开始面试会被拒绝，系统不会换用其他知识包。</>
+            ) : (
+              <>这场面试没有记录当时使用的岗位知识包版本；报告可以正常查看，继续练习请重新生成计划。</>
+            )}
+          </p>
+          {interview.knowledge_pack.binding === "frozen" ? (
+            <details className="prepare-pack-details compact-details">
+              <summary>知识包版本标识</summary>
+              <p className="technical-value">内容摘要：{interview.knowledge_pack.content_digest}</p>
+              <p>能力规则版本：{interview.knowledge_pack.profile_version ?? "未提供"}</p>
+              <p className="technical-value">规则摘要：{interview.knowledge_pack.profile_digest ?? "未提供"}</p>
+            </details>
+          ) : null}
+        </PageHeading>
       ) : (
-        <div className="page-intro">
-          <h1>准备这场面试</h1>
-
-        </div>
+        <PageHeading eyebrow="面试准备" title="准备这场面试">
+          <p>选择与目标岗位匹配的知识包，再填写岗位要求。能力与评分规则来自所选知识包；系统会对照你已确认的经历规划五道主问题。</p>
+        </PageHeading>
       )}
       {planNotice ? <Alert type="warn" title="面试计划需要重新确认">{planNotice}</Alert> : null}
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
@@ -460,20 +496,22 @@ export function PreparePage({
         operation={operation ?? settledOperation ?? planAttempt?.failure ?? null}
         label={(operation ?? settledOperation ?? planAttempt?.failure)?.kind === "interview.start" ? "开始面试" : "生成面试计划"}
       />
-      {!draftStorageAvailable ? <Alert type="warn" title="浏览器暂存不可用">无法确认请求内容的临时保存或清除。请在离开或刷新前核对当前操作；需要移除旧副本时请清除此站点的浏览器数据。</Alert> : null}
+      {!draftStorageAvailable ? <Alert type="warn" title="浏览器暂存不可用">暂存读写失败，刷新后内容可能无法恢复；如需移除旧副本，请清除本站的浏览器数据。</Alert> : null}
       {submitting && (pendingPlan || pendingStart) ? (
         <Alert type="info" title={pendingPlan ? "正在提交面试计划" : "正在提交开始面试请求"}>
-          正在等待服务端受理，请勿重复提交。
+          正在等待服务器接收，请不要重复点击。
         </Alert>
       ) : null}
       {!submitting && !operationActive && (pendingPlan || pendingStart) ? (
-        <Alert type="warn" title={error instanceof ApiError ? "请求尚未受理" : "上次请求未确认完成"}>
-          {error instanceof ApiError
-            ? "已保留这次的内容和操作，服务恢复后可原样重试。"
-            : "已保留这次的内容和操作，点重试会原样续上，不会生成第二份计划或重复开始面试。"}
-          {pendingPlan ? temporaryDraftsEnabled() && draftStorageAvailable
-            ? "请求内容与重试标识已一同临时保存在本标签页，刷新后可恢复。"
-            : "浏览器暂存未开启或不可用，请在刷新前重试确认结果。" : null}
+        <Alert type="warn" title={error instanceof ApiError ? "请求没有被接收" : "上次请求未确认完成"}>
+          <p>
+            {error instanceof ApiError
+              ? "已保留这次的内容和操作，服务恢复后可原样重试。"
+              : "已保留这次的内容和操作，点重试会原样续上，不会生成第二份计划或重复开始面试。"}
+            {pendingPlan ? temporaryDraftsEnabled() && draftStorageAvailable
+              ? "这次的内容已暂存在当前标签页，刷新后也能继续重试。"
+              : "浏览器暂存没有开启，请在刷新页面前点重试。" : null}
+          </p>
           <Button disabled={!serviceReady || busy} onClick={() => void (pendingPlan ? createPlan(pendingPlan.options) : startInterview())}>
             重试{pendingPlan ? "生成计划" : "开始面试"}
           </Button>
@@ -493,15 +531,24 @@ export function PreparePage({
           regenerating={Boolean(interview)}
           onCancel={interview ? () => { setDraftStorageAvailable(clearPrepareDraft(draftKey)); setEditing(false); } : undefined}
           onGenerate={createPlan}
+          beforeActions={packSelector}
         />
       ) : interview ? (
-        <>
-          <div className="prepare-workspace prepare-plan-review">
-            <details className="prepare-context-disclosure">
-              <summary>查看岗位原文与修改岗位</summary>
-              <section className="prepare-job-context" aria-labelledby="prepare-job-title">
+        <div className="prepare-plan-review">
+          <InterviewPlan
+            slots={interview.root_plan.slots}
+            requirements={interview.jd_requirements}
+            competencyLabels={competencyLabels}
+            notes={planNotes}
+          />
+          <JobSummary interview={interview} />
+          <details className="prepare-context-disclosure">
+            <summary>查看岗位原文与修改岗位</summary>
+            <section className="prepare-job-context" aria-labelledby="prepare-job-title">
+              <div className="prepare-job-context__heading">
                 <h2 id="prepare-job-title">{interviewRoleText(interview)}</h2>
                 <JDSourceBadge source={interview.jd_source} />
+              </div>
               {interview.jd_text !== null ? (
                 <p className="prepare-jd-original">{interview.jd_text}</p>
               ) : (
@@ -516,59 +563,10 @@ export function PreparePage({
                   </ul>
                 </>
               )}
-              <Button disabled={busy || Boolean(pendingStart)} onClick={() => setEditing(true)}>修改岗位并生成新计划</Button>
-              </section>
-            </details>
-            <JobSummary interview={interview} />
-            <InterviewPlan
-              slots={interview.root_plan.slots}
-              requirements={interview.jd_requirements}
-            />
-          </div>
-        </>
-      ) : null}
-      {!interview || editing ? (
-        <section className="pack-selector" aria-label="岗位知识包选择">
-          <label className="field-label">
-            本场新面试使用岗位知识包
-            <select
-              value={selectedPackId ?? ""}
-              disabled={Boolean(pendingPlan || pendingStart)}
-              onChange={(event) => {
-                const id = event.target.value;
-                setSelectedPackId(id || null);
-                if (id) savePackSelection(id);
-                else clearPackSelection();
-              }}
-            >
-              <option value="">
-                服务端默认（
-                {packs?.items.find((item) => item.pack_release_id === packs?.default_pack_release_id)?.name
-                  ?? (packsError ? "读取失败" : "读取中…")}
-                ）
-              </option>
-              {(packs?.items ?? [])
-                .filter((item) => item.selectable)
-                .map((item) => (
-                  <option key={item.pack_release_id} value={item.pack_release_id}>
-                    {item.name} v{item.version}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <small>
-            选择只影响新创建的面试；已创建的面试永远使用它当时冻结的包。
-            {" "}
-            <Button size="small" type="text" onClick={() => navigate(knowledgePacksPath(undefined, preparePath(profileId, interviewId ?? undefined)))}>
-              管理岗位知识包
-            </Button>
-          </small>
-          {packsError ? (
-            <Alert type="warn" title="岗位知识包列表读取失败">
-              无法确认哪些包可选；仍可尝试用服务端默认包生成，服务器受理时会再次校验。
-            </Alert>
-          ) : null}
-        </section>
+              <Button type="secondary" disabled={busy || Boolean(pendingStart)} onClick={() => setEditing(true)}>修改岗位并生成新计划</Button>
+            </section>
+          </details>
+        </div>
       ) : null}
     </main>
   );

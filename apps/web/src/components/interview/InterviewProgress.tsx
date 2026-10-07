@@ -1,4 +1,3 @@
-import { Progress } from "@any-design/anyui/react";
 import type { QuestionView } from "../../api";
 
 export function InterviewProgress({
@@ -12,37 +11,25 @@ export function InterviewProgress({
 }) {
   // “没有当前题”有两种真相：还没开始，或已全部问完。混为一谈会把
   // ready 态面试渲染成“本场提问完成 5/5”，与页面其他状态自相矛盾。
-  if (!question && !started) {
-    return (
-      <div className="interview-progress">
-        <div className="progress-copy"><strong>尚未开始 · 0 / {total}</strong></div>
-        <div className="progress-dots" aria-label="面试尚未开始">
-          {Array.from({ length: total }, (_, index) => <span key={index} />)}
-        </div>
-        <Progress value={0} />
-      </div>
-    );
-  }
-  const current = question ? Math.min(question.order_index + 1, total) : total;
-  const label = question?.kind === "main"
-    ? `主问题 ${current} / ${total}`
-    : question?.kind === "probe"
-      ? `补充问题 · 主问题 ${current} / ${total}`
-      : question
-        ? `澄清问题 · 主问题 ${current} / ${total}`
-        : `本场提问完成 · ${total} / ${total}`;
+  const finished = !question && started;
+  const current = question ? Math.min(question.order_index + 1, total) : finished ? total : 0;
+  const label = !question
+    ? finished ? `本场提问完成 · ${total} / ${total}` : `尚未开始 · 0 / ${total}`
+    : question.kind === "main"
+      ? `第 ${current} / ${total} 题`
+      : question.kind === "probe"
+        ? `追问 · 第 ${current} / ${total} 题`
+        : `澄清 · 第 ${current} / ${total} 题`;
   return (
     <div className="interview-progress">
       <div className="progress-copy"><strong>{label}</strong></div>
-      <div className="progress-dots" aria-label={label}>
-        {Array.from({ length: total }, (_, index) => (
-          <span
-            key={index}
-            className={index + 1 < current ? "complete" : index + 1 === current ? "active" : undefined}
-          />
-        ))}
-      </div>
-      <Progress value={total ? (current / total) * 100 : 0} />
+      <ol className="progress-steps" aria-label={label}>
+        {Array.from({ length: total }, (_, index) => {
+          const number = index + 1;
+          const state = finished || number < current ? "complete" : number === current ? "active" : undefined;
+          return <li key={number} className={state} aria-hidden="true">{number}</li>;
+        })}
+      </ol>
     </div>
   );
 }

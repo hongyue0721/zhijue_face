@@ -1,0 +1,684 @@
+/* 跨页面复用的组件外观：卡片、折叠、对话框、抽屉、状态提示、分段控件。 */
+
+/* ---------- Surfaces ---------- */
+.surface-card {
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+/* ---------- Fact chips row (计划概况、完成情况) ---------- */
+.plan-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-facts li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.plan-facts strong {
+  color: var(--navy);
+  font-size: var(--fs-sm);
+}
+
+.interview-pack-line {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Disclosure (details) ---------- */
+.compact-details > summary,
+.temporary-draft-notice > summary,
+.interview-basis-details > summary,
+.prepare-context-disclosure > summary,
+.claim-source-details > summary,
+.fact-modal-source-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--blue);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  list-style: none;
+}
+
+.compact-details > summary::-webkit-details-marker,
+.temporary-draft-notice > summary::-webkit-details-marker,
+.interview-basis-details > summary::-webkit-details-marker,
+.prepare-context-disclosure > summary::-webkit-details-marker,
+.claim-source-details > summary::-webkit-details-marker,
+.fact-modal-source-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* 统一的展开指示：向右的小三角，展开后转向下。 */
+.compact-details > summary::before,
+.temporary-draft-notice > summary::before,
+.interview-basis-details > summary::before,
+.prepare-context-disclosure > summary::before,
+.claim-source-details > summary::before,
+.fact-modal-source-details > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  transition: transform 150ms ease;
+}
+
+.compact-details[open] > summary::before,
+.temporary-draft-notice[open] > summary::before,
+.interview-basis-details[open] > summary::before,
+.prepare-context-disclosure[open] > summary::before,
+.claim-source-details[open] > summary::before,
+.fact-modal-source-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.compact-details > summary:hover,
+.claim-source-details > summary:hover {
+  color: var(--blue-strong);
+}
+
+.compact-details {
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.compact-details > :not(summary) {
+  margin-top: var(--space-3);
+}
+
+.compact-details h3 {
+  margin-bottom: var(--space-1);
+  font-size: var(--fs-sm);
+}
+
+.compact-details ul {
+  margin: 0;
+  padding-left: 1.2em;
+  line-height: 1.7;
+}
+
+.compact-details blockquote {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* ---------- Temporary draft storage ---------- */
+.temporary-draft-notice {
+  margin-top: var(--space-2);
+  font-size: 13px;
+}
+
+.temporary-draft-notice > summary {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.temporary-draft-state {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.temporary-draft-state.is-on {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.temporary-draft-state.is-unavailable {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+.temporary-draft-body {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.temporary-draft-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.temporary-draft-choice input {
+  flex: none;
+  margin-top: 5px;
+  accent-color: var(--blue);
+}
+
+.temporary-draft-body .field-hint {
+  margin: 6px 0 4px;
+  line-height: 1.6;
+}
+
+/* ---------- Form fields ---------- */
+.field-label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.field-hint,
+.character-count {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+.character-count {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell select {
+  min-height: var(--control-height);
+  padding: 0 36px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6b7f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 10px center / 16px;
+  color: var(--ink);
+  font-size: 15px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.app-shell select:focus {
+  border-color: var(--blue);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.app-shell select:disabled {
+  background-color: var(--surface-muted);
+  cursor: not-allowed;
+}
+
+/* ---------- Modal dialog ---------- */
+.fact-modal-dialog {
+  width: min(600px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+
+.fact-modal-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.fact-modal-dialog[open] {
+  animation: modal-enter 200ms var(--ease-out);
+}
+
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fact-modal-card {
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.fact-modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.fact-modal-header h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.fact-modal-close-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.fact-modal-close-btn:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.fact-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  color: var(--ink-soft);
+}
+
+.fact-modal-body > p {
+  margin-bottom: var(--space-4);
+}
+
+.fact-modal-intro-text {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.fact-modal-origin-box {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.origin-label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+}
+
+.origin-text {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.fact-modal-source-details {
+  margin-top: var(--space-2);
+  font-size: 13px;
+}
+
+.fact-modal-source-details blockquote {
+  display: grid;
+  gap: 2px;
+  margin: var(--space-2) 0 0;
+  background: var(--surface);
+}
+
+.fact-modal-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.field-error-inline {
+  color: var(--red);
+}
+
+.fact-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* 危险操作的主按钮：只在确认删除这类不可逆动作上使用。 */
+:is(.app-shell, .a-drawer) .a-button.a-button--primary.danger-action {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+:is(.app-shell, .a-drawer) .a-button.a-button--primary.danger-action:hover {
+  border-color: #8f2b39;
+  background: #8f2b39;
+}
+
+/* ---------- Drawer (解析文本) ---------- */
+.drawer-trigger {
+  display: inline-flex;
+}
+
+.drawer-content {
+  height: 100%;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+.drawer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-heading h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.document-page {
+  margin-top: var(--space-5);
+}
+
+.document-page h3 {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.document-page p {
+  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+}
+
+/* ---------- Operation status ---------- */
+.operation-feedback p {
+  margin: var(--space-1) 0 0;
+}
+
+.operation-active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.operation-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Segmented tabs ---------- */
+.segmented-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.segmented-tabs button {
+  min-height: 34px;
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.segmented-tabs button:hover {
+  color: var(--ink);
+}
+
+.segmented-tabs button[aria-selected="true"] {
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(23, 35, 60, 0.14);
+  color: var(--navy);
+}
+
+/* ---------- Completion ---------- */
+.completion-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 24px;
+  box-shadow: 0 0 0 6px rgba(31, 122, 86, 0.08);
+}
+
+.completion-card {
+  max-width: 640px;
+  margin: var(--space-10) auto 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  text-align: center;
+}
+
+.completion-card h2 {
+  margin: var(--space-2) 0 0;
+}
+
+.completion-card p {
+  max-width: 480px;
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+}
+
+.completion-card__spinner {
+  font-size: 32px;
+}
+
+/* ---------- Save toast ---------- */
+.save-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid var(--green-line);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+  color: var(--green);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transform: translateX(-50%);
+  animation: toast-in 240ms var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ---------- Resume scan (识别中) ---------- */
+.resume-scan {
+  margin: auto;
+  padding: var(--space-10) 0 var(--space-6);
+  text-align: center;
+}
+
+.resume-scan h1 {
+  margin: var(--space-6) 0 0;
+  font-size: var(--fs-2xl);
+}
+
+.resume-scan-graphic {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  margin: auto;
+  display: grid;
+  place-items: center;
+}
+
+.resume-scan-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #e1e8f3;
+  border-top-color: var(--blue);
+  border-right-color: var(--blue);
+  border-radius: 50%;
+}
+
+.resume-scan-graphic svg {
+  width: 40px;
+  height: 48px;
+  stroke: var(--navy);
+  stroke-width: 2;
+}
+
+.resume-scan-line {
+  position: absolute;
+  width: 88px;
+  height: 2px;
+  border-radius: 2px;
+  background: #4d87dc;
+}
+
+/* ---------- Segmented slider (采用 / 不采用) ---------- */
+.segmented-slider {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 168px;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+}
+
+.slider-option {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.slider-option:hover:not(.is-selected) {
+  color: var(--blue-strong);
+}
+
+.slider-option.is-selected {
+  color: #fff;
+}
+
+.segmented-slider-thumb {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: calc((100% - 8px) / 2);
+  border-radius: var(--radius-full);
+  background: var(--blue);
+  pointer-events: none;
+  transition: transform 180ms var(--ease-out), opacity 180ms ease, background-color 180ms ease;
+}
+
+.segmented-slider--neutral .segmented-slider-thumb {
+  opacity: 0;
+}
+
+.segmented-slider--accept .segmented-slider-thumb {
+  transform: translateX(0);
+}
+
+.segmented-slider--reject .segmented-slider-thumb {
+  transform: translateX(calc(100% + 2px));
+  background: #5b6576;
+}
+
+.segmented-slider--disabled {
+  opacity: 0.5;
+}
+
+.segmented-slider--disabled button {
+  cursor: not-allowed;
+}
+
+/* ---------- Empty / loading text ---------- */
+.claims-empty-state,
+.packs-loading {
+  padding: var(--space-6) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}

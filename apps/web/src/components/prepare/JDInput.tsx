@@ -1,5 +1,6 @@
-import { Button, Input, Tag, Textarea } from "@any-design/anyui/react";
-import { useEffect, useMemo, useState } from "react";
+import { Input, Tag, Textarea } from "@any-design/anyui/react";
+import { Button } from "../common/ui";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   JD_SOURCE_NAME_MAX_LENGTH,
   JD_TEXT_MAX_LENGTH,
@@ -30,6 +31,7 @@ export function JDInput({
   draftKey,
   regenerating = false,
   onCancel,
+  beforeActions,
 }: {
   disabled: boolean;
   busy: boolean;
@@ -39,6 +41,8 @@ export function JDInput({
   draftKey: string;
   regenerating?: boolean;
   onCancel?: () => void;
+  /** 提交按钮前的附加设置（例如岗位知识包），保证“先填岗位、再确认设置、最后提交”的顺序。 */
+  beforeActions?: ReactNode;
 }) {
   const initial = useMemo(
     () => splitJdText(initialOptions?.jd_text ?? ""),
@@ -107,7 +111,7 @@ export function JDInput({
     <label className={`field-label jd-field-${key}`}>
       <span className="field-label-row">
         <span>{label}</span>
-
+        <span className="field-hint">一行一条</span>
       </span>
       <Textarea
         modelValue={sections[key]}
@@ -163,7 +167,7 @@ export function JDInput({
           <Input
             modelValue={jobName}
             onUpdateModelValue={setJobName}
-            placeholder="例如：嵌入式软件开发实习生"
+            placeholder="填写招聘信息中的岗位名称"
             maxlength={JD_SOURCE_NAME_MAX_LENGTH}
             disabled={disabled || busy}
           />
@@ -171,12 +175,12 @@ export function JDInput({
         {sectionField(
           "required",
           "必要项（必备要求）",
-          "例如：熟悉 C 语言指针、结构体与位操作",
+          "例如：掌握岗位所需基础知识，能解释实现思路与验证方法",
         )}
         <details className="jd-optional-fields" open={Boolean(sections.preferred || sections.responsibilities) || undefined}>
           <summary>加分项与岗位职责（选填）</summary>
-          {sectionField("preferred", "加分项（优先条件）", "例如：有 CAN、DMA 实际调试经历")}
-          {sectionField("responsibilities", "岗位职责", "例如：参与嵌入式固件模块开发与联调")}
+          {sectionField("preferred", "加分项（优先条件）", "例如：有相关项目实践与问题排查经历")}
+          {sectionField("responsibilities", "岗位职责", "例如：参与模块开发、测试与问题定位")}
         </details>
       </div>
       {showCharacterCount ? (
@@ -184,6 +188,14 @@ export function JDInput({
           岗位内容 {assembled.length} / {JD_TEXT_MAX_LENGTH} 字符
         </span>
       ) : null}
+      {beforeActions}
+      {validation ? <p className="field-error" role="alert">{validation}</p> : null}
+      <div className="button-row form-actions">
+        <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>
+          {regenerating ? "确认修改并生成新计划" : "根据岗位生成面试计划"}
+        </Button>
+        {onCancel ? <Button type="secondary" disabled={busy} onClick={onCancel}>取消修改，保留原计划</Button> : null}
+      </div>
       <TemporaryDraftNotice
         restored={restored}
         storageAvailable={storageAvailable}
@@ -198,13 +210,6 @@ export function JDInput({
           setStorageAvailable(clearPrepareDraft(draftKey));
         }}
       />
-      <div className="button-row split-actions">
-        <Button type="primary" size="large" loading={busy} disabled={disabled || busy} onClick={generate}>
-          {regenerating ? "确认修改并生成新计划" : "根据岗位生成面试计划"}
-        </Button>
-        {onCancel ? <Button disabled={busy} onClick={onCancel}>取消修改，保留原计划</Button> : null}
-      </div>
-      {validation ? <p className="field-error" role="alert">{validation}</p> : null}
     </section>
   );
 }

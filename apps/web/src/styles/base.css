@@ -1,0 +1,233 @@
+/* 基础排版与页面骨架。组件和页面只在各自文件里加作用域规则。 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+  background: var(--page);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  overflow-x: clip;
+}
+
+/*
+ * AnyUI 全局样式把 html/body 固定为 100vw×100vh 并让 body 自己滚动。那样窗口本身不滚动，
+ * window.scrollTo（切页回到顶部）、粘性页头与固定提交栏都会失效；这里恢复由视口滚动。
+ */
+html,
+body {
+  width: auto;
+  height: auto;
+  overflow-y: visible;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+h1 {
+  margin-bottom: var(--space-3);
+  color: var(--navy);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin-bottom: var(--space-3);
+  color: var(--navy);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+h3 {
+  margin-bottom: var(--space-2);
+  color: var(--navy);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+h4 {
+  margin-bottom: var(--space-1);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+p {
+  margin-bottom: var(--space-3);
+  color: var(--ink-soft);
+}
+
+a {
+  color: var(--blue);
+}
+
+code {
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  word-break: break-all;
+}
+
+blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--blue-line);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+ul,
+ol {
+  padding-left: 1.3em;
+}
+
+summary {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgba(49, 91, 155, 0.18);
+}
+
+/* ---------- 页面骨架 ---------- */
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-container,
+.global-notice {
+  width: min(var(--content-width), calc(100% - 2 * var(--page-gutter)));
+  margin-inline: auto;
+}
+
+.page-container {
+  flex: 1 0 auto;
+  padding: var(--space-8) 0 var(--space-14);
+}
+
+.page-container--reading {
+  width: min(var(--reading-width), calc(100% - 2 * var(--page-gutter)));
+}
+
+.narrow-page {
+  width: min(760px, calc(100% - 2 * var(--page-gutter)));
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.global-notice {
+  margin-top: var(--space-4);
+}
+
+/* ---------- 通用文本工具 ---------- */
+
+.eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--blue);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.muted,
+.empty-state,
+.loading-row {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.loading-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field-error,
+.warning-text {
+  margin: var(--space-2) 0 0;
+  color: var(--red);
+  font-size: var(--fs-sm);
+}
+
+.inline-success {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,4 +1,4 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Alert, Button } from "./ui";
 import { ApiError } from "../../api";
 
 function guidance(error: unknown): string {
@@ -6,13 +6,13 @@ function guidance(error: unknown): string {
   if (!(error instanceof ApiError)) return "页面暂时无法完成当前操作，请刷新最新状态后重试。";
   switch (error.code) {
     case "SERVICE_NOT_READY":
-      return "服务依赖尚未就绪，请重新检查服务后再提交。";
+      return "服务还没准备好，请稍后重新检查服务再提交。";
     case "CAPACITY_LIMITED":
-      return "当前处理队列已满，请稍后使用原页面重试。";
+      return "当前排队的任务较多，请稍等片刻在本页重试。";
     case "REVISION_CONFLICT":
-      return "页面数据已过期，请刷新最新状态后再提交。";
+      return "页面内容已经更新，请先读取最新状态再提交。";
     case "PROFILE_UNCONFIRMED":
-      return "请先在资料页核对并确认至少一条经历事实。";
+      return "请先在资料页核对并确认至少一条经历。";
     case "RESOURCE_NOT_FOUND":
       return "这项内容不存在、已被删除，或当前页面无权读取。请返回上一步重新进入。";
     default:
@@ -25,7 +25,7 @@ function errorTitle(error: unknown): string {
   if (!(error instanceof ApiError)) return "页面处理未完成";
   const titles: Record<string, string> = {
     SERVICE_NOT_READY: "服务暂未就绪",
-    CAPACITY_LIMITED: "当前请求较多",
+    CAPACITY_LIMITED: "当前排队较多",
     REVISION_CONFLICT: "页面状态已更新",
     PROFILE_UNCONFIRMED: "经历资料尚未确认",
     RESOURCE_NOT_FOUND: "内容未找到",

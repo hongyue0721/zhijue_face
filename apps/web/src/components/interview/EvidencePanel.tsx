@@ -1,6 +1,8 @@
 import { Tag } from "@any-design/anyui/react";
 import type { InterviewView, QuestionView } from "../../api";
 import {
+  competencyDisplayName,
+  frozenCompetencyLabels,
   materialStatusText,
   requirementsFor,
   requirementTierText,
@@ -19,24 +21,29 @@ export function EvidencePanel({
   const requirements = requirementsFor(interview.jd_requirements, requirementIds);
   const direction = requirementTitle(interview.jd_requirements, requirementIds);
   const status = question.basis.current_verification_status ?? slot?.current_verification_status;
-  const basis = question.basis.basis_type === "resume"
-    ? "材料中存在相关经历"
+  const competency = question.basis.competency_id ?? slot?.competency;
+  const competencyLabel = question.basis.competency_label
+    ?? (competency ? competencyDisplayName(competency, frozenCompetencyLabels(interview.knowledge_pack)) : null);
+  // 说明随出题依据变化：只有“材料未体现”时才需要强调“没写到不代表不会”。
+  const basisNote = question.basis.basis_type === "resume"
+    ? "简历里有相关经历，这道题用来核对细节和你本人负责的部分。"
     : question.basis.basis_type === "gap"
-      ? "材料未体现，等待回答核对"
-      : "依据岗位要求进行核对";
+      ? "简历里没有写到相关内容。没写到不代表不会，请用你的实际经历来说明。"
+      : "这道题依据岗位要求出题，用来核对相关能力。";
 
   return (
     <aside className="context-panel" aria-labelledby="evidence-context-title">
-      <h2 id="evidence-context-title">为什么问这一题</h2>
+      <h2 id="evidence-context-title" className="visually-hidden">为什么问这一题</h2>
       <dl className="context-list">
-        <div><dt>岗位关联</dt><dd>{requirementTierText(requirements[0]?.tier)}</dd></div>
+        {competencyLabel ? <div><dt>考察能力</dt><dd>{competencyLabel}</dd></div> : null}
+        <div><dt>要求类型</dt><dd>{requirementTierText(requirements[0]?.tier)}</dd></div>
         <div>
-          <dt>材料状态</dt>
+          <dt>简历情况</dt>
           <dd><Tag className={`status-tag--${status === "supported" ? "success" : status === "contradicted" ? "danger" : status === "unknown" ? "warn" : "primary"}`}>{materialStatusText(status)}</Tag></dd>
         </div>
-        <div><dt>验证方向</dt><dd>{direction}</dd></div>
+        <div><dt>对应要求</dt><dd>{direction}</dd></div>
       </dl>
-      <p className="context-note">{basis}。未体现不代表不会，系统只记录本轮得到的可验证信息。</p>
+      <p className="context-note">{basisNote}评价只依据你在本轮给出的回答。</p>
     </aside>
   );
 }

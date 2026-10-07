@@ -1,4 +1,5 @@
-import { Alert, Button, Tag } from "@any-design/anyui/react";
+import { Tag } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -13,7 +14,15 @@ import { ErrorNotice } from "../components/common/ErrorNotice";
 import { KnowledgePackImportDialog } from "../components/packs/KnowledgePackImportDialog";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
+import { BackLink, PageHeading, PageNav } from "../components/layout/PageNav";
 import { knowledgePacksPath } from "../routing";
+import {
+  dateTimeText,
+  reviewDecisionText,
+  reviewerRoleText,
+  validationCheckText,
+  validationStatusText,
+} from "../presentation";
 import {
   clearOperationId,
   loadOperationId,
@@ -23,21 +32,21 @@ import {
 
 // 状态三色分离（U6）：格式通过 / 负责人审核 / 可用于新面试互不推导。
 function reviewTag(item: KnowledgePackItem) {
-  if (item.review_status === "approved") return <Tag color="success">审核通过</Tag>;
-  if (item.review_status === "rejected") return <Tag color="danger">审核未通过</Tag>;
+  if (item.review_status === "approved") return <Tag className="status-tag--success">审核通过</Tag>;
+  if (item.review_status === "rejected") return <Tag className="status-tag--danger">审核未通过</Tag>;
   return <Tag>技术审核待完成</Tag>;
 }
 
 function selectableTag(item: KnowledgePackItem) {
   return item.selectable
-    ? <Tag color="primary">可用于新面试</Tag>
+    ? <Tag className="status-tag--primary">可用于新面试</Tag>
     : <Tag>暂不可用于新面试</Tag>;
 }
 
 function formatStateTag(item: KnowledgePackItem) {
   return item.validation_status === "passed"
-    ? <Tag color="success">格式通过</Tag>
-    : <Tag color="warn">格式未通过</Tag>;
+    ? <Tag className="status-tag--success">格式通过</Tag>
+    : <Tag className="status-tag--warn">格式未通过</Tag>;
 }
 
 function PackScopeSummary({ item }: { item: KnowledgePackItem }) {
@@ -45,15 +54,18 @@ function PackScopeSummary({ item }: { item: KnowledgePackItem }) {
     <div className="pack-scope">
       <p><strong>覆盖范围</strong>{item.scope_summary}</p>
       <p><strong>明确不支持</strong>{item.unsupported_scope}</p>
+      <p><strong>能力规则版本</strong>{item.profile_version || "未提供"}</p>
+      <p><strong>规则审核</strong>{item.rules_reviewed ? "负责人已审核当前规则" : "尚无当前规则的负责人审核事实"}</p>
+      <p className="technical-value">规则摘要：{item.profile_digest || "未提供"}</p>
       <p className="pack-scope-counts">
-        Seed {item.approved_seed_count}/{item.seed_count} 已批准 · 来源 {item.source_count} 条
+        已审核题目种子 {item.approved_seed_count}/{item.seed_count} · 登记来源 {item.source_count} 条
       </p>
       <ul className="pack-capability-list" aria-label="能力覆盖（服务端事实）">
         {item.capabilities.map((capability) => (
           <li key={capability.competency_id}>
-            <span>{capability.label}</span>
-            <Tag color={capability.technical_seed_available ? "success" : "default"}>
-              {capability.technical_seed_available ? "有已批 Seed" : "暂无已批 Seed"}
+            <span>{capability.label || capability.competency_id}</span>
+            <Tag className={capability.technical_seed_available ? "status-tag--success" : undefined}>
+              {capability.technical_seed_available ? "有已审核题目" : "仅表达与证据训练"}
             </Tag>
           </li>
         ))}
@@ -64,7 +76,7 @@ function PackScopeSummary({ item }: { item: KnowledgePackItem }) {
 
 function PackSourceList({ detail }: { detail: KnowledgePackDetail }) {
   return (
-    <details className="requirement-details">
+    <details className="requirement-details compact-details">
       <summary>查看来源登记（{detail.sources.length}）</summary>
       <ul className="pack-source-list">
         {detail.sources.map((source, index) => {
@@ -90,15 +102,15 @@ function PackSourceList({ detail }: { detail: KnowledgePackDetail }) {
 
 function PackValidationSummary({ detail }: { detail: KnowledgePackDetail }) {
   return (
-    <details className="requirement-details">
+    <details className="requirement-details compact-details">
       <summary>查看校验结果（{detail.validation_checks.length}）</summary>
       <ul className="pack-validation-list">
         {detail.validation_checks.map((check) => (
           <li key={check.check}>
-            <Tag color={check.status === "passed" ? "success" : check.status === "not_run" ? "default" : "warn"}>
-              {check.status}
+            <Tag className={check.status === "passed" ? "status-tag--success" : check.status === "not_run" ? undefined : "status-tag--warn"}>
+              {validationStatusText(check.status)}
             </Tag>
-            <span>{check.check}：{check.detail}</span>
+            <span>{validationCheckText(check.check)}：{check.detail}</span>
           </li>
         ))}
       </ul>
@@ -267,31 +279,34 @@ export function KnowledgePacksPage({
 
   return (
     <main className="page-container packs-page">
-      <div className="prepare-navigation">
-        <Button onClick={() => navigate(returnTo)}>返回上一页</Button>
-        <Button
-          type="primary"
-          onClick={() => {
-            setImportResult(null);
-            setDialogOpen(true);
-          }}
-        >
-          导入岗位包
-        </Button>
-      </div>
-      <div className="page-intro">
-        <h1>岗位知识包</h1>
+      <PageNav label="岗位知识页导航">
+        <BackLink onClick={() => navigate(returnTo)}>返回上一页</BackLink>
+      </PageNav>
+      <PageHeading
+        eyebrow="岗位知识"
+        title="岗位知识包"
+        aside={(
+          <Button
+            type="primary"
+            onClick={() => {
+              setImportResult(null);
+              setDialogOpen(true);
+            }}
+          >
+            导入岗位包
+          </Button>
+        )}
+      >
         <p>
-          管理面试出题使用的结构化岗位知识。选择只影响新创建的面试；
-          已创建的面试永远使用它当时冻结的包。
+          面试出题使用的结构化岗位知识。选择只影响新创建的面试；已创建的面试始终使用当时选定的知识包。
         </p>
-      </div>
+      </PageHeading>
       {importResult ? (
         <Alert type="success" title="导入完成">
           {Boolean(importResult.reused)
-            ? "相同内容的包已存在，复用原 release，未生成第二项。"
-            : `已登记 ${String(importResult.pack_id)} v${String(importResult.version)}。`}
-          {" "}当前审核状态：{String(importResult.review_status)}；
+            ? "已有内容相同的知识包，直接沿用，没有重复导入。"
+            : `已导入 ${String(importResult.pack_id)} v${String(importResult.version)}。`}
+          {" "}当前审核状态：{reviewDecisionText(importResult.review_status)}；
           {Boolean(importResult.selectable_for_new_interview)
             ? "可用于新面试。"
             : "尚不可用于新面试（格式通过 ≠ 审核通过）。"}
@@ -360,14 +375,13 @@ export function KnowledgePacksPage({
                 ) : null}
                 {detail.review_summary ? (
                   <p className="pack-review-note">
-                    审核记录：{detail.review_summary.decision} ·
-                    {detail.review_summary.reviewer_role} ·
-                    {detail.review_summary.reviewed_at}
-                    （绑定内容摘要 {detail.content_digest.slice(0, 23)}…）
+                    审核记录：{reviewerRoleText(detail.review_summary.reviewer_role)}{reviewDecisionText(detail.review_summary.decision)}
+                    {" · "}{dateTimeText(detail.review_summary.reviewed_at)}
+                    （对应内容摘要 {detail.content_digest.slice(0, 23)}…）
                   </p>
                 ) : (
                   <p className="pack-review-note">
-                    服务端尚无绑定当前摘要的审核记录；包内自带的 approved 声明不构成批准。
+                    还没有针对当前内容的负责人审核记录；包内自带的“已审核”声明不算数。
                   </p>
                 )}
                 <p className="pack-digest-line">
@@ -388,14 +402,14 @@ export function KnowledgePacksPage({
                     disabled={!detail.selectable}
                     onClick={() => {
                       savePackSelection(detail.pack_release_id);
-                      setCopied("已选择：下一次新建面试使用本包");
+                      setCopied("已选定：下次新建面试将使用这个知识包");
                       window.setTimeout(() => setCopied(null), 2500);
                     }}
                   >
                     用于新面试
                   </Button>
                   {!detail.selectable ? (
-                    <small>需负责人审核通过后才能用于新面试；服务端会在提交时再次确认。</small>
+                    <small>需负责人审核通过后才能用于新面试；提交时服务器还会再确认一次。</small>
                   ) : null}
                 </div>
               </>
@@ -451,14 +465,17 @@ function KnowledgePackListPanel({
             <span className="pack-list-name">
               {item.name} <small>v{item.version}</small>
               {item.pack_release_id === list.default_pack_release_id ? (
-                <Tag>默认用于新面试</Tag>
+                <Tag>默认岗位包</Tag>
               ) : null}
             </span>
             <span className="pack-list-tags">
               {formatStateTag(item)} {reviewTag(item)}
+              <Tag className={item.rules_reviewed ? "status-tag--success" : "status-tag--warn"}>
+                {item.rules_reviewed ? "规则已审核" : "规则待审核"}
+              </Tag>
             </span>
             <small>
-              Seed {item.approved_seed_count}/{item.seed_count} · 来源 {item.source_count}
+              题目种子 {item.approved_seed_count}/{item.seed_count} · 来源 {item.source_count}
             </small>
           </button>
         </li>

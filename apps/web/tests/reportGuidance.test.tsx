@@ -26,7 +26,7 @@ const interview: InterviewView = {
   root_plan: { slots: [], planner_version: "test", seed_bank_version: "test" },
   coverage_map: [], current_question: null, root_results: [], active_operation_id: null,
   stop_requested: false, report_id: "report", limitations: [],
-  knowledge_pack: { binding: "legacy_unresolved", pack_release_id: null },
+  knowledge_pack: { binding: "legacy_unresolved", pack_release_id: null, profile_version: null, profile_digest: null, capabilities: [] },
 };
 
 function assessment(id: string, score: number | null): RootAssessmentView {
@@ -48,6 +48,8 @@ function report(assessments: RootAssessmentView[]): ReportView {
       segments: [], used_claim_ids: [], changes: [], cautions: [],
       missing_facts: item.root_question_id === "three" ? [{ prompt: "补充测量条件", reason: "原回答未说明条件" }] : [],
     })),
+    source_claims: [],
+    knowledge_pack: interview.knowledge_pack,
     coverage: {
       planned_root_count: assessments.length, asked_root_count: assessments.length,
       answered_root_count: assessments.length, scored_root_count: assessments.filter((item) => item.status === "scored").length,
@@ -98,6 +100,87 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("report frozen capability provenance", () => {
+  it("reads capability labels and rule identity from the report, not current interview metadata", async () => {
+    const capability = { competency_id: "python.mutable", label: "报告冻结的能力名称" };
+    const value: ReportView = {
+      ...report([assessment("one", 80)]),
+      knowledge_pack: {
+        binding: "frozen", pack_release_id: "kpr_0123456789abcdef", name: "报告冻结岗位包",
+        profile_version: "4.5.6", profile_digest: "sha256:report-rules", capabilities: [capability],
+      },
+      limitations: [`未覆盖 ${capability.competency_id}`],
+    };
+    await renderReport(value);
+    expect(host.querySelector(".report-limitations")?.textContent).toContain(capability.label);
+    expect(host.querySelector(".report-limitations")?.textContent).not.toContain(capability.competency_id);
+    expect(host.querySelector(".report-limitations")?.textContent).toContain(value.knowledge_pack.profile_version);
+    expect(host.querySelector(".report-limitations")?.textContent).toContain(value.knowledge_pack.profile_digest);
+  });
+
+  it("retains IDs rather than guessing labels when historical rules cannot be read", async () => {
+    const competency = "embedded.c.basics";
+    await renderReport({
+      ...report([assessment("one", 80)]),
+      knowledge_pack: { binding: "frozen_unavailable", pack_release_id: "kpr_0123456789abcdef", profile_version: null, profile_digest: null, capabilities: [] },
+      limitations: [competency],
+    });
+    expect(host.querySelector(".report-limitations li")?.textContent).toBe(competency);
+  });
+});
+
+describe("improvement segments", () => {
+  it("highlights the exact quote and lists the confirmed claim cited by the clicked segment", async () => {
+    const base = report([assessment("one", 80)]);
+    const item = base.improved_answers[0];
+    const segmented: ReportView = {
+      ...base,
+      improved_answers: [{
+        ...item,
+        rewritten_answer: "Original one，并且负责 UART 接收。",
+        segments: [
+          { text: "Original one", source_refs: [{ type: "answer_quote", answer_id: "answer-one", exact_quote: "Original" }] },
+          { text: "，并且负责 UART 接收。", source_refs: [{ type: "claim", claim_id: "claim-uart" }] },
+        ],
+        used_claim_ids: ["claim-uart"],
+      }],
+      source_claims: [{ id: "claim-uart", text: "负责 STM32 端 UART 接收与解析" }],
+    };
+    await renderReport(segmented);
+    await act(async () => (host.querySelector("#report-tab-improvement") as HTMLButtonElement).click());
+    const segments = [...host.querySelectorAll<HTMLButtonElement>(".improved-segment")];
+    expect(segments.map((segment) => segment.textContent)).toEqual(["Original one", "，并且负责 UART 接收。"]);
+    expect(host.querySelector(".segment-sources")).toBeNull();
+
+    await act(async () => segments[0].click());
+    expect(host.querySelector(".answer-comparison mark")?.textContent).toBe("Original");
+    expect(host.querySelector(".segment-sources")?.textContent).toContain("你的原话");
+
+    await act(async () => segments[1].click());
+    expect(host.querySelector(".answer-comparison mark")).toBeNull();
+    expect(host.querySelector(".segment-sources blockquote")?.textContent).toBe("负责 STM32 端 UART 接收与解析");
+    expect(segments[1].getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("replaces the comparison and resets the selected segment when switching questions", async () => {
+    await renderReport(report([assessment("one", 80), assessment("two", 60), assessment("three", 70)]));
+    await act(async () => (host.querySelector("#report-tab-improvement") as HTMLButtonElement).click());
+    for (const index of [2, 0, 1, 2]) {
+      await act(async () => host.querySelectorAll<HTMLButtonElement>(".question-rail-item")[index].click());
+    }
+    expect(host.querySelectorAll(".answer-comparison")).toHaveLength(1);
+    expect(host.querySelectorAll(".selected-improvement details")).toHaveLength(1);
+    expect(host.querySelector(".answer-comparison")?.textContent).toContain("Original three");
+  });
+
+  it("falls back to the whole rewritten text when segments do not reproduce it", async () => {
+    await renderReport(report([assessment("one", 80)]));
+    await act(async () => (host.querySelector("#report-tab-improvement") as HTMLButtonElement).click());
+    expect(host.querySelector(".improved-segment")).toBeNull();
+    expect(host.querySelector(".answer-comparison")?.textContent).toContain("Rewritten one");
+  });
 });
 
 describe("report next review guidance", () => {
@@ -237,7 +320,7 @@ describe("report automatic successor recovery", () => {
     await act(async () => host.querySelector<HTMLButtonElement>("#report-tab-improvement")!.click());
     expect(loadOperationId("report", "report")).toBe(child.id);
     expect(host.textContent).toContain("自动重试");
-    expect(host.textContent).toContain("累计模型尝试：2");
+    expect(host.textContent).toContain("已尝试 2 次");
     expect(host.textContent).not.toContain("parent-failure");
     expect(host.querySelector(".question-rail")?.textContent).toContain("73");
     expect([...host.querySelectorAll("button")].some((item) => /重试回答优化/.test(item.textContent ?? ""))).toBe(false);

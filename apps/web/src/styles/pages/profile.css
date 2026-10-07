@@ -1,0 +1,654 @@
+/* 资料页：上传 → 识别 → 核对 → 完成。视口里只有一个主要任务。 */
+
+.start-page {
+  width: min(1000px, calc(100% - 2 * var(--page-gutter)));
+}
+
+/* 无核对内容时（上传 / 识别中）整页居中。 */
+.profile-stage-centered {
+  min-height: calc(100dvh - var(--header-height) - 1px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: var(--space-10);
+}
+
+.profile-empty-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- Upload entry ---------- */
+.profile-entry {
+  width: min(600px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.upload-hero {
+  position: relative;
+  padding: var(--space-10) var(--space-10) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  text-align: center;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.upload-hero.is-dragging {
+  border-color: var(--blue);
+  background: #f7faff;
+  box-shadow: 0 0 0 4px rgba(49, 91, 155, 0.12), var(--shadow-raised);
+}
+
+.upload-hero__icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto var(--space-5);
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 30px;
+}
+
+.upload-hero h1 {
+  margin-bottom: var(--space-3);
+  font-size: 28px;
+}
+
+.upload-hero__lede {
+  max-width: 440px;
+  margin: 0 auto var(--space-6);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.drop-zone {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.upload-hero.is-dragging .drop-zone {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.drop-zone .a-button {
+  min-width: 200px;
+}
+
+.drop-zone__hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.flow-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.flow-steps__index {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.flow-steps strong,
+.flow-steps small {
+  display: block;
+}
+
+.flow-steps strong {
+  color: var(--navy);
+  font-size: var(--fs-sm);
+}
+
+.flow-steps small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.upload-limits {
+  margin: var(--space-5) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.upload-hero .field-error {
+  margin-top: var(--space-3);
+}
+
+/* 弹窗内的紧凑上传区。 */
+.upload-card--dialog .drop-zone {
+  padding: var(--space-8) var(--space-6);
+}
+
+.upload-card--dialog .upload-limits {
+  text-align: center;
+}
+
+.profile-entry__alt {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* ---------- Import progress ---------- */
+.profile-import-progress {
+  width: min(640px, 100%);
+  margin: auto;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.profile-import-note {
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- Material summary ---------- */
+.material-summary {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.material-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  font-size: var(--fs-sm);
+}
+
+.material-summary-row strong {
+  color: var(--navy);
+  overflow-wrap: anywhere;
+}
+
+.material-summary-row > span {
+  color: var(--muted);
+}
+
+.material-summary-row > :last-child:not(:nth-child(2)) {
+  margin-left: auto;
+}
+
+.profile-entry .material-summary {
+  margin-bottom: 0;
+}
+
+.profile-capability-note {
+  margin: 0 0 var(--space-4);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* ---------- Review header & tools ---------- */
+.review-heading {
+  align-items: flex-start;
+  margin-bottom: var(--space-5);
+}
+
+.profile-review-guidance {
+  max-width: 680px;
+}
+
+.profile-tools {
+  position: relative;
+}
+
+.profile-tools > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--navy);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  list-style: none;
+}
+
+.profile-tools > summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-tools > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.profile-tools[open] > summary {
+  border-color: var(--blue-line);
+  background: var(--blue-soft);
+}
+
+.profile-tool-actions {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 180px;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+:is(.app-shell) .profile-tool-actions .a-button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+}
+
+/* ---------- Review list ---------- */
+.profile-continue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--blue-line);
+  border-radius: var(--radius-md);
+  background: var(--blue-soft);
+}
+
+.fact-list-tabs {
+  display: flex;
+  gap: var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.fact-list-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: var(--space-3) 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fact-list-tabs > button[aria-pressed="true"] {
+  border-bottom-color: var(--blue);
+  color: var(--navy);
+}
+
+.fact-list-tabs__count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  text-align: center;
+}
+
+.fact-list-tabs > button[aria-pressed="true"] .fact-list-tabs__count {
+  background: var(--blue-soft);
+  color: var(--blue-strong);
+}
+
+.facts-section {
+  display: grid;
+  gap: var(--space-6);
+  padding-top: var(--space-5);
+}
+
+.claim-group__header {
+  position: sticky;
+  top: calc(var(--header-height) + 1px);
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.claim-group__header h2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.claim-group__count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.claim-group__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.claim-group__actions .text-action {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.claim-list {
+  display: grid;
+}
+
+.claim-card {
+  padding: var(--space-4) var(--space-3) var(--space-4) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.claim-card:hover {
+  background: #fafbfd;
+}
+
+.claim-card--accept {
+  border-left-color: var(--blue);
+  background: #f5f8fd;
+}
+
+.claim-card--reject {
+  border-left-color: #8a94a6;
+  background: var(--surface-muted);
+}
+
+.claim-card--reject .claim-text {
+  color: var(--muted);
+}
+
+.claim-card--correct {
+  border-left-color: var(--orange);
+  background: #fffaf2;
+}
+
+.claim-main-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.claim-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.claim-text {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.claim-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.claim-decision-chip {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.claim-decision-chip--accept {
+  background: var(--blue-soft);
+  color: var(--blue-strong);
+}
+
+.claim-decision-chip--reject {
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+}
+
+.claim-decision-chip--correct {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+.claim-source-details > summary {
+  font-size: 13px;
+}
+
+/* 展开的来源独占一行，不把“待提交”标记挤到侧边。 */
+.claim-source-details[open] {
+  flex: 1 1 100%;
+}
+
+.source-quotes-body {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.source-quotes-body > p {
+  margin: 0;
+}
+
+.source-quote-item small {
+  display: block;
+  margin-top: var(--space-2);
+}
+
+.source-quote-item blockquote {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-sm);
+}
+
+.claim-correction-preview {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--orange);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  background: var(--surface);
+  font-size: var(--fs-sm);
+}
+
+.preview-label {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.preview-content {
+  display: inline;
+  margin: 0;
+  color: var(--ink);
+}
+
+.claim-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.add-fact-action {
+  margin-top: var(--space-4);
+}
+
+/* ---------- Submit bar ---------- */
+.fact-submit-bar {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.fact-submit-bar__summary {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.fact-submit-bar__summary strong {
+  color: var(--navy);
+  font-size: 15px;
+}
+
+.fact-submit-bar__summary > span {
+  color: var(--muted);
+}
+
+.fact-submit-bar__summary .field-error {
+  margin: 0;
+}
+
+.fact-submit-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- Ready state ---------- */
+.profile-ready-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-6);
+  padding: var(--space-10) var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  text-align: center;
+}
+
+.profile-ready-state h2 {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-2xl);
+}
+
+.profile-ready-state p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.profile-ready-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.profile-activation-status {
+  margin: var(--space-5) 0;
+}
+
+@media (max-width: 820px) {
+  .claim-group__header {
+    top: 0;
+  }
+
+  .claim-main-row {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .claim-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 520px) {
+  .upload-hero {
+    padding: var(--space-8) var(--space-5) var(--space-6);
+  }
+
+  .flow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .fact-submit-bar {
+    bottom: 0;
+    padding: var(--space-3);
+  }
+
+  .fact-submit-bar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .segmented-slider {
+    width: 156px;
+  }
+}

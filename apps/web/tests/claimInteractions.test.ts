@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateBulkDecisionUpdate,
   calculateDecisionUpdate,
   decisionFromSliderTarget,
   sliderActionFromDecision,
   targetFromSliderKey,
 } from "../src/components/profile/claimDecisions";
 import type { ClaimDecision } from "../src/components/profile/claimDecisions";
+import { groupClaimsBySection } from "../src/components/profile/claimGroups";
+import type { ClaimView } from "../src/api";
 
 describe("claimDecisions pure domain functions", () => {
   it("converts ClaimDecision to SliderAction correctly", () => {
@@ -84,5 +87,60 @@ describe("claimDecisions pure domain functions", () => {
     expect(correction.error).toContain("最多提交 50 条");
     expect(correction.decisions["claim_51"]).toBeUndefined();
     expect(Object.keys(correction.decisions).length).toBe(50);
+  });
+});
+
+describe("bulk group selection", () => {
+  const ids = ["c1", "c2", "c3"];
+
+  it("selects a whole group explicitly without overriding staged corrections", () => {
+    const current: Record<string, ClaimDecision> = {
+      c2: { claim_id: "c2", action: "correct", corrected_text: "本人更正" },
+    };
+    const accepted = calculateBulkDecisionUpdate(current, ids, "accept", 50);
+    expect(accepted.error).toBeNull();
+    expect(accepted.decisions).toEqual({
+      c1: { claim_id: "c1", action: "accept" },
+      c2: { claim_id: "c2", action: "correct", corrected_text: "本人更正" },
+      c3: { claim_id: "c3", action: "accept" },
+    });
+
+    const cleared = calculateBulkDecisionUpdate(accepted.decisions, ids, null, 50);
+    // 清除本组只撤销采用/不采用；用户写过正文的更正仍需单独撤销。
+    expect(cleared.decisions).toEqual({
+      c2: { claim_id: "c2", action: "correct", corrected_text: "本人更正" },
+    });
+  });
+
+  it("applies nothing when the group would exceed the batch limit", () => {
+    const current: Record<string, ClaimDecision> = {};
+    for (let i = 0; i < 49; i++) current[`other_${i}`] = { claim_id: `other_${i}`, action: "accept" };
+    const result = calculateBulkDecisionUpdate(current, ids, "reject", 50);
+    expect(result.error).toContain("超过每次 50 条的提交上限");
+    expect(result.decisions).toBe(current);
+  });
+});
+
+describe("claim section grouping", () => {
+  const claim = (id: string, section?: string): ClaimView => ({
+    id, text: id, status: "proposed", source_block_ids: [], supersedes_id: null,
+    source_quotes: section === undefined ? [] : [{ section, exact_quote: id }],
+  });
+
+  it("groups by first appearance and keeps server order inside each group", () => {
+    const groups = groupClaimsBySection([
+      claim("basic-1", "basic"),
+      claim("project-1", "project"),
+      claim("basic-2", "basic"),
+      claim("unknown", "hobby"),
+      claim("missing"),
+      claim("project-2", "project"),
+    ]);
+    expect(groups.map((group) => [group.label, group.claims.map((item) => item.id)])).toEqual([
+      ["基本信息", ["basic-1", "basic-2"]],
+      ["项目与实践", ["project-1", "project-2"]],
+      // 未知或缺失段落不按文字猜测，统一归入“其他信息”。
+      ["其他信息", ["unknown", "missing"]],
+    ]);
   });
 });

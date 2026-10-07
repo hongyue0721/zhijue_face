@@ -30,7 +30,7 @@ const interview: InterviewView = {
     upstream_url: null, upstream_retrieved_at: null, upstream_content_hash: null, derived_artifact_path: null, derived_content_hash: null, transformation_note: null,
   },
   root_plan: { slots: [], planner_version: "test", seed_bank_version: "test" }, coverage_map: [], current_question: question,
-  root_results: [], active_operation_id: null, stop_requested: false, report_id: null, limitations: [], knowledge_pack: { binding: "legacy_unresolved", pack_release_id: null },
+  root_results: [], active_operation_id: null, stop_requested: false, report_id: null, limitations: [], knowledge_pack: { binding: "legacy_unresolved", pack_release_id: null, profile_version: null, profile_digest: null, capabilities: [] },
 };
 const profile: ProfileView = {
   id: "draft-test", revision: 2, display_name: "Test", synthetic: false, status: "active", documents: [], proposed_claims: [], confirmed_claims: [],

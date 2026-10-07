@@ -1,0 +1,60 @@
+/* 打印：只保留已确认的简历正文，解除屏幕态高度与选中背景。 */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  html,
+  body {
+    min-width: 0;
+    background: #fff;
+  }
+
+  .app-header,
+  .global-notice,
+  .no-print,
+  .print-document:not(.print-document--accepted) {
+    display: none !important;
+  }
+
+  .page-container,
+  .resume-workspace,
+  .print-document {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    display: block;
+  }
+
+  .print-document {
+    height: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: #000;
+    overflow: visible;
+  }
+
+  .resume-section button,
+  .resume-section button.active {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #000;
+  }
+
+  .print-document p,
+  .print-document li,
+  .print-document h2,
+  .print-document h3 {
+    color: #000;
+    overflow: visible;
+    word-break: break-word;
+  }
+
+  .resume-section,
+  .resume-section li {
+    break-inside: avoid;
+  }
+}

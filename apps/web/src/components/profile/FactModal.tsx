@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Tag, Textarea } from "@any-design/anyui/react";
+import { Tag, Textarea } from "@any-design/anyui/react";
+import { Button } from "../common/ui";
 import { ModalDialog } from "../common/ModalDialog";
 
 type FocusTarget = HTMLElement | null;
@@ -45,11 +46,11 @@ export function FactModal(props: FactModalProps) {
   const handleSubmit = async () => {
     const trimmed = text.trim();
     if (!trimmed) {
-      setError("请输入有效的事实描述内容。");
+      setError("请先填写经历内容。");
       return;
     }
     if (trimmed.length > 2000) {
-      setError("内容不可超过 2000 字上限。");
+      setError("内容最多 2000 字。");
       return;
     }
 
@@ -88,8 +89,8 @@ export function FactModal(props: FactModalProps) {
       isOpen={isOpen}
       busy={modalBusy}
       titleId="fact-modal-title"
-      eyebrow={isCorrectMode ? "更正这条事实" : "补充经历事实"}
-      title={isCorrectMode ? "更正经历事实描述" : "手工记录一条经历或技能"}
+      eyebrow={isCorrectMode ? "更正经历" : "手动补充"}
+      title={isCorrectMode ? "更正这条经历" : "补充一条经历"}
       returnFocusElement={props.returnFocusElement}
       initialFocusRef={textareaRef}
       onClose={props.onClose}
@@ -108,7 +109,7 @@ export function FactModal(props: FactModalProps) {
             disabled={modalBusy || (!isCorrectMode && props.disabled)}
             onClick={handleSubmit}
           >
-            {isCorrectMode ? "保存更正" : "保存为待确认事实"}
+            {isCorrectMode ? "保存更正" : "加入待核对"}
           </Button>
         </>
       )}
@@ -116,18 +117,18 @@ export function FactModal(props: FactModalProps) {
       {isCorrectMode ? (
         <div className="fact-modal-origin-box">
           <div className="origin-label-row">
-            <Tag>材料原文对照</Tag>
+            <Tag>简历原文</Tag>
 
           </div>
           <p className="origin-text">{props.originalText}</p>
           {props.sourceQuotes && props.sourceQuotes.some((quote) => quote.exact_quote) ? (
             <details className="fact-modal-source-details">
-              <summary>查看出处精准引文</summary>
+              <summary>查看原文出处</summary>
               <div className="source-quotes-body">
                 {props.sourceQuotes.map((quote, index) =>
                   quote.exact_quote ? (
                     <blockquote key={index}>
-                      <small>{quote.origin === "user_input" ? "本人更正" : "材料引文"}</small>
+                      <small>{quote.origin === "user_input" ? "本人更正" : "简历原文"}</small>
                       <span>{quote.exact_quote}</span>
                     </blockquote>
                   ) : null,
@@ -139,15 +140,15 @@ export function FactModal(props: FactModalProps) {
       ) : null}
 
       <label className="field-label fact-modal-editor-label">
-        {isCorrectMode ? "更正后的事实描述" : "项目或技能事实描述"}
+        {isCorrectMode ? "更正后的写法" : "经历描述"}
         <Textarea
           ref={textareaRef}
           modelValue={text}
           onUpdateModelValue={setText}
           placeholder={
             isCorrectMode
-              ? "请输入修改后的准确事实描述..."
-              : "例如：在 STM32 平台使用 UART + DMA 接收多传感器数据，并通过逻辑分析仪分析错帧。"
+              ? "写下更准确的说法，只写你确实做过的事"
+              : "例如：负责项目中的数据处理模块，编写测试并根据日志定位异常；只写你实际完成的部分。"
           }
           maxlength={2000}
           rows={isCorrectMode ? 5 : 6}

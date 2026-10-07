@@ -1,5 +1,6 @@
 import type {
   CoverageEntryView,
+  InterviewPackSummary,
   InterviewView,
   JDRequirementView,
   JDSourceView,
@@ -52,11 +53,11 @@ export const criterionKindText: Record<ReportCriterionResult["kind"], string> = 
 };
 
 export const criterionFindingText: Record<ReportCriterionResult["finding"], string> = {
-  supported: "本次回答有支持",
-  missing: "本次回答缺少信息",
-  contradicted: "本次回答与依据冲突",
+  supported: "回答中有依据",
+  missing: "回答缺少关键信息",
+  contradicted: "回答与参考依据冲突",
   not_assessable: "本轮信息不足，暂不评价",
-  disputed: "本次回答证据存在冲突",
+  disputed: "回答中的证据相互冲突",
 };
 
 export const improvementsStatusText: Record<"not_requested" | "generating" | "ready" | "failed", string> = {
@@ -86,23 +87,18 @@ export function resumeTargetText(target: ResumeDraftView["target_context"]): str
     : resumeTargetKindText[target.kind];
 }
 
-const competencyText: Record<string, string> = {
-  "embedded.c.basics": "C 与嵌入式基础",
-  "embedded.mcu.interrupt": "STM32 外设与中断",
-  "embedded.peripheral.uart_dma": "UART 与 DMA 排障",
-  "embedded.peripheral.serial_bus": "SPI、I²C 与 CAN",
-  "embedded.rtos.fundamentals": "RTOS 任务与并发基础",
-  "embedded.rtos.queue": "FreeRTOS Queue 任务通信",
-  "embedded.rtos.synchronization": "Semaphore、Mutex 与共享资源",
-  "embedded.rtos.scheduling": "任务周期、优先级与实时性",
-  "engineering.tooling.version_control": "版本控制与回归定位",
-  "engineering.verification": "调试取证与验证",
-  "project.ownership": "个人贡献边界",
-};
+export type CompetencyLabels = Readonly<Record<string, string>>;
 
-export function reportLimitationText(limitation: unknown): string {
+/** 只读取本场冻结能力；列表中的当前岗位包不能重新解释历史面试。 */
+export function frozenCompetencyLabels(pack?: InterviewPackSummary | null): CompetencyLabels {
+  return pack?.binding === "frozen"
+    ? Object.fromEntries(pack.capabilities.map(({ competency_id, label }) => [competency_id, label]))
+    : {};
+}
+
+export function reportLimitationText(limitation: unknown, labels: CompetencyLabels): string {
   let text = typeof limitation === "string" ? limitation : "本场报告有一条注意事项";
-  for (const [competency, label] of Object.entries(competencyText)) {
+  for (const [competency, label] of Object.entries(labels)) {
     text = text.replaceAll(competency, label);
   }
   // 服务端结构化理由里的领域词按用户视角改写，事实内容不变。
@@ -156,19 +152,73 @@ export function followupIntentText(intent?: string): string {
   return intentText[intent] ?? "围绕当前回答继续核对";
 }
 
-export function competencyDisplayName(competency: string, index: number): string {
-  return competencyText[competency] ?? `验证方向 ${index + 1}`;
+export function competencyDisplayName(competency: string, labels: CompetencyLabels): string {
+  return Object.hasOwn(labels, competency) ? labels[competency] : competency;
 }
 
+/** 评分项名称；同一题出现多个同类评分项时才追加序号，避免序号被误读成分数。 */
 export function criterionDisplayName(
   kind: ReportCriterionResult["kind"],
-  index: number,
+  ordinal: number | null,
 ): string {
-  return `${criterionKindText[kind]} ${index + 1}`;
+  return ordinal === null ? criterionKindText[kind] : `${criterionKindText[kind]}（${ordinal}）`;
 }
 
+/** api.md §报告：可评分 criterion 的 level 取值 0—3。 */
+export const CRITERION_MAX_LEVEL = 3;
+
 export function criterionLevelText(level: ReportCriterionResult["level"]): string {
-  return level === null ? "未形成等级" : `等级 ${level}`;
+  return level === null ? "未形成等级" : `等级 ${level} / ${CRITERION_MAX_LEVEL}`;
+}
+
+const reviewDecisionTextMap: Record<string, string> = {
+  approved: "审核通过",
+  rejected: "审核未通过",
+  unreviewed: "待技术审核",
+};
+
+/** 岗位知识包审核结论的中文；未登记的取值如实显示为待确认，不猜测。 */
+export function reviewDecisionText(decision: unknown): string {
+  return typeof decision === "string" && decision in reviewDecisionTextMap
+    ? reviewDecisionTextMap[decision]
+    : "审核结论待确认";
+}
+
+export function reviewerRoleText(role: unknown): string {
+  return role === "owner" ? "负责人" : "审核人";
+}
+
+const validationStatusTextMap: Record<string, string> = {
+  passed: "通过",
+  failed: "未通过",
+  not_run: "未执行",
+};
+
+export function validationStatusText(status: string): string {
+  return validationStatusTextMap[status] ?? status;
+}
+
+const validationCheckTextMap: Record<string, string> = {
+  structure: "文件结构",
+  manifest: "包清单",
+  competencies: "能力配置",
+  seeds_schema: "题目种子格式",
+  sources: "来源登记",
+  content_digest: "内容摘要",
+  review: "负责人审核",
+};
+
+/** 校验项名称；未登记的检查项保留原名，不自造含义。 */
+export function validationCheckText(check: string): string {
+  return validationCheckTextMap[check] ?? check;
+}
+
+/** ISO 时间按本地时区显示到分钟；无法解析时原样返回。 */
+export function dateTimeText(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function scoreText(score: number | null, nullText: string): string {
@@ -190,7 +240,7 @@ export function jdSourceText(source: JDSourceView): string {
 
 export function interviewRoleText(interview: InterviewView): string {
   return interview.jd_source.source_type === "synthetic_demo_jd"
-    ? "嵌入式软件开发实习生"
+    ? interview.knowledge_pack.name ?? interview.jd_source.source_name
     : interview.jd_source.source_name;
 }
 

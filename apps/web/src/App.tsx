@@ -1,4 +1,4 @@
-import { Alert } from "@any-design/anyui/react";
+import { Alert } from "./components/common/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { AppHeader } from "./components/layout/AppHeader";
@@ -89,7 +89,11 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader currentStep={currentStep} onOpenPacks={() => navigate(knowledgePacksPath(undefined, route.page === "packs" ? route.returnTo : location))} />
+      <AppHeader
+        currentStep={currentStep}
+        packsActive={route.page === "packs"}
+        onOpenPacks={() => navigate(knowledgePacksPath(undefined, route.page === "packs" ? route.returnTo : location))}
+      />
       <ServiceNotice state={service} onRetry={checkService} />
       {invalidRoute ? (
         <div className="global-notice">

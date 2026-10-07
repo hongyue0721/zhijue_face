@@ -1,4 +1,5 @@
-import { Alert, Button, Spinner, Textarea } from "@any-design/anyui/react";
+import { Spinner, Textarea } from "@any-design/anyui/react";
+import { Alert, Button } from "../common/ui";
 import { useEffect, useState } from "react";
 import type { AcceptedAnswerView, QuestionView } from "../../api";
 import { answerDraftKey, loadAnswerDraft, saveAnswerDraft } from "../../answerDrafts";
@@ -82,10 +83,11 @@ function AnswerEditor({
       <section className="answer-composer accepted-answer" aria-labelledby="accepted-answer-title">
         <div className="answer-state-row">
           <h2 id="accepted-answer-title">已保存的回答</h2>
+          {processing ? <span className="answer-state-badge">分析中</span> : null}
         </div>
         <p className="saved-answer-text">{acceptedAnswer.raw_text}</p>
-        {!storageAvailable ? <p className="field-error" role="status">服务端回答已保存，但浏览器草稿清除无法确认；请清除此站点的浏览器数据以移除旧副本。</p> : null}
-        {processing ? <div className="loading-row"><Spinner size="small" />回答已保存，正在分析</div> : null}
+        {!storageAvailable ? <p className="field-error" role="status">回答已保存。浏览器里的草稿副本没能确认清除，如需移除请清除本站的浏览器数据。</p> : null}
+        {processing ? <div className="loading-row answer-processing"><Spinner size="small" />回答已保存，正在分析；完成后页面会自动显示追问、下一题或结束提问。</div> : null}
         {failed ? (
           <Alert type="danger" title="回答分析没有完成">
             {canRetryAnalysis
@@ -109,7 +111,7 @@ function AnswerEditor({
   const showCharacterCount = value.length >= 4800;
   const retryCopy = retryReason === "capacity"
     ? {
-        title: "当前处理排队已满",
+        title: "当前排队的任务较多",
         detail: "这次回答还没有发送成功。稍等片刻再点重试即可，内容不会重复提交。",
       }
     : retryReason === "service"
@@ -125,9 +127,9 @@ function AnswerEditor({
     <section className="answer-composer" aria-labelledby="answer-title">
       <div className="answer-state-row">
         <h2 id="answer-title">你的回答</h2>
-        {showCharacterCount ? <span>{value.length} / 6000</span> : null}
+        {showCharacterCount ? <span className="character-count">{value.length} / 6000</span> : null}
       </div>
-      <label className="field-label">
+      <label className="field-label answer-field">
         <span className="visually-hidden">面试回答</span>
         <Textarea
           modelValue={value}
@@ -139,6 +141,23 @@ function AnswerEditor({
           disabled={submitting || !serviceReady}
         />
       </label>
+      {retry ? (
+        <Alert type="warn" title={retryCopy.title}>
+          {retryCopy.detail}
+        </Alert>
+      ) : null}
+      {validation ? <p className="field-error" role="alert">{validation}</p> : null}
+      <div className="field-footer">
+        <p className="answer-hint">回答会保存为面试记录，用于本场评分和复盘。</p>
+        <div className="button-row">
+          {retry ? (
+            <Button type="secondary" disabled={submitting} onClick={resetRetry}>修改回答</Button>
+          ) : null}
+          <Button type="primary" size="large" loading={submitting} disabled={submitting || !serviceReady} onClick={submit}>
+            {retry ? "重新提交" : "提交回答"}
+          </Button>
+        </div>
+      </div>
       <TemporaryDraftNotice
         restored={restored}
         storageAvailable={storageAvailable}
@@ -151,20 +170,6 @@ function AnswerEditor({
           setStorageAvailable(clearTemporaryDraft(answerDraftKey(interviewId, question.id)));
         }}
       />
-      {retry ? (
-        <Alert type="warn" title={retryCopy.title}>
-          {retryCopy.detail}
-        </Alert>
-      ) : null}
-      <div className="field-footer">
-        {retry ? (
-          <Button type="secondary" disabled={submitting} onClick={resetRetry}>修改回答</Button>
-        ) : <span />}
-        <Button type="primary" size="large" loading={submitting} disabled={submitting || !serviceReady} onClick={submit}>
-          {retry ? "重新提交" : "提交回答"}
-        </Button>
-      </div>
-      {validation ? <p className="field-error" role="alert">{validation}</p> : null}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Alert, Button } from "../common/ui";
 import { useRef } from "react";
 import { ErrorNotice } from "../common/ErrorNotice";
 import { ModalDialog } from "../common/ModalDialog";
@@ -40,12 +40,12 @@ export function UploadModal({
       footer={<Button type="secondary" disabled={busy} onClick={onClose}>关闭</Button>}
     >
       <p className="fact-modal-intro-text">
-        选择文本型 PDF 后，页面会显示真实解析状态；关闭窗口不会取消已经提交的后台处理。
+        选择 PDF 后会显示解析进度；关掉窗口不会中断已经开始的处理。
       </p>
       {pending ? (
-        <Alert type="warn" title="上次上传请求的结果还不确定">
-          <p>已保留本次文件和请求标识。请继续原请求，不要重新选择文件创建另一条命令。</p>
-          <Button type="secondary" disabled={busy} onClick={onRetry}>重新提交原上传请求</Button>
+        <Alert type="warn" title="上次上传没有收到结果">
+          <p>文件已保留。点“继续上次上传”会沿用原请求，不会重复上传。</p>
+          <Button type="secondary" disabled={busy} onClick={onRetry}>继续上次上传</Button>
         </Alert>
       ) : null}
       <ErrorNotice error={error} />

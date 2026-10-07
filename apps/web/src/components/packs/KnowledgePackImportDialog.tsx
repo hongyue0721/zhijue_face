@@ -1,4 +1,4 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Alert, Button } from "../common/ui";
 import { useRef, useState } from "react";
 import { ApiError, type KnowledgePackList } from "../../api";
 import { ModalDialog } from "../common/ModalDialog";
@@ -77,7 +77,7 @@ export function KnowledgePackImportDialog({
         导入成功只代表格式通过；技术审核与“可用于新面试”是独立状态，
         外部上传默认未审核。
       </p>
-      {busy && !submitting ? <p>导入已受理，可以关闭此窗口；后台处理不会中断。</p> : null}
+      {busy && !submitting ? <p>已开始导入，可以关闭这个窗口，后台会继续处理。</p> : null}
       {limits ? (
         <p className="pack-import-limits">
           上限：ZIP {Math.floor(limits.max_upload_bytes / 1024 / 1024)} MiB ·

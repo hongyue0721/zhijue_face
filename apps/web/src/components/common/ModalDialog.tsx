@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type ReactNode, type SyntheticEvent } from "react";
+import { Icon } from "./icons";
 
 interface FocusRef {
   readonly current: HTMLElement | null;
@@ -8,6 +9,7 @@ export function ModalDialog({
   isOpen,
   busy = false,
   titleId,
+  eyebrow,
   title,
   returnFocusElement,
   initialFocusRef,
@@ -90,7 +92,7 @@ export function ModalDialog({
       <div className="fact-modal-card" onClick={(event) => event.stopPropagation()}>
         <header className="fact-modal-header">
           <div>
-
+            <p className="eyebrow">{eyebrow}</p>
             <h2 id={titleId}>{title}</h2>
           </div>
           <button
@@ -100,7 +102,7 @@ export function ModalDialog({
             disabled={busy}
             onClick={onClose}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </header>
         <div className="fact-modal-body">{children}</div>

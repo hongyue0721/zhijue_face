@@ -1,4 +1,4 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
@@ -10,6 +10,7 @@ import {
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
+import { BackLink, PageHeading, PageNav } from "../components/layout/PageNav";
 import { resumeTargetText } from "../presentation";
 import { reportPath, startPath } from "../routing";
 import {
@@ -216,11 +217,11 @@ export function ResumeDraftPage({
       : generationActive
         ? null
         : operation?.error?.retryable === false
-          ? "这次生成无法继续重试（次数已用完或需要处理失败原因）。已确认的资料不受影响。"
+          ? "这次生成无法再重试（次数已用完，或失败原因需要先处理）。已确认的经历不受影响。"
           : operationError
             ? "失败详情暂时无法读取；页面仍会继续查询处理状态，也可手动刷新草稿状态。"
             : !operationId
-              ? "服务端没有提供可恢复的操作记录；已确认的资料不受影响。"
+              ? "没有找到可以恢复的处理记录；已确认的经历不受影响。"
               : null
     : null;
   const resumeItems = draft.sections.flatMap((section) => section.items);
@@ -237,53 +238,54 @@ export function ResumeDraftPage({
 
   return (
     <main className="page-container resume-page">
-      <nav className="page-backlinks no-print" aria-label="简历返回导航">
-        <Button type="secondary" size="small" onClick={() => navigate(startPath(draft.profile_id))}>
-          返回资料核对
-        </Button>
+      <PageNav label="简历返回导航" className="no-print">
+        <BackLink onClick={() => navigate(startPath(draft.profile_id))}>返回资料核对</BackLink>
         {draft.interview_id ? (
-          <Button type="secondary" size="small" onClick={() => navigate(reportPath(draft.interview_id!))}>
-            返回面试报告
-          </Button>
+          <BackLink onClick={() => navigate(reportPath(draft.interview_id!))}>返回面试报告</BackLink>
         ) : null}
-      </nav>
-      <header className="compact-page-heading resume-heading no-print">
-        <div>
-
-          <h1>{draft.status === "accepted" ? "你的简历，已确认" : "把经历整理成简历"}</h1>
-          {draft.status === "generating" || generationActive ? (
-            <p>正在整理你已确认的经历。</p>
-          ) : draft.status === "generation_failed" ? (
-            <p>本次简历生成未完成，已确认经历仍保留。请查看下方处理结果。</p>
-          ) : null}
-
-        </div>
-        <div className="heading-actions">
-          {canRetry ? (
-            <Button
-              type="primary"
-              loading={busy}
-              disabled={!contentGenerationReady || busy}
-              onClick={() => void retryGeneration()}
-            >
-              {pendingRetry ? "继续未完成的重试" : "重试简历生成"}
-            </Button>
-          ) : null}
-          {draft.status === "draft" ? (
-            <Button
-              type="primary"
-              loading={busy}
-              disabled={!serviceReady || busy}
-              onClick={() => void acceptDraft()}
-            >
-              确认这版草稿
-            </Button>
-          ) : null}
-          {draft.status === "accepted" ? (
-            <Button type="primary" onClick={() => window.print()}>打印简历</Button>
-          ) : null}
-        </div>
-      </header>
+      </PageNav>
+      <PageHeading
+        className="resume-heading no-print"
+        eyebrow="简历整理"
+        title={draft.status === "accepted" ? "简历已确认，可以打印" : "把经历整理成简历"}
+        aside={(
+          <>
+            {canRetry ? (
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!contentGenerationReady || busy}
+                onClick={() => void retryGeneration()}
+              >
+                {pendingRetry ? "继续未完成的重试" : "重试简历生成"}
+              </Button>
+            ) : null}
+            {draft.status === "draft" ? (
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!serviceReady || busy}
+                onClick={() => void acceptDraft()}
+              >
+                确认这版草稿
+              </Button>
+            ) : null}
+            {draft.status === "accepted" ? (
+              <Button type="primary" onClick={() => window.print()}>打印简历</Button>
+            ) : null}
+          </>
+        )}
+      >
+        {draft.status === "generating" || generationActive ? (
+          <p>正在整理你已确认的经历。</p>
+        ) : draft.status === "generation_failed" ? (
+          <p>本次简历生成未完成，已确认经历仍保留。请查看下方处理结果。</p>
+        ) : draft.status === "draft" ? (
+          <p>正文每一条都对应你确认过的经历；点选任一条可在右侧核对来源，确认后才能打印。</p>
+        ) : draft.status === "accepted" ? (
+          <p>打印时只输出简历正文，不包含右侧的来源核对。</p>
+        ) : null}
+      </PageHeading>
       {serviceReady && !contentGenerationReady && draft.status === "generation_failed" ? (
         <p role="status">当前服务未配置内容生成，暂不能重试简历生成；已有草稿仍可查看和确认。</p>
       ) : null}
@@ -345,11 +347,11 @@ export function ResumeDraftPage({
           {selectedItem ? (
             <div className="resume-source-reading">
               <section className="resume-selected-copy">
-                <h3>简历表达</h3>
+                <h3>简历中的写法</h3>
                 <p>{selectedItem.text}</p>
               </section>
               <section className="related-sources">
-                <h3>已确认的来源</h3>
+                <h3>对应的已确认经历</h3>
                 {selectedSources.length ? selectedSources.map((source) => (
                   <blockquote key={source.id}>{source.text}</blockquote>
                 )) : <p>这条正文的来源暂未返回，请刷新后再核对。</p>}
@@ -371,7 +373,7 @@ export function ResumeDraftPage({
           ) : (
             <p className="empty-state">{draft.status === "generation_failed"
               ? "尚无生成正文可关联来源；这不表示你的已确认经历为空。"
-              : "正文生成后，可逐条查看引用的资料。"}</p>
+              : "生成正文后，点选任一条即可查看对应的已确认经历。"}</p>
           )}
 
           {(draft.missing_facts.length || draft.cautions.length) ? (
@@ -382,7 +384,7 @@ export function ResumeDraftPage({
               </summary>
               {draft.missing_facts.length ? (
                 <div>
-                  <h3>待本人补充</h3>
+                  <h3>需要你补充</h3>
                   <ul>
                     {draft.missing_facts.map((item) => (
                       <li key={item.prompt}>{item.prompt}：{item.reason}</li>

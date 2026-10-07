@@ -1,16 +1,25 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, newCommandKey, shouldPreserveWriteCommand, type OperationAccepted, type OperationView, type ProfileView } from "../api";
 import { ClaimConfirmList } from "../components/profile/ClaimConfirmList";
-import { calculateDecisionUpdate, type ClaimDecision } from "../components/profile/claimDecisions";
+import {
+  MAX_CLAIM_DECISIONS,
+  calculateBulkDecisionUpdate,
+  calculateDecisionUpdate,
+  type BulkClaimAction,
+  type ClaimDecision,
+} from "../components/profile/claimDecisions";
 import { DocumentStatus } from "../components/profile/DocumentStatus";
 import { DocumentUpload } from "../components/profile/DocumentUpload";
 import { ResumeScan } from "../components/profile/ResumeScan";
 import { FactModal } from "../components/profile/FactModal";
 import { UploadModal } from "../components/profile/UploadModal";
+import { ModalDialog } from "../components/common/ModalDialog";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { useOperationMonitor } from "../hooks/useOperationMonitor";
+import { Icon } from "../components/common/icons";
+import { PageHeading } from "../components/layout/PageNav";
 import { clearOperationId, clearRecoverableCommand, loadOperationId, loadRecoverableCommand, saveOperationId, saveRecoverableCommand, type RecoverableCommand } from "../storage";
 import { preparePath, resumeDraftPath, startPath } from "../routing";
 import { acceptsProfileSnapshot } from "../profileSnapshots";
@@ -51,7 +60,7 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
   const [error, setError] = useState<unknown>(null);
   const [pendingCommand, setPendingCommand] = useState<ProfileCommand | null>(null);
   const [pendingResume, setPendingResume] = useState<ResumeCommand | null>(null);
-  const [decisions, setDecisions] = useState<Record<string, ClaimDecision>>({});
+  const [decisions, setDecisionState] = useState<Record<string, ClaimDecision>>({});
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [list, setList] = useState<"proposed" | "confirmed">("proposed");
   const [manualFactVisible, setManualFactVisible] = useState(false);
@@ -61,9 +70,21 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
   const requestInFlight = useRef(false);
   const manualFactTriggerRef = useRef<HTMLDivElement>(null);
   const uploadTriggerRef = useRef<HTMLDivElement>(null);
+  const toolsRef = useRef<HTMLDetailsElement>(null);
   const confirmSuccessTimerRef = useRef<number | null>(null);
   const profileSnapshot = useRef<ProfileView | null>(null);
   const mounted = useRef(true);
+  // 选择会在同一帧内连续变化（快速点选、整组批量）；以 ref 作同步真值，
+  // 避免闭包里的旧 decisions 让后一次选择覆盖前一次。
+  const decisionsRef = useRef<Record<string, ClaimDecision>>({});
+  const updateDecisions = useCallback(
+    (update: (current: Record<string, ClaimDecision>) => Record<string, ClaimDecision>) => {
+      const next = update(decisionsRef.current);
+      decisionsRef.current = next;
+      setDecisionState(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -74,12 +95,12 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
     if (!mounted.current || !acceptsProfileSnapshot(profileSnapshot.current, next, profileId)) return false;
     profileSnapshot.current = next;
     setProfile(next);
-    setDecisions((current) => {
+    updateDecisions((current) => {
       const ids = new Set([...next.proposed_claims, ...next.confirmed_claims].map((claim) => claim.id));
       return Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id)));
     });
     return true;
-  }, [profileId]);
+  }, [profileId, updateDecisions]);
 
   const reloadProfile = useCallback(async () => {
     const id = profile?.id ?? profileId;
@@ -108,7 +129,7 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
       setResumeOperationId(null);
       setPendingCommand(null);
       setPendingResume(null);
-      setDecisions({});
+      updateDecisions(() => ({}));
       setSelectedName(null);
       return;
     }
@@ -133,7 +154,7 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
     setResumeOperationId(loadOperationId("resume", profileId));
 
     return () => controller.abort();
-  }, [applyProfile, profileId]);
+  }, [applyProfile, profileId, updateDecisions]);
   useEffect(() => {
     setConfirmSuccessFlash(false);
     return () => {
@@ -321,7 +342,7 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
       if (command.kind === "confirm") {
         // 只清本批提交的 claim；提交期间用户新勾选的不该被误删。
         const submitted = new Set(command.decisions.map((decision) => decision.claim_id));
-        setDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !submitted.has(id))));
+        updateDecisions((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !submitted.has(id))));
       }
       trackAccepted(accepted, command.profileId);
     } catch (nextError) {
@@ -414,10 +435,22 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
   };
 
   const changeDecision = (claimId: string, decision: ClaimDecision | null): boolean => {
-    const { decisions: next, error: limitError } = calculateDecisionUpdate(decisions, claimId, decision, 50);
+    const { decisions: next, error: limitError } = calculateDecisionUpdate(
+      decisionsRef.current, claimId, decision, MAX_CLAIM_DECISIONS,
+    );
     setSelectionError(limitError);
     if (limitError) return false;
-    setDecisions(next);
+    updateDecisions(() => next);
+    return true;
+  };
+
+  const changeGroupDecisions = (claimIds: string[], action: BulkClaimAction | null): boolean => {
+    const { decisions: next, error: limitError } = calculateBulkDecisionUpdate(
+      decisionsRef.current, claimIds, action, MAX_CLAIM_DECISIONS,
+    );
+    setSelectionError(limitError);
+    if (limitError) return false;
+    updateDecisions(() => next);
     return true;
   };
 
@@ -429,15 +462,20 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
   const resumeDisabled = !contentGenerationReady || busy || Boolean(pendingCommand)
     || (!pendingResume && (!profile?.latest_snapshot_id || confirmedCount === 0));
 
+  // 菜单项打开对话框后收起菜单，避免它停留在对话框背后。
+  const fromTools = (open: () => void) => () => {
+    if (toolsRef.current) toolsRef.current.open = false;
+    open();
+  };
   const profileManagement = profile ? (
-                <details className="profile-tools">
-                  <summary>资料管理</summary>
-                  <div className="profile-tool-actions">
-                    <Button ref={uploadTriggerRef} type="secondary" disabled={mutationDisabled} onClick={() => setUploadVisible(true)}>添加 PDF</Button>
-                    <Button ref={manualFactTriggerRef} type="secondary" disabled={mutationDisabled} onClick={() => setManualFactVisible(true)}>补充经历</Button>
-                    <Button type="secondary" disabled={mutationDisabled} onClick={() => setConfirmDelete(true)}>删除档案</Button>
-                  </div>
-                </details>
+    <details className="profile-tools" ref={toolsRef}>
+      <summary>资料管理</summary>
+      <div className="profile-tool-actions">
+        <Button ref={uploadTriggerRef} type="secondary" disabled={mutationDisabled} onClick={fromTools(() => setUploadVisible(true))}>上传新的 PDF</Button>
+        <Button ref={manualFactTriggerRef} type="secondary" disabled={mutationDisabled} onClick={fromTools(() => setManualFactVisible(true))}>手动补充经历</Button>
+        <Button type="secondary" disabled={mutationDisabled} onClick={fromTools(() => setConfirmDelete(true))}>删除档案</Button>
+      </div>
+    </details>
   ) : null;
 
   return (
@@ -451,6 +489,7 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
       <ErrorNotice error={error ?? operationError ?? resumeError} onReload={profile || profileId ? () => void reloadProfile() : undefined} />
       {pendingCommand && !submitting && (pendingCommand.kind !== "upload" || !uploadVisible) ? (
         <Alert type="warn" title="上次请求未确认完成">
+          <p>没有收到服务器的结果。点“继续上次操作”会沿用原请求，不会重复执行。</p>
           <Button type="secondary" disabled={!serviceReady || submitting} onClick={() => void runProfileCommand(pendingCommand)}>继续上次操作</Button>
         </Alert>
       ) : null}
@@ -476,72 +515,91 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
         <div className="profile-import-progress">
           <ResumeScan label={uploadRequestActive ? "正在上传简历" : "正在识别简历"} />
           {uploadRequestActive
-            ? <p>文件正在发送，请暂时保留本页；收到受理结果后会显示识别状态。</p>
+            ? <p className="profile-import-note">文件正在上传，请先停留在本页；上传完成后会显示识别进度。</p>
             : <OperationStatus operation={documentOperation} label="简历识别" />}
+        </div>
+      ) : !hasReview ? (
+        <div className="profile-entry">
+          {profileId && !profile ? <p role="status" className="loading-row">正在读取资料</p> : (
+            <>
+              <DocumentUpload disabled={mutationDisabled} busy={uploadRequestActive} onSelect={(file) => void upload(file)} />
+              <p className="profile-entry__alt">
+                没有现成的 PDF？
+                <Button ref={manualFactTriggerRef} type="text" disabled={mutationDisabled} onClick={() => setManualFactVisible(true)}>手动填写经历</Button>
+              </p>
+            </>
+          )}
+          <DocumentStatus selectedName={selectedName} operation={documentOperation} document={document} />
         </div>
       ) : (
         <>
-          {!hasReview ? (
-            <div className="profile-upload-center">
-              {profileId && !profile ? <p role="status">正在读取资料</p> : (
-                <>
-                  <DocumentUpload disabled={mutationDisabled} busy={uploadRequestActive} onSelect={(file) => void upload(file)} />
-                  <Button ref={manualFactTriggerRef} type="secondary" className="text-action" disabled={mutationDisabled} onClick={() => setManualFactVisible(true)}>手动填写经历</Button>
-                </>
-              )}
-              <DocumentStatus selectedName={selectedName} operation={documentOperation} document={document} />
+          <PageHeading
+            className="review-heading"
+            eyebrow="资料核对"
+            title={reviewComplete ? "经历已确认" : "核对你的经历"}
+            aside={profileManagement}
+          >
+            {reviewComplete ? (
+              <p>面试提问与简历整理只使用这些已确认的经历；随时可以回看或更正。</p>
+            ) : (
+              <p className="profile-review-guidance">
+                待核对 {profile?.proposed_claims.length ?? 0} 条 · 已确认 {confirmedCount} 条。
+                逐条对照原文选择采用、更正或不采用，也可以整组选择；点“提交”后才生效，每次最多 {MAX_CLAIM_DECISIONS} 条。
+              </p>
+            )}
+          </PageHeading>
+          <DocumentStatus selectedName={selectedName} operation={documentOperation} document={document} />
+          {serviceReady && !contentGenerationReady && confirmedCount > 0 ? (
+            <p role="status" className="profile-capability-note">当前服务未配置内容生成，暂不能整理简历；资料核对和面试仍可继续。</p>
+          ) : null}
+          {reviewComplete ? (
+            <section className="profile-ready-state" aria-label="核对完成">
+              <span className="completion-mark" aria-hidden="true"><Icon name="check" strokeWidth={2.4} /></span>
+              <h2>{confirmedCount} 条经历已确认</h2>
+              <p>下一步：填写目标岗位，生成五道主问题的面试计划。</p>
+              <div className="profile-ready-state__actions">
+                {interviewReady ? <Button type="primary" size="large" disabled={mutationDisabled} onClick={() => navigate(preparePath(profile!.id))}>进入面试准备</Button> : null}
+                <Button type="secondary" disabled={resumeDisabled} onClick={() => void createResume()}>{pendingResume ? "继续生成简历" : "整理简历"}</Button>
+              </div>
+              {list !== "confirmed"
+                ? <button type="button" className="text-action" onClick={() => setList("confirmed")}>查看已确认经历</button>
+                : <button type="button" className="text-action" onClick={() => setList("proposed")}>收起经历</button>}
+            </section>
+          ) : null}
+          {!reviewComplete && confirmedCount > 0 && selection.length === 0 ? (
+            <div className="profile-continue-actions">
+              {interviewReady ? <Button type="primary" disabled={mutationDisabled} onClick={() => navigate(preparePath(profile!.id))}>使用已确认经历准备面试</Button> : null}
+              <Button type="secondary" disabled={resumeDisabled} onClick={() => void createResume()}>整理已确认经历的简历</Button>
             </div>
-          ) : (
-            <>
-              <header className="profile-review-heading">
-                <h1>{reviewComplete ? "经历已确认" : "核对你的经历"}</h1>
-                {profileManagement}
-              </header>
-              {!reviewComplete ? (
-                <p className="profile-review-guidance">
-                  已确认 {confirmedCount} 条 · 待核对 {profile?.proposed_claims.length ?? 0} 条。
-                  逐条核对来源后选择采用、更正或不采用；选择还未提交，不会自动成为已确认经历。每次最多提交 50 条。
-                </p>
-              ) : null}
-              <DocumentStatus selectedName={selectedName} operation={documentOperation} document={document} />
-              {serviceReady && !contentGenerationReady && confirmedCount > 0 ? (
-                <p role="status">当前服务未配置内容生成，暂不能整理简历；资料核对和面试仍可继续。</p>
-              ) : null}
-              {reviewComplete ? (
-                <section className="profile-ready-state" aria-label="核对完成">
-                  <span className="completion-mark" aria-hidden="true">✓</span>
-                  <h2>{confirmedCount} 条经历已确认</h2>
-                  {interviewReady ? <Button type="primary" size="large" disabled={mutationDisabled} onClick={() => navigate(preparePath(profile!.id))}>进入面试准备</Button> : null}
-                  <Button type="secondary" className="text-action" disabled={resumeDisabled} onClick={() => void createResume()}>{pendingResume ? "继续生成简历" : "整理简历"}</Button>
-                  {list !== "confirmed" ? <button className="text-action" onClick={() => setList("confirmed")}>查看已确认经历</button> : <button className="text-action" onClick={() => setList("proposed")}>收起经历</button>}
-                </section>
-              ) : null}
-              {!reviewComplete && confirmedCount > 0 && selection.length === 0 ? (
-                <div className="profile-continue-actions">
-                  {interviewReady ? <Button type="primary" disabled={mutationDisabled} onClick={() => navigate(preparePath(profile!.id))}>使用已确认经历准备面试</Button> : null}
-                  <Button type="secondary" className="text-action" disabled={resumeDisabled} onClick={() => void createResume()}>整理已确认经历的简历</Button>
-                </div>
-              ) : null}
-              {showList && profile ? (
-                <section className="profile-review-workspace">
-                  <div className="fact-list-tabs" role="group" aria-label="切换事实列表">
-                    <button aria-pressed={list === "proposed"} onClick={() => setList("proposed")}>待确认 {profile.proposed_claims.length}</button>
-                    <button aria-pressed={list === "confirmed"} onClick={() => setList("confirmed")}>已确认 {confirmedCount}</button>
-                  </div>
-                  <ClaimConfirmList claims={list === "proposed" ? profile.proposed_claims : profile.confirmed_claims} confirmed={list === "confirmed"} decisions={decisions} onDecision={changeDecision} />
-                  <Button ref={manualFactTriggerRef} type="secondary" className="text-action add-fact-action" disabled={mutationDisabled} onClick={() => setManualFactVisible(true)}>＋ 补充一条经历</Button>
-                </section>
-              ) : null}
-            </>
-          )}
+          ) : null}
+          {showList && profile ? (
+            <section className="profile-review-workspace">
+              <div className="fact-list-tabs" role="group" aria-label="切换事实列表">
+                <button type="button" aria-pressed={list === "proposed"} onClick={() => setList("proposed")}>
+                  待核对 <span className="fact-list-tabs__count">{profile.proposed_claims.length}</span>
+                </button>
+                <button type="button" aria-pressed={list === "confirmed"} onClick={() => setList("confirmed")}>
+                  已确认 <span className="fact-list-tabs__count">{confirmedCount}</span>
+                </button>
+              </div>
+              <ClaimConfirmList
+                claims={list === "proposed" ? profile.proposed_claims : profile.confirmed_claims}
+                confirmed={list === "confirmed"}
+                decisions={decisions}
+                onDecision={changeDecision}
+                onBulkDecision={changeGroupDecisions}
+              />
+              <Button ref={manualFactTriggerRef} type="text" className="add-fact-action" disabled={mutationDisabled} onClick={() => setManualFactVisible(true)}>＋ 补充一条经历</Button>
+            </section>
+          ) : null}
         </>
       )}
       {profile && activation && activation.status !== "ready" ? (
         <section className="profile-activation-status" aria-label="资料准备状态">
-          {activation.status === "indexing" || confirmOperationActive ? <p role="status">正在准备已确认资料</p> : null}
+          {activation.status === "indexing" || confirmOperationActive ? <p role="status" className="loading-row">正在为面试准备已确认的经历…</p> : null}
           {activation.status === "pending" ? <Button disabled={mutationDisabled} onClick={() => void runProfileCommand({ kind: "activate", profileId: profile.id, revision: profile.revision, key: newCommandKey("activate") })}>继续准备资料</Button> : null}
           {activation.status === "failed" ? (
-            <Alert type="danger" title="已确认经历，资料准备未完成">
+            <Alert type="danger" title="经历已确认，但面试资料准备没有完成">
               <p>{operation?.error?.message ?? "正在读取失败详情"}</p>
               {activation.operation_id && operation?.error?.retryable === true ? <Button disabled={mutationDisabled} onClick={() => void runProfileCommand({ kind: "retry", profileId: profile.id, revision: profile.revision, operationId: activation.operation_id!, key: newCommandKey("profile-retry") })}>重试资料准备</Button> : null}
             </Alert>
@@ -550,20 +608,24 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
       ) : null}
       {profile && (selection.length > 0 || isProcessingConfirm || (confirmOperationFailed && activation?.status !== "failed")) ? (
         <section className="fact-submit-bar" aria-label="提交核对选择">
-          <div role="status">{isProcessingConfirm ? "正在保存选择" : `已选择 ${selection.length} 条，尚未提交`}</div>
-          {selection.length > 0 ? (
-            <p>采用 {acceptedSelectionCount} 条 · 更正 {correctedSelectionCount} 条 · 不采用 {rejectedSelectionCount} 条。提交后才会更新已确认经历；未选择的条目保持不变。</p>
-          ) : null}
-          {selectionError ? <p className="field-error" role="alert">{selectionError}</p> : null}
-          {invalidCorrection ? <p className="field-error">请填写更正正文。</p> : null}
-          {confirmOperationFailed && activation?.status !== "failed" ? <p role="alert">{operation?.error?.message}</p> : null}
-          <div className="button-row">
-            {selection.length > 0 ? <Button type="secondary" className="text-action" disabled={isProcessingConfirm} onClick={() => { setDecisions({}); setSelectionError(null); }}>撤销选择</Button> : null}
-            {selection.length > 0 ? <Button type="primary" loading={isProcessingConfirm} disabled={mutationDisabled || selection.length > 50 || invalidCorrection} onClick={() => void runProfileCommand({ kind: "confirm", profileId: profile.id, revision: profile.revision, decisions: selection.map((decision) => decision.action === "correct" ? { ...decision, corrected_text: decision.corrected_text!.trim() } : decision), key: newCommandKey("confirm") })}>提交 {selection.length} 条选择</Button> : null}
+          <div className="fact-submit-bar__summary">
+            <strong role="status">{isProcessingConfirm ? "正在保存选择" : `已选择 ${selection.length} 条，尚未提交`}</strong>
+            {selection.length > 0 ? (
+              <span>采用 {acceptedSelectionCount} · 更正 {correctedSelectionCount} · 不采用 {rejectedSelectionCount}；没选的条目会继续留在待核对里。</span>
+            ) : null}
+            {selectionError ? <span className="field-error" role="alert">{selectionError}</span> : null}
+            {invalidCorrection ? <span className="field-error">更正内容不能为空。</span> : null}
+            {confirmOperationFailed && activation?.status !== "failed" ? <span className="field-error" role="alert">{operation?.error?.message}</span> : null}
           </div>
+          {selection.length > 0 ? (
+            <div className="fact-submit-bar__actions">
+              <Button type="text" disabled={isProcessingConfirm} onClick={() => { updateDecisions(() => ({})); setSelectionError(null); }}>清除全部选择</Button>
+              <Button type="primary" loading={isProcessingConfirm} disabled={mutationDisabled || selection.length > MAX_CLAIM_DECISIONS || invalidCorrection} onClick={() => void runProfileCommand({ kind: "confirm", profileId: profile.id, revision: profile.revision, decisions: selection.map((decision) => decision.action === "correct" ? { ...decision, corrected_text: decision.corrected_text!.trim() } : decision), key: newCommandKey("confirm") })}>提交 {selection.length} 条选择</Button>
+            </div>
+          ) : null}
         </section>
       ) : null}
-      {confirmSuccessFlash && !reviewComplete ? <p role="status" className="inline-success">选择已保存</p> : null}
+      {confirmSuccessFlash && !reviewComplete ? <p role="status" className="save-toast"><Icon name="success" />选择已保存</p> : null}
       {pendingResume && !submitting && !reviewComplete ? <Button disabled={resumeDisabled} onClick={() => void createResume()}>继续生成简历</Button> : null}
       {resumeOperation ? (
         <section aria-label="简历生成状态">
@@ -572,18 +634,26 @@ export function StartPage({ profileId, serviceReady, contentGenerationReady, nav
         </section>
       ) : null}
       {confirmDelete && profile ? (
-        <Alert type="danger" title="永久删除这份档案？">
-          <p>档案、解析文本、已确认事实、面试和报告会被永久删除，无法恢复。</p>
-          <div className="button-row">
-            <Button disabled={mutationDisabled} onClick={() => { setConfirmDelete(false); void runProfileCommand({ kind: "delete", profileId: profile.id, revision: profile.revision, key: newCommandKey("delete") }); }}>确认永久删除</Button>
-            <Button onClick={() => setConfirmDelete(false)}>取消</Button>
-          </div>
-        </Alert>
+        <ModalDialog
+          isOpen
+          titleId="delete-profile-title"
+          eyebrow="资料管理"
+          title="永久删除这份档案？"
+          onClose={() => setConfirmDelete(false)}
+          footer={(
+            <>
+              <Button type="secondary" onClick={() => setConfirmDelete(false)}>取消</Button>
+              <Button type="primary" className="danger-action" disabled={mutationDisabled} onClick={() => { setConfirmDelete(false); void runProfileCommand({ kind: "delete", profileId: profile.id, revision: profile.revision, key: newCommandKey("delete") }); }}>确认永久删除</Button>
+            </>
+          )}
+        >
+          <p>档案、解析文本、已确认的经历、面试和报告都会被永久删除，无法恢复。</p>
+        </ModalDialog>
       ) : null}
       {deleteOperationFailed && profile ? (
         <Alert type="danger" title="档案删除未完成">
           <p>{operation.error?.message}</p>
-          {operation.error?.retryable === true ? <Button disabled={!serviceReady || submitting} onClick={() => void runProfileCommand({ kind: "retry", profileId: profile.id, revision: profile.revision, operationId: operation.id, key: newCommandKey("delete-retry") })}>继续删除</Button> : <p>服务端未允许重试，请检查服务后刷新状态。</p>}
+          {operation.error?.retryable === true ? <Button disabled={!serviceReady || submitting} onClick={() => void runProfileCommand({ kind: "retry", profileId: profile.id, revision: profile.revision, operationId: operation.id, key: newCommandKey("delete-retry") })}>继续删除</Button> : <p>这次删除无法重试，请检查服务后刷新页面查看档案状态。</p>}
         </Alert>
       ) : null}
     </main>

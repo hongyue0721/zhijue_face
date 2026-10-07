@@ -1,11 +1,11 @@
-import { Alert } from "@any-design/anyui/react";
+import { Alert } from "../common/ui";
 import type { DocumentView, OperationView } from "../../api";
 import { DocumentBlocksDrawer } from "./DocumentBlocksDrawer";
 
 const extractLabels: Record<string, string> = {
   pending: "等待解析",
   parsed: "文本解析完成",
-  requires_text: "需要补充文字",
+  requires_text: "未识别到文字",
   failed: "文本解析失败",
 };
 
@@ -26,10 +26,10 @@ export function DocumentStatus({ selectedName, operation, document }: {
         {document?.extract_status === "parsed" ? <DocumentBlocksDrawer document={document} /> : null}
       </div>
       {failed ? (
-        <Alert type="danger" title="材料处理未完成">
+        <Alert type="danger" title="简历识别没有完成">
           {modelFailure ? (
             <>
-              <p>自动识别未完成。可以重新上传，或手动填写经历继续；已有确认资料不受影响。</p>
+              <p>可以重新上传，或手动填写经历继续；已经确认的经历不受影响。</p>
               <details>
                 <summary>查看失败详情</summary>
                 <p>{operation.error?.message}</p>
@@ -38,7 +38,7 @@ export function DocumentStatus({ selectedName, operation, document }: {
           ) : operation.error?.message ?? "文件处理失败，请重新选择 PDF。"}
         </Alert>
       ) : null}
-      {document?.extract_status === "requires_text" ? <Alert type="warn" title="这份 PDF 里没有可读文字">请手动填写经历，或上传能复制文字的 PDF。</Alert> : null}
+      {document?.extract_status === "requires_text" ? <Alert type="warn" title="这份 PDF 里没有可读文字">请手动填写经历，或上传可以复制文字的 PDF。</Alert> : null}
       {document?.warnings.map((warning) => <p className="warning-text" key={warning}>{warning}</p>)}
     </section>
   );

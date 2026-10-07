@@ -118,27 +118,28 @@ describe("browser API boundary", () => {
     await api.createInterview(
       "profile_1",
       3,
-      { jd_text: "真实岗位要求", jd_source_name: "嵌入式岗位" },
+      { jd_text: "真实岗位要求", jd_source_name: "目标岗位", pack_release_id: "kpr_0123456789abcdef" },
       "plan-key-0001",
     );
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       profile_id: "profile_1",
       profile_revision: 3,
-      role_preset: "embedded_junior",
       jd_text: "真实岗位要求",
-      jd_source_name: "嵌入式岗位",
+      jd_source_name: "目标岗位",
+      pack_release_id: "kpr_0123456789abcdef",
     });
     expect(body).not.toHaveProperty("source_type");
   });
 
-  it("selects the server demo JD by omitting user JD fields", async () => {
-    await api.createInterview("profile_1", 3, {}, "plan-key-0002");
+  it("uses selected pack examples by omitting user JD fields", async () => {
+    await api.createInterview("profile_1", 3, { pack_release_id: "kpr_fedcba9876543210" }, "plan-key-0002");
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const body = JSON.parse(String(init.body));
+    expect(body.pack_release_id).toBe("kpr_fedcba9876543210");
     expect(body).not.toHaveProperty("jd_text");
     expect(body).not.toHaveProperty("jd_source_name");
     expect(body).not.toHaveProperty("source_type");

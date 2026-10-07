@@ -1,4 +1,5 @@
-import { Button, Drawer, Spinner } from "@any-design/anyui/react";
+import { Drawer, Spinner } from "@any-design/anyui/react";
+import { Button } from "../common/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type DocumentBlockView, type DocumentView } from "../../api";
 import { ErrorNotice } from "../common/ErrorNotice";
@@ -128,7 +129,7 @@ export function DocumentBlocksDrawer({ document }: { document: DocumentView }) {
                 <Button size="small" type="secondary" onClick={() => setOpen(false)}>关闭</Button>
               </div>
             </div>
-            {loading ? <div className="loading-row"><Spinner />正在读取文本块</div> : null}
+            {loading ? <div className="loading-row"><Spinner />正在读取解析文本</div> : null}
             <ErrorNotice error={error} />
             {!loading && !error && pages.length === 0 ? (
               <p className="empty-state">这份文件没有解析出可展示的文字。</p>

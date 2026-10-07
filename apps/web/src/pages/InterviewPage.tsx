@@ -1,10 +1,12 @@
-import { Alert, Button } from "@any-design/anyui/react";
+import { Spinner } from "@any-design/anyui/react";
+import { Alert, Button } from "../components/common/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, newCommandKey, requestRetryReason, type InterviewView, type OperationView } from "../api";
 import { ErrorNotice } from "../components/common/ErrorNotice";
 import { OperationStatus } from "../components/common/OperationStatus";
 import { AnswerComposer } from "../components/interview/AnswerComposer";
-import { DecisionPanel } from "../components/interview/DecisionPanel";
+import { DecisionPanel, PreviousDecisionNote } from "../components/interview/DecisionPanel";
+import { Icon } from "../components/common/icons";
 import { EvidencePanel } from "../components/interview/EvidencePanel";
 import { InterviewProgress } from "../components/interview/InterviewProgress";
 import { QuestionCard } from "../components/interview/QuestionCard";
@@ -378,27 +380,35 @@ function InterviewSession({
 
   return (
     <main className="page-container interview-page">
-      <header className="compact-page-heading interview-heading interview-heading-compact">
-        <div className="interview-heading-summary">
+      <header className="interview-header">
+        <div className="interview-header__title">
+          <p className="eyebrow">模拟面试</p>
           <h1>{interviewRoleText(interview)}</h1>
-          <InterviewProgress total={total} question={question} started={interviewStarted} />
           {/* 本场冻结包摘要；不从“当前列表默认项”倒推。 */}
           <p className="interview-pack-line">
             {interview.knowledge_pack?.binding === "frozen"
-              ? `岗位知识包：${interview.knowledge_pack.name} v${interview.knowledge_pack.version}（本场冻结）`
+              ? `岗位知识包：${interview.knowledge_pack.name} v${interview.knowledge_pack.version}（本场固定使用）`
               : interview.knowledge_pack?.binding === "frozen_unavailable"
-                ? "岗位知识包：本场冻结的包当前不可用；恢复请重新创建计划。"
-                : "岗位知识包：历史绑定未确定；本场题目与报告保持原样。"}
+                ? "岗位知识包：本场使用的知识包当前不可用，请重新生成计划。"
+                : "岗位知识包：这场面试没有记录当时使用的版本，题目与报告保持原样。"}
           </p>
+          {interview.knowledge_pack.binding === "frozen" ? (
+            <details className="compact-details">
+              <summary>能力规则版本</summary>
+              <p>{interview.knowledge_pack.profile_version ?? "未提供"}</p>
+              <p className="technical-value">规则摘要：{interview.knowledge_pack.profile_digest ?? "未提供"}</p>
+            </details>
+          ) : null}
         </div>
+        <InterviewProgress total={total} question={question} started={interviewStarted} />
       </header>
       <ErrorNotice error={error ?? operationError} onReload={() => void reload()} />
       <ErrorNotice error={controlError ?? controlOperationError} onReload={() => void reload()} />
-      {!draftStorageAvailable ? <Alert type="warn" title="浏览器草稿暂存不可用">无法确认当前草稿或提交标识的保存、清除。请勿依赖刷新恢复；如需移除旧副本，请清除此站点的浏览器数据。</Alert> : null}
+      {!draftStorageAvailable ? <Alert type="warn" title="浏览器草稿暂存不可用">暂存读写失败，刷新后草稿可能无法恢复；如需移除旧副本，请清除本站的浏览器数据。</Alert> : null}
       {interviewStarted && !isCompleted ? (
         <section className="interview-controls" aria-label="面试进程控制">
           <details className="interview-secondary-menu">
-            <summary>面试操作</summary>
+            <summary>跳过本题或提前结束</summary>
             <div className="interview-control-actions">
               <Button disabled={!serviceReady || !canSkip} onClick={() => setConfirmAction("skip")}>跳过本题</Button>
               <Button disabled={!serviceReady || !canEnd} onClick={() => setConfirmAction("end")}>提前结束面试</Button>
@@ -407,21 +417,21 @@ function InterviewSession({
           {confirmAction ? (
             <Alert type="warn" title={confirmAction === "end" ? "确认提前结束面试？" : "确认跳过当前题？"}>
               {confirmAction === "end"
-                ? "结束后不再出题；输入框里还没提交的回答不会保存。正在分析的回答会等处理完成，再基于已有结果生成报告。没问到的题按“未考察”记录，不会算零分，报告可能不完整。已经发出的模型请求不保证能立刻停止。"
+                ? "结束后不再出题，输入框里还没提交的回答不会保存。正在分析的回答会等分析完成后再生成报告；没问到的题记为“未考察”，不算零分。已经发出的模型请求可能无法立刻停止。"
                 : question?.kind === "main"
-                  ? "输入框里还没提交的回答不会保存。跳过本题后会进入下一道主问题；本题记为“已跳过”，不算零分。跳过最后一题就开始整理报告。"
-                  : "输入框里还没提交的回答不会保存。跳过追问后回到下一道主问题；本题主问题的已有回答和观察都会保留。"}
+                  ? "输入框里还没提交的回答不会保存。本题记为“已跳过”，不算零分，接着进入下一道主问题；跳过最后一题会直接生成报告。"
+                  : "输入框里还没提交的回答不会保存。跳过这道追问后进入下一道主问题，本题已有的回答会保留。"}
               <div className="interview-control-confirm">
                 <Button type="primary" loading={controlSubmitting} disabled={!serviceReady || (confirmAction === "skip" ? !canSkip : !canEnd)} onClick={submitControl}>
-                  {confirmAction === "end" ? "确认结束并生成现有报告" : "确认跳过本题"}
+                  {confirmAction === "end" ? "确认结束，生成报告" : "确认跳过本题"}
                 </Button>
-                <Button disabled={controlSubmitting || Boolean(pendingControl)} onClick={() => setConfirmAction(null)}>继续作答，取消本操作</Button>
+                <Button disabled={controlSubmitting || Boolean(pendingControl)} onClick={() => setConfirmAction(null)}>返回作答</Button>
               </div>
             </Alert>
           ) : null}
           {pendingControl ? (
             <Alert type="warn" title="上次操作未确认完成">
-              这次“跳过 / 结束”操作已保留，点重试会续上原操作，不会重复跳题或生成第二份结束记录。
+              刚才的“跳过 / 结束”没有收到结果。点重试会沿用原操作，不会重复跳题或重复结束。
               <Button disabled={!serviceReady || controlSubmitting || submitting} loading={controlSubmitting} onClick={() => void executeControl(pendingControl)}>重试上次操作</Button>
             </Alert>
           ) : null}
@@ -436,8 +446,8 @@ function InterviewSession({
               ) : (
                 <>
                   <p>{controlFailed.kind.endsWith(".skip")
-                    ? "这次跳过不能自动重试，你可以继续回答当前题。"
-                    : "这次结束不能自动重试；请返回资料页保留当前记录，重新检查服务后再打开本场面试。"}</p>
+                    ? "这次跳过无法重试，你可以继续回答当前题。"
+                    : "这次结束无法重试。作答记录都已保留，请检查服务后重新打开本场面试。"}</p>
                   {controlFailed.kind.endsWith(".end") ? (
                     <Button type="secondary" onClick={() => navigate(startPath(interview.profile_id))}>返回资料页</Button>
                   ) : null}
@@ -456,25 +466,28 @@ function InterviewSession({
       ) : null}
       {interview.status === "prepare_failed" ? (
         <Alert type="danger" title="面试准备失败">
-          本场面试计划没有生成成功；页面不会凭空出题，也不会假装可以开始。请回到“面试准备”页面重新生成计划。
+          本场面试计划没有生成成功，暂时无法开始。请回到“面试准备”重新生成计划。
         </Alert>
       ) : null}
       {interview.status === "finish_failed" ? (
         <Alert type="danger" title="报告整理失败">
-          提问已经结束，但评分报告没有保存成功。你的作答记录都还在，报告可沿上方“结束面试”的重试入口继续生成；重试不会重新提交回答。
+          提问已经结束，但报告没有保存成功。作答记录都还在，可以用上方的“重试结束面试”继续生成报告，不会重新提交回答。
         </Alert>
       ) : null}
       {isFinishing ? (
-        <section className="completion-card interview-completion">
+        <section className="completion-card interview-completion" aria-live="polite">
+          <span className="completion-card__spinner" aria-hidden="true"><Spinner /></span>
           <h2>提问已结束，报告整理中</h2>
-          <p>正在汇总本场评分结果；报告真正生成前，这里不会提前显示“已完成”。</p>
+          <p>正在汇总本场评分结果，报告生成后会自动显示。</p>
         </section>
       ) : null}
       {isCompleted ? (
         <section className="completion-card interview-completion">
-          <h2>本场报告已经形成</h2>
+          <span className="completion-mark" aria-hidden="true"><Icon name="check" strokeWidth={2.4} /></span>
+          <h2>本场提问已完成，报告已经形成</h2>
+          <p>复盘页按题列出原回答、评分依据和可补充的真实细节；未回答或跳过的题不会被算作零分。</p>
           {interview.report_id ? (
-            <Button type="primary" onClick={() => navigate(reportPath(interview.id))}>
+            <Button type="primary" size="large" onClick={() => navigate(reportPath(interview.id))}>
               查看面试报告
             </Button>
           ) : null}
@@ -482,9 +495,20 @@ function InterviewSession({
       ) : null}
 
       {question ? (
-        <div className="interview-grid focused-interview">
-          <div className="interview-main-column">
+        <div className="interview-stage">
+          <div className="interview-question-column">
+            <PreviousDecisionNote interview={interview} question={question} />
             <QuestionCard question={question} />
+            <details className="interview-basis-details" key={question.id} open={question.kind !== "main" || undefined}>
+              <summary>{question.kind === "main" ? "为什么问这一题" : question.kind === "probe" ? "为什么继续追问" : "为什么需要澄清"}</summary>
+              {question.kind === "main" ? (
+                <EvidencePanel interview={interview} question={question} />
+              ) : (
+                <DecisionPanel interview={interview} question={question} />
+              )}
+            </details>
+          </div>
+          <div className="interview-answer-column">
             <AnswerComposer
               profileId={interview.profile_id}
               interviewId={interview.id}
@@ -514,14 +538,6 @@ function InterviewSession({
               ? <OperationStatus operation={operation} label="回答分析" />
               : null}
           </div>
-          <details className="interview-basis-details" key={question.id}>
-            <summary>{question.kind === "main" ? "为什么问这一题" : "为什么继续追问或澄清"}</summary>
-            {question.kind === "main" ? (
-              <EvidencePanel interview={interview} question={question} />
-            ) : (
-              <DecisionPanel interview={interview} question={question} />
-            )}
-          </details>
         </div>
       ) : null}
     </main>

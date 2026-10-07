@@ -153,7 +153,7 @@ describe("profile response ownership", () => {
     await render(<App />);
     await click(button(/手动填写/));
     await input(document.querySelector("textarea")!, "I measured interrupt latency on the target device.");
-    await click(button(/保存为待确认/));
+    await click(button(/加入待核对/));
     expect(add).toHaveBeenCalledWith(created.id, 1, ["I measured interrupt latency on the target device."]);
     expect(get).not.toHaveBeenCalled();
     expect(window.location.search).toBe(`?profile=${created.id}`);
@@ -187,7 +187,7 @@ describe("profile response ownership", () => {
     await render(<App />);
     await click(button(/手动填写/));
     await input(document.querySelector("textarea")!, "An unfinished write belonging to the old profile.");
-    await click(button(/保存为待确认/));
+    await click(button(/加入待核对/));
     await act(async () => {
       window.history.pushState({}, "", startPath("other"));
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -250,6 +250,31 @@ describe("knowledge import recovery", () => {
     await render(<KnowledgePacksPage releaseId={null} returnTo="/start" navigate={vi.fn()} />);
     expect(loadOperationId("packs", "import")).toBeNull();
     expect(host.textContent).toContain("registered-pack");
+  });
+});
+
+describe("profile review selection", () => {
+  it("keeps every choice made within one frame and selects a section only on explicit request", async () => {
+    const base = profile("review-profile", 3);
+    const claims = ["a", "b", "c"].map((id) => ({
+      ...base.proposed_claims[0], id: `claim-${id}`, text: `fact ${id}`,
+      source_quotes: [{ origin: "text_layer", section: "project", exact_quote: `fact ${id}` }],
+    }));
+    vi.spyOn(api, "getProfile").mockResolvedValue({ ...base, proposed_claims: claims });
+    const confirm = vi.spyOn(api, "confirm");
+    window.history.replaceState({}, "", startPath("review-profile"));
+    await render(<App />);
+    const accepts = [...host.querySelectorAll<HTMLButtonElement>('button[aria-label="采用该事实"]')];
+    expect(accepts).toHaveLength(3);
+    expect(host.textContent).not.toContain("尚未提交");
+    // 同一帧内两次选择：旧实现用闭包里的旧 decisions 计算，后一次会覆盖前一次。
+    await act(async () => { accepts[0].click(); accepts[1].click(); });
+    expect(host.textContent).toContain("已选择 2 条，尚未提交");
+    await click(button(/^本组全部采用$/));
+    expect(host.textContent).toContain("已选择 3 条，尚未提交");
+    await click(button(/^清除本组选择$/));
+    expect(host.textContent).not.toContain("尚未提交");
+    expect(confirm).not.toHaveBeenCalled();
   });
 });
 
@@ -396,13 +421,13 @@ describe("automatic content retry recovery", () => {
     await render(<ResumeDraftPage draftId={draft.id} serviceReady contentGenerationReady navigate={vi.fn()} />);
     expect(loadOperationId("resume", draft.id)).toBe("automatic");
     expect(host.textContent).toContain("自动重试");
-    expect(host.textContent).toContain("累计模型尝试：1");
+    expect(host.textContent).toContain("已尝试 1 次");
     expect(host.textContent).not.toContain("failure-parent");
     expect([...host.querySelectorAll("button")].some((item) => /重试简历生成/.test(item.textContent ?? ""))).toBe(false);
 
     child = { ...automatic, status: "running", attempts: 2, last_event_seq: 3 };
     await act(async () => { eventSources.at(-1)!.dispatchEvent(new Event("operation.started")); });
-    expect(host.textContent).toContain("累计模型尝试：2");
+    expect(host.textContent).toContain("已尝试 2 次");
     getDraft.mockResolvedValue({ ...draft, revision: 3, active_operation_id: "automatic" });
     child = {
       ...child, status: "failed", last_event_seq: 4,
@@ -492,17 +517,17 @@ describe("operation waiting facts", () => {
       created_at: "2026-10-03T00:02:00Z", chain_started_at: "2026-10-03T00:00:00Z",
     };
     await render(<OperationStatus operation={queued} label="回答分析" />);
-    expect(host.textContent).toContain("自受理起已等待 2 分 5 秒");
-    expect(host.textContent).toContain(`累计模型尝试：${limit - 1} / ${limit}`);
+    expect(host.textContent).toContain("已等待 2 分 5 秒");
+    expect(host.textContent).toContain(`已尝试 ${limit - 1} 次，最多 ${limit} 次`);
     expect(host.textContent).toContain("尚未开始模型调用");
     expect(host.textContent).toContain("暂时性网络或服务故障");
     expect(host.textContent).not.toContain("自动修正输出");
     await act(async () => { vi.advanceTimersByTime(2000); });
-    expect(host.textContent).toContain("自受理起已等待 2 分 7 秒");
+    expect(host.textContent).toContain("已等待 2 分 7 秒");
     await render(<OperationStatus operation={{ ...queued, status: "running", attempts: limit }} label="回答分析" />);
-    expect(host.textContent).toContain(`累计模型尝试：${limit} / ${limit}`);
+    expect(host.textContent).toContain(`已尝试 ${limit} 次，最多 ${limit} 次`);
     expect(host.textContent).not.toContain("尚未开始模型调用");
-    expect(host.textContent).toContain("自受理起已等待 2 分 7 秒");
+    expect(host.textContent).toContain("已等待 2 分 7 秒");
     expect(retry).not.toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
   });
@@ -523,6 +548,6 @@ describe("operation waiting facts", () => {
     expect(host.textContent).toContain("Original validation detail");
     expect(host.textContent).not.toContain("正在自动");
     await render(<OperationStatus operation={operation("non-model", false)} label="知识包导入" />);
-    expect(host.textContent).not.toContain("累计模型尝试");
+    expect(host.textContent).not.toContain("已尝试");
   });
 });

@@ -134,6 +134,9 @@ export interface KnowledgePackItem {
   content_digest: string;
   format_version: string;
   competency_profile_id: string;
+  profile_version: string | null;
+  profile_digest: string | null;
+  rules_reviewed: boolean;
   scope_summary: string;
   unsupported_scope: string;
   validation_status: string;
@@ -193,6 +196,9 @@ export interface InterviewPackSummary {
   version?: string | null;
   content_digest?: string | null;
   competency_profile_id?: string | null;
+  profile_version: string | null;
+  profile_digest: string | null;
+  capabilities: Array<{ competency_id: string; label: string }>;
   note?: string;
 }
 
@@ -287,6 +293,7 @@ export interface QuestionBasisView {
   basis_type?: string;
   slot_id?: string;
   competency_id?: string;
+  competency_label?: string;
   verification_goal?: string;
   jd_requirement_ids?: string[];
   candidate_evidence_ids?: string[];
@@ -435,6 +442,9 @@ export interface ReportView {
   improvements_status: "not_requested" | "generating" | "ready" | "failed";
   active_operation_id: string | null;
   improved_answers: ImprovedAnswerView[];
+  /** 各段引用的已确认经历原文（api.md 报告视图）。 */
+  source_claims: Array<{ id: string; text: string }>;
+  knowledge_pack: InterviewPackSummary;
   limitations: unknown[];
   run_metadata: {
     run_mode: string;
@@ -679,7 +689,6 @@ export const api = {
       body: JSON.stringify({
         profile_id: profileId,
         profile_revision: profileRevision,
-        role_preset: "embedded_junior",
         ...options,
       }),
     }),
