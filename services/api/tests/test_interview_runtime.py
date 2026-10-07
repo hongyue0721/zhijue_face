@@ -9,6 +9,7 @@ from collections import deque
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_fixtures import TEST_JD, approve_test_pack
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -109,6 +110,7 @@ def _config(tmp_path) -> AppConfig:
 
 
 def _prepare_active_interview(client: TestClient) -> dict[str, object]:
+    approve_test_pack(client.app.state.services.knowledge_packs)
     profile_id = client.post(
         "/api/v1/profiles", json={"display_name": "合成候选人"}
     ).json()["data"]["id"]
@@ -145,7 +147,11 @@ def _prepare_active_interview(client: TestClient) -> dict[str, object]:
     profile = client.get(f"/api/v1/profiles/{profile_id}").json()["data"]
     planned = client.post(
         "/api/v1/interviews",
-        json={"profile_id": profile_id, "profile_revision": profile["revision"]},
+        json={
+            "profile_id": profile_id,
+            "profile_revision": profile["revision"],
+            "jd_text": TEST_JD,
+        },
         headers={"Idempotency-Key": "runtime-plan-key-000001"},
     ).json()["data"]
     plan_operation = client.get(f"/api/v1/operations/{planned['operation_id']}").json()[
@@ -472,9 +478,12 @@ def test_five_adequate_answers_end_without_inventing_extra_questions(tmp_path):
             "improvements_status",
             "active_operation_id",
             "improved_answers",
+            "source_claims",
             "limitations",
             "run_metadata",
+            "knowledge_pack",
         }
+        assert report["source_claims"] == []
         assert report["completion"] == "complete"
         assert report["overall_score"] == 67
         assert report["coverage"] == {
@@ -1074,7 +1083,11 @@ def test_plan_replay_compares_explicit_input_without_resolving_defaults(
     client, _ = runtime_client
     active = _prepare_active_interview(client)
     profile = client.get(f"/api/v1/profiles/{active['profile_id']}").json()["data"]
-    payload = {"profile_id": profile["id"], "profile_revision": profile["revision"]}
+    payload = {
+        "profile_id": profile["id"],
+        "profile_revision": profile["revision"],
+        "jd_text": TEST_JD,
+    }
 
     def unavailable_default(*args, **kwargs):
         raise AssertionError("A replay must not resolve the changed default pack")

@@ -1007,7 +1007,7 @@ class ContentGenerationService:
             "run_mode": self._run_mode,
             "workflow": "openjiuwen",
             "workflow_version": "1.0.0",
-            "prompt_version": "m4-02.1",
+            "prompt_version": "m4-02.2",
             "generator": dict(self._generator_metadata),
             "usage": dict(usage),
         }

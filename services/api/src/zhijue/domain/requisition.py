@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import urlparse
 
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
+from zhijue.domain.competency_profiles import CompetencyProfile
 from zhijue.domain.errors import JdRejected
 
 
@@ -391,9 +391,7 @@ def classify_tier(line: str) -> RequirementTier | None:
     return None
 
 
-def detect_competency(
-    statement: str, *, profile: CompetencyProfile = EMBEDDED_JUNIOR_V1
-) -> str | None:
+def detect_competency(statement: str, *, profile: CompetencyProfile) -> str | None:
     """把要求映射到能力维度；匹配不到就返回 None（不硬塞到某个维度）。"""
     lowered = statement.lower()
     for keywords, competency in profile.jd_keyword_rules:
@@ -480,7 +478,7 @@ def extract_requirements(
     snapshot: JDSnapshot,
     *,
     extraction: str = "rule_based",
-    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+    profile: CompetencyProfile,
 ) -> list[Requirement]:
     """从 JD 原文抽取要求，每条都带可回指且定义计量单位的 `source_span`。
 

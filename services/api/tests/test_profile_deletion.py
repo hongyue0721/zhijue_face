@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_fixtures import TEST_JD, approve_test_pack
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_api_contract import InMemoryKnowledge, create_profile
@@ -174,11 +175,13 @@ def _row_counts(app, profile_id):
 def test_delete_removes_profile_documents_sessions_and_knowledge(deletion_env):
     client, app, knowledge = deletion_env
     profile_id = _ready_profile(client)
+    approve_test_pack(app.state.services.knowledge_packs)
     plan = client.post(
         "/api/v1/interviews",
         json={
             "profile_id": profile_id,
             "profile_revision": _revision(client, profile_id),
+            "jd_text": TEST_JD,
         },
         headers={"Idempotency-Key": "delete-plan-0001"},
     )

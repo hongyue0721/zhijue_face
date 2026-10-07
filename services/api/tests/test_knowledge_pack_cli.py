@@ -141,3 +141,76 @@ def test_unconfirmed_review_does_not_open_or_create_database(cli, tmp_path, caps
     )
     assert "拒绝执行" in capsys.readouterr().err
     assert not (tmp_path / "runtime").exists()
+
+
+@pytest.mark.parametrize("missing", ["level1", "level2", "rules", "owner"])
+def test_approved_review_requires_owner_and_explicit_two_levels(
+    cli, monkeypatch, capsys, missing
+):
+    def cannot_open(*args, **kwargs):
+        raise AssertionError("Refusal must happen before opening a database")
+
+    monkeypatch.setattr(cli, "build_service", cannot_open)
+    argv = [
+        "review",
+        "--release-id",
+        "TEST_ONLY_release",
+        "--expect-digest",
+        "sha256:test",
+        "--decision",
+        "approved",
+        "--reviewer",
+        "TEST_ONLY_owner",
+        "--role",
+        "self_check" if missing == "owner" else "owner",
+        "--note",
+        "TEST_ONLY incomplete confirmations",
+        "--confirm-content-reviewed",
+    ]
+    argv += [
+        f"--confirm-{level}-reviewed"
+        for level in ("level1", "level2", "rules")
+        if level != missing
+    ]
+    assert cli.main(argv) == 2
+    assert "拒绝执行" in capsys.readouterr().err
+
+
+def test_explicit_owner_confirmations_reach_review_service(cli, monkeypatch, capsys):
+    class RecordingService:
+        def record_review(self, **kwargs):
+            assert kwargs["reviewer_role"] == "owner"
+            assert all(
+                kwargs[name] is True
+                for name in ("level1_reviewed", "level2_reviewed", "rules_reviewed")
+            )
+            return {"TEST_ONLY": True}
+
+    monkeypatch.setattr(
+        cli, "build_service", lambda *args, **kwargs: RecordingService()
+    )
+    assert (
+        cli.main(
+            [
+                "review",
+                "--release-id",
+                "TEST_ONLY_release",
+                "--expect-digest",
+                "sha256:test",
+                "--decision",
+                "approved",
+                "--reviewer",
+                "TEST_ONLY_owner",
+                "--role",
+                "owner",
+                "--note",
+                "TEST_ONLY confirms dispatch, no real approval",
+                "--confirm-content-reviewed",
+                "--confirm-level1-reviewed",
+                "--confirm-level2-reviewed",
+                "--confirm-rules-reviewed",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {"TEST_ONLY": True}

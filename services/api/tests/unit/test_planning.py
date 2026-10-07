@@ -10,13 +10,14 @@ import json
 from dataclasses import replace
 
 import pytest
+from pack_fixtures import EMBEDDED_PROFILE
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Base, Claim, Profile
 from zhijue.application.requisition import JDPlanningService
 from zhijue.application.seed_bank import SeedBank
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, Capability
+from zhijue.domain.competency_profiles import Capability
 from zhijue.domain.planning import (
     MIN_COMPETENCIES,
     ROOT_SLOT_COUNT,
@@ -97,7 +98,7 @@ def test_jd_rejects_empty_and_oversized():
 
 
 def test_requirements_trace_back_to_jd_text(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     assert requirements
     for requirement in requirements:
         span = requirement.source_span
@@ -114,7 +115,7 @@ def test_requirements_trace_back_to_jd_text(snapshot):
 
 
 def test_preferred_never_becomes_required(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     tiers = {r.statement: r.tier for r in requirements}
     rtos = next(r for r in requirements if "RTOS" in r.statement)
     assert rtos.tier is RequirementTier.PREFERRED
@@ -146,7 +147,7 @@ def test_common_explicit_section_titles_preserve_tiers_and_offsets():
         source_name="用户提供岗位描述",
     )
 
-    requirements = extract_requirements(common_titles)
+    requirements = extract_requirements(common_titles, profile=EMBEDDED_PROFILE)
     assert [requirement.tier for requirement in requirements] == [
         RequirementTier.REQUIRED,
         RequirementTier.REQUIRED,
@@ -178,11 +179,11 @@ def test_unsectioned_job_text_is_not_silently_promoted_to_required():
         source_name="用户提供岗位描述",
     )
 
-    assert extract_requirements(unsectioned) == []
+    assert extract_requirements(unsectioned, profile=EMBEDDED_PROFILE) == []
 
 
 def test_non_requirement_lines_are_not_extracted(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     assert not any("不是任何企业" in r.statement for r in requirements)
     assert not any(
         "量产经验" in r.statement for r in requirements
@@ -193,7 +194,7 @@ def test_non_requirement_lines_are_not_extracted(snapshot):
 
 
 def test_coverage_status_semantics(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements,
         evidence_index={"embedded.peripheral.uart_dma": ["claim_block_01"]},
@@ -241,14 +242,17 @@ def test_coverage_map_has_no_score_field():
 
 
 def test_plan_generates_exactly_five_slots_across_competencies(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements,
         evidence_index={"embedded.peripheral.uart_dma": ["claim_01"]},
         profile_snapshot_id="snapshot_01",
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert len(plan.slots) == ROOT_SLOT_COUNT == 5
     assert len(plan.competency_coverage()) >= MIN_COMPETENCIES
@@ -259,12 +263,15 @@ def test_plan_generates_exactly_five_slots_across_competencies(snapshot):
 
 
 def test_slot_shape_matches_required_fields(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements, evidence_index={}, profile_snapshot_id=None
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     payload = plan.as_dict()
     assert set(payload) == {
@@ -309,7 +316,7 @@ def test_high_importance_unverified_outranks_low_importance_supported():
         source_type=JDSourceType.SYNTHETIC_DEMO_JD,
         source_name="SYNTHETIC_DEMO_JD_priority",
     )
-    requirements = extract_requirements(controlled)
+    requirements = extract_requirements(controlled, profile=EMBEDDED_PROFILE)
     competencies = {r.competency_id for r in requirements}
     assert len(competencies) == 5, competencies  # 恰好 5 个维度，槽位不重复
     coverage = build_coverage_map(
@@ -324,7 +331,10 @@ def test_high_importance_unverified_outranks_low_importance_supported():
         profile_snapshot_id="snapshot_01",
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert len(plan.slots) == 5
     git = next(
@@ -341,7 +351,7 @@ def test_high_importance_unverified_outranks_low_importance_supported():
 
 def test_preferred_excluded_when_must_haves_fill_all_slots(snapshot):
     """8 个能力维度只有 5 个槽位时，preferred 不得挤掉 must-have（按简历篇幅选题的反例）。"""
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements,
         evidence_index={
@@ -355,7 +365,10 @@ def test_preferred_excluded_when_must_haves_fill_all_slots(snapshot):
         profile_snapshot_id="snapshot_01",
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     chosen = {s.competency for s in plan.slots}
     assert "engineering.tooling.version_control" not in chosen, (
@@ -365,14 +378,17 @@ def test_preferred_excluded_when_must_haves_fill_all_slots(snapshot):
 
 
 def test_preferred_never_outranks_critical_must_have(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements,
         evidence_index={c: ["claim"] for c in {r.competency_id for r in requirements}},
         profile_snapshot_id="snapshot_01",
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     required = [
         s for s in plan.slots if s.reason_code is not SlotReason.JD_PREFERRED_SECONDARY
@@ -389,23 +405,32 @@ def test_preferred_never_outranks_critical_must_have(snapshot):
 
 
 def test_plan_is_deterministic_for_same_input(snapshot, tmp_path):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements,
         evidence_index={"embedded.mcu.interrupt": ["claim_isr"]},
         profile_snapshot_id="snapshot_01",
     )
     first = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     second = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert [s.as_dict() for s in first.slots] == [s.as_dict() for s in second.slots]
     # 要求顺序被打乱也不改变结构（排序由 tie-break 决定，不依赖输入顺序）
     shuffled = list(reversed(requirements))
     third = plan_interview_slots(
-        coverage=coverage, requirements=shuffled, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=shuffled,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert [s.competency for s in third.slots] == [s.competency for s in first.slots]
 
@@ -429,13 +454,16 @@ def test_empty_jd_and_unusable_jd_fail_loudly(snapshot):
         source_type=JDSourceType.USER_PROVIDED,
         source_name="bare",
     )
-    assert extract_requirements(bare) == []
+    assert extract_requirements(bare, profile=EMBEDDED_PROFILE) == []
     coverage = build_coverage_map(
         requirements=[], evidence_index={}, profile_snapshot_id=None
     )
     with pytest.raises(PlanningRejected, match="没有可用的岗位要求"):
         plan_interview_slots(
-            coverage=coverage, requirements=[], seed_bank_version="seedbank_test"
+            coverage=coverage,
+            requirements=[],
+            seed_bank_version="seedbank_test",
+            profile=EMBEDDED_PROFILE,
         )
 
 
@@ -447,7 +475,7 @@ def test_insufficient_competency_dimensions_fail_loudly():
         source_type=JDSourceType.USER_PROVIDED,
         source_name="narrow",
     )
-    requirements = extract_requirements(narrow)
+    requirements = extract_requirements(narrow, profile=EMBEDDED_PROFILE)
     assert len({r.competency_id for r in requirements}) == 1
     coverage = build_coverage_map(
         requirements=requirements, evidence_index={}, profile_snapshot_id=None
@@ -457,6 +485,7 @@ def test_insufficient_competency_dimensions_fail_loudly():
             coverage=coverage,
             requirements=requirements,
             seed_bank_version="seedbank_test",
+            profile=EMBEDDED_PROFILE,
         )
 
 
@@ -464,12 +493,15 @@ def test_insufficient_competency_dimensions_fail_loudly():
 
 
 def test_plan_without_resume_evidence_marks_unknown(snapshot):
-    requirements = extract_requirements(snapshot)
+    requirements = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     coverage = build_coverage_map(
         requirements=requirements, evidence_index={}, profile_snapshot_id=None
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert all(
         s.current_verification_status is CoverageStatus.UNKNOWN for s in plan.slots
@@ -503,13 +535,16 @@ def test_duplicate_slot_requires_structured_reason():
         source_type=JDSourceType.SYNTHETIC_DEMO_JD,
         source_name="SYNTHETIC_DEMO_JD_four",
     )
-    requirements = extract_requirements(controlled)
+    requirements = extract_requirements(controlled, profile=EMBEDDED_PROFILE)
     assert len({r.competency_id for r in requirements}) == 4
     coverage = build_coverage_map(
         requirements=requirements, evidence_index={}, profile_snapshot_id=None
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=requirements, seed_bank_version="seedbank_test"
+        coverage=coverage,
+        requirements=requirements,
+        seed_bank_version="seedbank_test",
+        profile=EMBEDDED_PROFILE,
     )
     assert len(plan.slots) == 5
     repeated = [s.competency for s in plan.slots]
@@ -543,7 +578,7 @@ def test_source_span_units_and_astral_unicode_cross_language():
         source_type=JDSourceType.SYNTHETIC_DEMO_JD,
         source_name="unicode_test",
     )
-    reqs = extract_requirements(snapshot)
+    reqs = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     assert len(reqs) == 2
 
     for req in reqs:
@@ -642,7 +677,7 @@ def test_pure_business_priority_calculation():
         source_type=JDSourceType.SYNTHETIC_DEMO_JD,
         source_name="prio_test",
     )
-    reqs = extract_requirements(snapshot)
+    reqs = extract_requirements(snapshot, profile=EMBEDDED_PROFILE)
     # 模拟证据：C 语言有声明未验证，中断材料完全未体现
     coverage = build_coverage_map(
         requirements=reqs,
@@ -650,7 +685,10 @@ def test_pure_business_priority_calculation():
         profile_snapshot_id="snap1",
     )
     plan = plan_interview_slots(
-        coverage=coverage, requirements=reqs, seed_bank_version="test_v1"
+        coverage=coverage,
+        requirements=reqs,
+        seed_bank_version="test_v1",
+        profile=EMBEDDED_PROFILE,
     )
 
     slot_map = {s.competency: s for s in plan.slots}
@@ -879,7 +917,7 @@ def test_five_distinct_grounded_questions_without_approved_seeds(jd_text, with_c
         source_name="question quality regression",
     )
     direct, context, relations = service.evidence_indices(
-        profile_id="p", profile=EMBEDDED_JUNIOR_V1
+        profile_id="p", profile=EMBEDDED_PROFILE
     )
     result = service.plan(
         snapshot=snapshot,
@@ -888,11 +926,11 @@ def test_five_distinct_grounded_questions_without_approved_seeds(jd_text, with_c
         seed_bank_version="empty",
         related_context_index=context,
         relation_index=relations,
-        profile=EMBEDDED_JUNIOR_V1,
+        profile=EMBEDDED_PROFILE,
     )
     bank = SeedBank([], schema_version="1.0.0", live_allowed_review_status="approved")
     questions = instantiate_root_questions(
-        result.plan.slots, bank, interview_id="facets", profile=EMBEDDED_JUNIOR_V1
+        result.plan.slots, bank, interview_id="facets", profile=EMBEDDED_PROFILE
     )
     assert len(questions) == len({q.wording for q in questions}) == 5
     assert len({s.verification_goal for s in result.plan.slots}) == 5
@@ -932,16 +970,16 @@ def test_five_distinct_grounded_questions_without_approved_seeds(jd_text, with_c
 
 def test_planning_service_uses_frozen_profile_for_rules_and_labels():
     frozen = replace(
-        EMBEDDED_JUNIOR_V1,
+        EMBEDDED_PROFILE,
         capabilities=tuple(
             Capability(c.competency_id, "冻结的 C 语言目标")
             if c.competency_id == "embedded.c.basics"
             else c
-            for c in EMBEDDED_JUNIOR_V1.capabilities
+            for c in EMBEDDED_PROFILE.capabilities
         ),
         jd_keyword_rules=(
             (("缓冲区",), "embedded.c.basics"),
-            *EMBEDDED_JUNIOR_V1.jd_keyword_rules,
+            *EMBEDDED_PROFILE.jd_keyword_rules,
         ),
         direct_evidence_rules=((("环形缓冲区",), "embedded.c.basics"),),
         related_context_rules=((("stm32",), "embedded.mcu.interrupt"),),

@@ -1,0 +1,146 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_testing_error_boundary",
+  "version": "1.0.0",
+  "competency_id": "backend.testing.error_boundaries",
+  "difficulty": "easy",
+  "archetype": "evaluation",
+  "intent": "核对具体输入/失败断言、异常匹配与不吞意外错误的边界。",
+  "stem": "假设 parse_limit(raw) 把输入转成整数，契约允许 1 到 100；非法值应抛 ValueError。后续保存可能抛 OSError。你会怎样测试正常值、边界和失败？在哪一层处理预期输入错误，怎样避免把意外保存失败冒充成功？",
+  "prerequisites": [
+    "了解函数返回值、异常与基础测试"
+  ],
+  "allowed_context": [
+    "材料明确包含单元测试或异常边界",
+    "1 到 100 是本题显式业务契约，不是 Python 或 HTTP 标准规定"
+  ],
+  "reference_ids": [
+    "python311_unittest",
+    "python311_exceptions"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_test_result_assertion",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_unittest"
+      ],
+      "statement": "unittest 的 assertEqual 检查实际值与预期值相等；subTest 可以为一组输入标注参数，在子测试失败时定位具体情况。仅调用函数而不检查结果，不能证明结果符合本题契约。最后一句是测试设计推导。"
+    },
+    {
+      "point_id": "rp_test_expected_exception",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_unittest"
+      ],
+      "statement": "assertRaises(ValueError) 在抛出指定异常时通过，抛出其他异常时记 error，没抛异常时失败；上下文管理器保存 exception 对象以便进一步检查。不能用捕获任意异常后不作断言代替这个边界。"
+    },
+    {
+      "point_id": "rp_test_exception_scope",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_exceptions"
+      ],
+      "statement": "Python 教程 §8.3：异常按类型及继承关系匹配处理器；未匹配异常向外传播。文档建议尽可能具体地处理预期异常并让意外异常传播，也给出记录后重新抛出的模式，不应把所有 Exception 吞掉并返回成功。"
+    },
+    {
+      "point_id": "rp_test_cases",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "本题契约可覆盖 1、100、范围内正常值，0/101、空文本和非整数字符串，并注入保存 OSError；检查返回值/异常类型及失败路径未宣称保存成功。允许 pytest 等等价测试方法，不强制 unittest API 名称。"
+    },
+    {
+      "point_id": "rp_test_layer_mapping",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "可在明确接口边界把预期输入错误映射为约定错误结果，意外保存失败交给上层错误处理或重新抛出；状态码、错误正文与是否继续由业务契约决定，不泄露私密异常信息，不伪造已经运行的测试。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_test_no_assertions",
+      "pattern": "只说测试跑通，没有具体输入、预期返回/异常或断言",
+      "requires_followup": true,
+      "note": "追问一个非法输入的预期结果；不因为简历未写测试数量判定不会。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_test_swallow_all",
+      "pattern": "except Exception: pass 后返回保存成功",
+      "requires_followup": true,
+      "note": "追问调用者怎样区分保存成功与 OSError；先核对候选人是否有明确的上层错误路径。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明代表性/边界输入、具体断言、预期异常与意外失败的处理层次",
+      "未知库/未执行的测试明确标记，不用口头设计充当通过证据"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_testing_error_boundary_case_assertions",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍认为没有断言或任意异常都算测试通过",
+        "1": "提到正常/失败测试，但没有具体输入与预期结果",
+        "2": "给出正常与边界输入、值断言和特定异常断言",
+        "3": "补充异常种类不匹配/没有异常的失败含义，并检查保存失败路径"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_testing_error_boundary_exception_boundary",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把意外保存失败吞掉后报成功作为可靠处理",
+        "1": "知道要捕获异常，但未区分预期输入错误与意外失败",
+        "2": "说明具体异常匹配、明确边界映射与意外异常传播",
+        "3": "说明重抛/上层处理及无假成功的验证断言，不把测试通过等同于生产无错"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_testing_error_boundary_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不要求覆盖率数字、特定测试框架或真实生产故障实绩",
+    "单元测试不证明整体系统安全、并发正确性或候选人履历真实性",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

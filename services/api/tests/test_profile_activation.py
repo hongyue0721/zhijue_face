@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_fixtures import TEST_JD, approve_test_pack
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from test_api_contract import InMemoryKnowledge, create_profile
@@ -83,11 +84,13 @@ def _retry(client, operation_id, revision, key):
 
 
 def _plan(client, profile_id, key):
+    approve_test_pack(client.app.state.services.knowledge_packs)
     return client.post(
         "/api/v1/interviews",
         json={
             "profile_id": profile_id,
             "profile_revision": _profile(client, profile_id)["revision"],
+            "jd_text": TEST_JD,
         },
         headers={"Idempotency-Key": key},
     )

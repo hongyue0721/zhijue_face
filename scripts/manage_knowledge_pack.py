@@ -4,9 +4,9 @@
 主文件 4.5：该入口只用于**负责人完成技术核对之后**登记结果。
 执行 Agent 不得自行调用它给新内容批准。
 
-必须同时给出：release ID、期望内容摘要、负责人标识、审核备注，并显式确认
-已完成内容核对（--confirm-content-reviewed）。期望摘要与当前重算摘要不一致
-时拒绝登记；批准范围逐条绑定 Seed 内容 hash。
+必须给出 release ID、期望内容摘要、owner 标识与审核备注，并显式确认
+内容核对。approved 另须 --confirm-level1-reviewed / --confirm-level2-reviewed /
+--confirm-rules-reviewed；逐条 Seed 与规则原始 canonical 字节 hash 绑定。
 
 用法（必须使用项目锁定 venv）：
     services/api/.venv/bin/python scripts/manage_knowledge_pack.py list
@@ -14,7 +14,8 @@
         --release-id kpr_xxx --expect-digest sha256:xxx \
         --decision approved --reviewer hongyue --role owner \
         --note "已对照 S24/S26/S28/S29/S30 完成 Level 2 核对" \
-        --confirm-content-reviewed
+        --confirm-content-reviewed --confirm-level1-reviewed \
+        --confirm-level2-reviewed --confirm-rules-reviewed
 
 数据库优先级：--database-url > ZHIJUE_DATABASE_URL > AppConfig 默认值。
 runtime 与 API 同取 ZHIJUE_RUNTIME_DIR（默认调用者 cwd 下的 runtime）。
@@ -114,6 +115,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="确认已完成技术核对；未提供则拒绝执行",
     )
+    for flag in ("level1", "level2", "rules"):
+        review.add_argument(
+            f"--confirm-{flag}-reviewed", action="store_true",
+            help=f"owner 显式确认已核对 {flag}；approved 时必需",
+        )
 
     args = parser.parse_args(argv)
     if args.command == "list":
@@ -137,6 +143,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.role != "owner" or (
+        args.decision == "approved" and not (
+            args.confirm_level1_reviewed
+            and args.confirm_level2_reviewed
+            and args.confirm_rules_reviewed
+        )
+    ):
+        print(
+            "拒绝执行：必须为 owner；approved 必须显式确认 Level 1 / Level 2 / 规则审核。",
+            file=sys.stderr,
+        )
+        return 2
     service = build_service(args.database_url)
     result = service.record_review(
         release_id=args.release_id,
@@ -146,6 +164,9 @@ def main(argv: list[str] | None = None) -> int:
         reviewer_role=args.role,
         note=args.note,
         approved_seed_ids=args.seed,
+        level1_reviewed=args.confirm_level1_reviewed,
+        level2_reviewed=args.confirm_level2_reviewed,
+        rules_reviewed=args.confirm_rules_reviewed,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

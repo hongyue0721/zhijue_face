@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "zhijue/knowledge_pack.schema.json",
   "title": "ZhiJue 结构化岗位知识包文件契约",
-  "description": "约束包内 manifest.json / competencies.json / sources.json 三个声明文件。这里的一切字段都是作者声明：服务端必须重算摘要、按已注册能力配置比对规则，并把审核状态存在包外。本文件不声明任何审核授权。",
+  "description": "约束 manifest.json / competencies.json / sources.json 的有限数据结构。服务端严格解析能力规则与引用，重算原始 canonical 字节摘要，包外 owner 两级审核绑定规则和 Seed 原文；包内声明不产生审核授权。",
   "$defs": {
     "pack_id": {
       "type": "string",
@@ -10,6 +10,7 @@
     },
     "version": {
       "type": "string",
+      "maxLength": 32,
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "relative_path": {
@@ -105,7 +106,7 @@
     "competencies": {
       "type": "object",
       "additionalProperties": false,
-      "description": "声明式镜像：服务端与自身注册表逐字段比对；包不能借本文件改写规则。只承载有限数据结构，不含脚本、正则引擎或动态导入。",
+      "description": "岗位包本体承载的有限数据规则；严格解析唯一能力 ID 和可解析引用，包外 owner 两级审核绑定原始 canonical 字节后才能用于新面试。不含脚本、正则引擎或动态导入。",
       "required": [
         "competency_profile_id",
         "profile_version",

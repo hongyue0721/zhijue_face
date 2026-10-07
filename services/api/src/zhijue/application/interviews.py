@@ -1645,6 +1645,14 @@ class InterviewService:
                 raise InvalidStateError("面试资料快照不存在。")
             plan = dict(interview.root_plan or {})
             jd = dict(interview.jd_snapshot or {})
+            pack_summary = self._packs.summary_for_interview(
+                pack_release_id=interview.pack_release_id,
+                pack_content_digest=interview.pack_content_digest,
+                competency_profile_id=interview.competency_profile_id,
+            )
+            labels = {
+                c["competency_id"]: c["label"] for c in pack_summary["capabilities"]
+            }
             current_question = None
             if (
                 interview.current_question_id is not None
@@ -1661,7 +1669,13 @@ class InterviewService:
                         "kind": question.kind,
                         "seed_id": question.seed_id,
                         "wording": question.wording,
-                        "basis": dict(question.basis or {}),
+                        "basis": {
+                            **dict(question.basis or {}),
+                            "competency_label": labels.get(
+                                (question.basis or {}).get("competency_id"),
+                                (question.basis or {}).get("competency_id", ""),
+                            ),
+                        },
                         "order_index": question.order_index,
                         "accepted_answer": (
                             {
@@ -1757,9 +1771,5 @@ class InterviewService:
                 "stop_requested": interview.stop_requested,
                 "report_id": interview.report_id,
                 "limitations": list(interview.limitations or []),
-                "knowledge_pack": self._packs.summary_for_interview(
-                    pack_release_id=interview.pack_release_id,
-                    pack_content_digest=interview.pack_content_digest,
-                    competency_profile_id=interview.competency_profile_id,
-                ),
+                "knowledge_pack": pack_summary,
             }

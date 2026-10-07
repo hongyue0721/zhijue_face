@@ -403,6 +403,13 @@ class KnowledgePackReview(Base):
     note: Mapped[str] = mapped_column(String(600), default="")
     # [{seed_id, seed_version, seed_content_sha256}]：批准范围逐条绑定内容。
     approved_seed_scope: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    # Legacy seed-only reviews retain NULL: never invent rule/two-level approval.
+    competency_profile_id: Mapped[str | None] = mapped_column(String(64))
+    profile_version: Mapped[str | None] = mapped_column(String(32))
+    profile_digest: Mapped[str | None] = mapped_column(String(80))
+    level1_reviewed: Mapped[bool | None] = mapped_column(Boolean)
+    level2_reviewed: Mapped[bool | None] = mapped_column(Boolean)
+    rules_reviewed: Mapped[bool | None] = mapped_column(Boolean)
     reviewed_at: Mapped[str] = mapped_column(String(32), default=utc_now_rfc3339)
 
     __table_args__ = (

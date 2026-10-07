@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_http_api_semantics",
+  "version": "1.0.0",
+  "competency_id": "backend.http.api",
+  "difficulty": "medium",
+  "archetype": "scenario",
+  "intent": "核对资源创建/读取、HTTP 状态语义与响应丢失后的重复请求边界。",
+  "stem": "假设你为学习记录设计 HTTP API：创建一条记录，读取已存在或不存在的记录。创建已成功但响应丢失后，客户端重复 POST 可能有什么问题？你如何解释方法、成功/错误状态以及是否能够安全重试？",
+  "prerequisites": [
+    "了解 HTTP 请求方法与响应状态码"
+  ],
+  "allowed_context": [
+    "材料明确包含 HTTP API 或状态码设计",
+    "没有经历证据时使用假设学习记录接口，不编造上线服务"
+  ],
+  "reference_ids": [
+    "rfc9110_http_semantics"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_http_safe_read",
+      "kind": "technical",
+      "reference_ids": [
+        "rfc9110_http_semantics"
+      ],
+      "statement": "RFC 9110 §9.2.1：GET 等安全方法的定义语义基本只读，客户端不请求状态变更；服务端记录访问日志等附带行为不违反这一语义，不能把 GET 设计成用户请求的删除动作。"
+    },
+    {
+      "point_id": "rp_http_created",
+      "kind": "technical",
+      "reference_ids": [
+        "rfc9110_http_semantics"
+      ],
+      "statement": "§9.3.3 与 §15.3.2：POST 可用于创建资源；成功创建一个或多个新资源时服务端 SHOULD 返回 201 并用 Location 指向主要新资源。§15.3.3 的 202 仅表示接受处理，不能声称工作已经完成。"
+    },
+    {
+      "point_id": "rp_http_error_states",
+      "kind": "technical",
+      "reference_ids": [
+        "rfc9110_http_semantics"
+      ],
+      "statement": "§15.5.1/5/10 与 §15.6.1：400 表示感知到客户端错误，404 表示没有当前表示或不愿披露存在性，409 表示与目标资源当前状态冲突，500 表示服务端遇到阻止请求完成的意外情况。具体业务映射须另有契约，不能所有失败都报成功。"
+    },
+    {
+      "point_id": "rp_http_idempotency",
+      "kind": "technical",
+      "reference_ids": [
+        "rfc9110_http_semantics"
+      ],
+      "statement": "§9.2.2：幂等比较相同请求对服务端的预期效果，不要求每次响应相同；PUT、DELETE 与安全方法具有该属性。POST 不能仅凭方法名假定可自动安全重试；须已知业务语义实际幂等，或能知道原请求未生效。"
+    },
+    {
+      "point_id": "rp_http_dedupe_design",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "业务可以使用明确请求标识与持久化去重结果，或由客户端确认创建结果；这是本题允许的工程设计，不宣称 RFC 9110 定义了某个 Idempotency-Key 协议或跨服务 exactly-once。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_http_all_200",
+      "pattern": "把成功创建、资源不存在与内部异常统一称为 HTTP 200 成功",
+      "requires_followup": true,
+      "note": "追问客户端如何区分处理结果；先核对是否另有明确应用层契约。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_http_post_retry",
+      "pattern": "声称网络超时必然未写入，所以 POST 可直接无限重复",
+      "requires_followup": true,
+      "note": "追问服务端已提交但响应丢失的一个场景；不自动判定其项目发生过重复写入。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "counterfactual",
+      "detail"
+    ],
+    "stop_conditions": [
+      "已区分请求语义、处理结果与丢失响应后的重复效果",
+      "未说明去重实现时记录设计未验证，不替候选人补造代码"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_http_api_semantics_method_status",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍把 GET 删除或 202 已完成作为 HTTP 定义",
+        "1": "能列方法或状态码，但未关联创建/读取结果",
+        "2": "说明安全读取、POST 创建与 201/404 等状态语义",
+        "3": "区分 201 与 202，并把客户端错误、冲突、意外服务端错误按契约解释"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_http_api_semantics_retry_effect",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍认定响应丢失证明未执行，或 POST 天然幂等",
+        "1": "意识到重复提交可能有问题，但未解释预期效果",
+        "2": "解释幂等是效果而非响应一致，不能盲目自动重试 POST",
+        "3": "给出可核对的业务去重/结果确认策略，明确其契约与未验证范围"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_http_api_semantics_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "counterfactual",
+    "detail"
+  ],
+  "out_of_scope": [
+    "不要求背全套 HTTP 状态码、框架装饰器或缓存实现",
+    "不外推 OAuth、分布式事务、跨区域可用性与 exactly-once 保证",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

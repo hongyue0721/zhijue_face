@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_fixtures import TEST_JD, approve_test_pack
 
 from zhijue.api.app import AppConfig, create_app
 from zhijue.api.routes import _release_after_failure
@@ -56,6 +57,7 @@ def client(tmp_path):
     )
     app = create_app(config, knowledge=InMemoryKnowledge())
     with TestClient(app) as test_client:
+        approve_test_pack(app.state.services.knowledge_packs)
         yield test_client
 
 
@@ -657,7 +659,11 @@ def test_interview_plan_generates_five_slots_with_jd_provenance(client):
     revision = confirm_all(client, profile_id, "confirm-plan-key-0001")
     accepted = client.post(
         "/api/v1/interviews",
-        json={"profile_id": profile_id, "profile_revision": revision},
+        json={
+            "profile_id": profile_id,
+            "profile_revision": revision,
+            "jd_text": TEST_JD,
+        },
         headers={"Idempotency-Key": "interview-plan-key-0001"},
     )
     assert accepted.status_code == 202
@@ -677,13 +683,11 @@ def test_interview_plan_generates_five_slots_with_jd_provenance(client):
     assert len({s["competency"] for s in slots}) >= 3
     assert all(s["seed_id"] is None for s in slots)
     assert all(s["verification_goal"] and s["reason_code"] for s in slots)
-    # 未显式提供 JD 时只能使用服务端登记的合成配置，不能冒充真实岗位来源。
+    # Explicit test JD is user input; selected-pack examples are covered separately.
     assert view["jd_source"]["content_hash"]
-    assert view["jd_source"]["source_type"] == "synthetic_demo_jd"
-    assert view["jd_source"]["source_name"] == (
-        "SYNTHETIC_DEMO_JD_preset_embedded_junior"
-    )
-    assert view["jd_source"]["is_synthetic"] is True
+    assert view["jd_source"]["source_type"] == "user_provided"
+    assert view["jd_source"]["source_name"] == "USER_PROVIDED_JD"
+    assert view["jd_source"]["is_synthetic"] is False
     assert view["jd_source"]["derived"] is False
     assert view["jd_source"]["source_url"] is None
     assert view["jd_source"]["upstream_url"] is None
@@ -741,14 +745,14 @@ def test_interview_requires_confirmed_profile(client):
     profile_id = create_profile(client)
     response = client.post(
         "/api/v1/interviews",
-        json={"profile_id": profile_id, "profile_revision": 0},
+        json={"profile_id": profile_id, "profile_revision": 0, "jd_text": TEST_JD},
         headers={"Idempotency-Key": "interview-unconfirmed-01"},
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "PROFILE_UNCONFIRMED"
 
 
-def test_interview_rejects_other_role_preset_and_empty_jd(client):
+def test_interview_rejects_obsolete_role_preset_and_empty_jd(client):
     profile_id = create_profile(client)
     client.post(
         f"/api/v1/profiles/{profile_id}/facts",
@@ -764,7 +768,7 @@ def test_interview_rejects_other_role_preset_and_empty_jd(client):
         },
         headers={"Idempotency-Key": "interview-ok-0000000001"},
     )
-    assert bad_preset.status_code == 202  # 合法 preset 正常受理
+    assert bad_preset.status_code == 422  # Even the old embedded field is obsolete.
     invalid = client.post(
         "/api/v1/interviews",
         json={
@@ -853,6 +857,8 @@ def test_openapi_exposes_report_coaching_and_resume_contracts(client):
     assert "multipart/form-data" in import_path["post"]["requestBody"]["content"]
     create_schema = document["components"]["schemas"]["CreateInterviewRequest"]
     assert "pack_release_id" in create_schema["properties"]
+    assert "role_preset" not in create_schema["properties"]
+    assert create_schema["additionalProperties"] is False
     # 岗位包没有“全局激活”写接口：选择只影响新创建面试（profile activate 除外）。
     assert not any(
         "knowledge-pack" in path and "activate" in path for path in document["paths"]

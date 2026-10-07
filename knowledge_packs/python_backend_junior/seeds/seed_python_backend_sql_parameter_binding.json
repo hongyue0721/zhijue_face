@@ -1,0 +1,146 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_sql_parameter_binding",
+  "version": "1.0.0",
+  "competency_id": "backend.sql.parameter_binding",
+  "difficulty": "easy",
+  "archetype": "debugging",
+  "intent": "核对不可信搜索值的参数绑定、SQL 结构边界与可验证的注入防护解释。",
+  "stem": "假设 SQLite 搜索接口用 f\"SELECT id FROM notes WHERE title = '{title}'\" 拼接用户输入，还接受 sort 字段选择排序列。你会怎样改写查询？参数绑定能否直接代替列名或 ASC/DESC？你会用什么输入核对边界？",
+  "prerequisites": [
+    "了解 SQL WHERE、字符串与 execute 调用"
+  ],
+  "allowed_context": [
+    "材料明确包含 SQL 注入、参数绑定或参数化查询",
+    "只在授权的假设/本地测试代码上讨论输入，不对真实站点执行攻击"
+  ],
+  "reference_ids": [
+    "python311_sqlite_placeholders",
+    "sqlite_expression_parameters"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_bind_no_interpolation",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_sqlite_placeholders"
+      ],
+      "statement": "Python 3.11 sqlite3 文档说明字符串拼装 SQL 会暴露 SQL 注入风险；应使用固定 SQL 中的占位符，并把实际值作为 execute 的独立参数传入，而不是先格式化再 execute。"
+    },
+    {
+      "point_id": "rp_bind_parameter_shape",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_sqlite_placeholders"
+      ],
+      "statement": "qmark 风格参数应是长度与占位符数匹配的序列；单值示例使用 (value,) 而不是 (value)。named 风格要求字典包含所有命名参数的键，额外键会被忽略；不能混用其他驱动的占位符格式来证明 sqlite3 调用正确。"
+    },
+    {
+      "point_id": "rp_bind_value_not_identifier",
+      "kind": "technical",
+      "reference_ids": [
+        "sqlite_expression_parameters"
+      ],
+      "statement": "SQLite §4 Parameters 把参数定义为表达式中运行时值的占位符。由此推导，绑定的字符串不是 SQL 列名或 ASC/DESC 关键字替换；值与 SQL 结构必须分开处理，不把参数绑定宣传为任意 SQL 片段的安全执行。"
+    },
+    {
+      "point_id": "rp_bind_allowlist",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "排序列/方向可从预先定义的有限映射中选择固定 SQL 片段，拒绝未知选择，再把筛选值独立绑定。允许不提供动态排序；该白名单选择是工程策略，不声称官方文档给出了业务白名单。"
+    },
+    {
+      "point_id": "rp_bind_probe_inputs",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "验证方案可比较普通标题、含单引号标题、注入形状输入与非法排序字段；要求查询只按输入值查找，不把提出用例描述成实测通过，也不要求真实系统攻击。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_bind_fstring_safe",
+      "pattern": "声称 f-string 自动转义，或者只删单引号便足以防注入",
+      "requires_followup": true,
+      "note": "追问 SQL 文本与参数的分离方式，不把看到输入校验一概判为已安全。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_bind_identifier",
+      "pattern": "把 ORDER BY ? 绑定用户列名视为选择该列，或直接拼任意 sort",
+      "requires_followup": true,
+      "note": "追问绑定后是值还是 SQL 结构；只核对一个固定排序需求。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已给出独立绑定值、正确参数形状与有限结构选择的边界",
+      "明确未验证的驱动/业务条件后换题，不要求攻击演示"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_sql_parameter_binding_binding_values",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍认定直接拼不可信输入或 f-string 自带 SQL 安全",
+        "1": "知道占位符名词，但没有独立传值或参数形状",
+        "2": "说明固定 SQL 加 execute 独立参数，给出正确单值序列/命名映射",
+        "3": "进一步区分普通引号数据与注入形状数据，提出可检查的查询结果断言"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_sql_parameter_binding_structural_boundary",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍认定占位符可执行任意列名/关键字片段",
+        "1": "知道排序需处理，但未区分值与结构",
+        "2": "解释参数只代表值，排序结构不能照搬值绑定",
+        "3": "给出有限映射/固定查询并说明拒绝未知选择，不外推整体系统绝无注入"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_sql_parameter_binding_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "参数绑定不证明授权、密码存储、业务逻辑或所有动态 SQL 已安全",
+    "不跨驱动套用 qmark/named 细节；不开展真实目标 SQL 注入",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

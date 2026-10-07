@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_python_mutability",
+  "version": "1.0.0",
+  "competency_id": "python.data.mutability",
+  "difficulty": "easy",
+  "archetype": "debugging",
+  "intent": "核对 Python 可变默认参数、对象共享与复制边界；不从会背术语推断真实项目能力。",
+  "stem": "假设学习记录接口调用 def add_tag(tag, tags=[]): tags.append(tag); return tags。连续两次省略 tags 参数调用时，为什么第二次可能带上第一次的标签？你会怎样避免非预期共享？若标签是嵌套列表，浅拷贝是否足够？",
+  "prerequisites": [
+    "了解函数、列表与参数的基本用法"
+  ],
+  "allowed_context": [
+    "材料明确提到 Python 可变默认参数、对象别名或浅拷贝",
+    "材料未体现时只作为明确标注的假设代码题，不声称候选人写过该错误"
+  ],
+  "reference_ids": [
+    "python311_default_arguments",
+    "python311_copy"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_mut_default_once",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_default_arguments"
+      ],
+      "statement": "Python 3.11 教程 §4.8.1：默认参数在函数定义时求值一次；可变默认列表会在省略参数的多次调用间共享，示例中的 append 因而累积内容。"
+    },
+    {
+      "point_id": "rp_mut_none_sentinel",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_default_arguments"
+      ],
+      "statement": "若不希望省略参数的调用共享默认列表，可以使用 tags=None，并在 tags is None 时为本次调用创建新列表；不要用 if not tags 把调用者明确传入的空列表与缺省混为一谈。后半句是由 None 示例推导的 API 边界，不是额外语言规则。"
+    },
+    {
+      "point_id": "rp_mut_copy_boundary",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_copy"
+      ],
+      "statement": "赋值只建立对象绑定而不复制对象；浅拷贝创建新复合对象，但成员仍引用原对象。含嵌套可变列表时，仅复制外层不保证内层独立；deepcopy 会递归复制，但也可能复制过多。"
+    },
+    {
+      "point_id": "rp_mut_explicit_contract",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "允许选择明确的原地修改契约，或只复制业务确实需要独立的层级；说明传入列表是否保留、预期所有权与代价，不强制所有场景 deepcopy。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_mut_new_each_call",
+      "pattern": "声称每次省略参数都会创建全新的默认列表",
+      "requires_followup": true,
+      "note": "先让候选人按两次调用画出对象关系；未执行代码不伪造输出。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_mut_copy_all_fixed",
+      "pattern": "声称外层 copy 或赋值就能隔离所有嵌套对象",
+      "requires_followup": true,
+      "note": "只追问一个内层 append 的反例，核对是否理解共享层级。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已说明默认对象何时创建、None 哨兵与内外层共享边界",
+      "候选人明确不熟悉，记录未验证边界后换题；不循环诱导"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_python_mutability_mutable_default",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍明确声称可变默认对象每次调用重新创建",
+        "1": "识别标签串入现象，但不能解释默认对象的生命周期",
+        "2": "解释定义时求值一次，并给出 None 哨兵按需新建列表",
+        "3": "进一步区分省略参数与显式空列表，并说明传入对象是否允许被修改"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_python_mutability_copy_boundary",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍明确声称赋值或浅拷贝递归复制所有成员",
+        "1": "知道复制能改变共享关系，但未区分外层与内层",
+        "2": "解释赋值绑定、浅拷贝成员共享与嵌套变更影响",
+        "3": "能按实际所有权选复制层级并说明 deepcopy 不是无代价通用答案"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_python_mutability_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "不要求 CPython 内存地址、引用计数或 GIL 实现细节",
+    "不把可变默认参数一概称为语言禁止；有意共享须有明确契约",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

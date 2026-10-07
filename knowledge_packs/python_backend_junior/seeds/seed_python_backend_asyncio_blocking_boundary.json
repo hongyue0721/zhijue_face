@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_asyncio_blocking_boundary",
+  "version": "1.0.0",
+  "competency_id": "python.asyncio.blocking",
+  "difficulty": "medium",
+  "archetype": "debugging",
+  "intent": "核对 asyncio 协作调度、同步 IO 阻塞与线程卸载的适用边界。",
+  "stem": "假设一个 Python 3.11 async def 处理函数里直接执行同步文件读取，并调用 time.sleep(1)，同一事件循环上的其他请求出现停顿。为什么加了 async def 仍可能阻塞？你会如何处理等待/同步 IO，并验证其他任务可以继续执行？",
+  "prerequisites": [
+    "了解 async/await 与普通函数调用"
+  ],
+  "allowed_context": [
+    "材料明确包含 asyncio、事件循环或同步阻塞调用",
+    "性能症状是题设，不能据此宣称候选人的真实服务存在延迟问题"
+  ],
+  "reference_ids": [
+    "python311_asyncio_tasks"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_async_cooperative",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_asyncio_tasks"
+      ],
+      "statement": "Python 3.11 asyncio Task 文档：事件循环使用协作调度，同一时刻运行一个 Task；Task 等待 Future 完成时，循环可运行其他 Task、回调或 IO。async def 本身不保证代码片段主动让出执行。"
+    },
+    {
+      "point_id": "rp_async_blocking_io",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_asyncio_tasks"
+      ],
+      "statement": "Running in Threads 示例明确说明，在协程中直接运行含 time.sleep 的 blocking_io 会在其执行期间阻塞事件循环；可 await asyncio.to_thread(blocking_io) 把同步 IO 函数移到另一线程。异步等待可使用 await asyncio.sleep，而非同步 time.sleep。"
+    },
+    {
+      "point_id": "rp_async_thread_gil",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_asyncio_tasks"
+      ],
+      "statement": "文档说明 to_thread 主要用于 IO-bound 函数；由于 GIL，通常不能据此承诺纯 Python CPU 密集任务并行加速。释放 GIL 的扩展或没有 GIL 的其他 Python 实现属于文档明确的例外，不能一概否定。"
+    },
+    {
+      "point_id": "rp_async_called_not_scheduled",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_asyncio_tasks"
+      ],
+      "statement": "Coroutines 节说明，仅调用协程函数得到协程对象，不会自动调度执行；需 await、create_task 或相应运行入口。创建 Task 也不会把其内部同步阻塞调用自动变成非阻塞 IO。后一句是根据同一事件循环调度规则的工程推导。"
+    },
+    {
+      "point_id": "rp_async_measure_plan",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "可用一个独立心跳协程或两个受控并发请求，对比阻塞前后其他任务能否进展；这是验证方案，不宣称已测得吞吐、延迟或加速比。若选已有异步 IO API，需核对所用库与资源线程安全。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_async_magic_keyword",
+      "pattern": "声称所有 async def 内代码都自动异步，或 create_task 会消除同步阻塞",
+      "requires_followup": true,
+      "note": "追问同一事件循环何时有机会执行另一 Task。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_async_cpu_threads",
+      "pattern": "声称 to_thread 对任意纯 Python CPU 密集计算必然并行提速",
+      "requires_followup": true,
+      "note": "追问运行时/GIL/工作负载假设，不强迫背线程池实现。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "detail",
+      "counterfactual"
+    ],
+    "stop_conditions": [
+      "已区分协作等待与同步阻塞，说明 IO 卸载及 CPU 边界",
+      "给出可检查其他任务进展的方法，或如实说明没有性能实测"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_asyncio_blocking_boundary_cooperation_io",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍认定 async def 或 create_task 保证内部同步调用非阻塞",
+        "1": "知道要 await，但未解释阻塞点或让出执行",
+        "2": "说明协作调度，使用异步 sleep 与合适的同步 IO 卸载",
+        "3": "同时区分协程对象/调度与阻塞行为，并给出验证其他任务进展的方法"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_asyncio_blocking_boundary_thread_boundary",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍承诺任意纯 Python CPU 工作通过 to_thread 必然并行加速",
+        "1": "提出线程卸载但没有区分 IO 与 CPU",
+        "2": "说明 to_thread 主要用于 IO 与 GIL 对通常 CPU 工作的限制",
+        "3": "说明释放 GIL/其他实现例外及所用资源线程安全待核对，不编造测量"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_asyncio_blocking_boundary_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "detail",
+    "counterfactual"
+  ],
+  "out_of_scope": [
+    "限定 Python 3.11 文档语义，不外推其他运行时或 free-threaded 构建默认行为",
+    "不要求生产线程池扩容、压测指标或分布式任务队列",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

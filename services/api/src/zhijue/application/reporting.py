@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from zhijue.adapters.db.models import (
     Answer,
     Assessment,
+    Claim,
     Decision,
     Interview,
     Observation,
@@ -19,6 +20,7 @@ from zhijue.adapters.db.models import (
     Report,
 )
 from zhijue.adapters.db.operations import OperationRepository
+from zhijue.application.knowledge_packs import KnowledgePackService
 from zhijue.domain.errors import InvalidStateError, ResourceNotFoundError
 from zhijue.domain.ids import new_id
 from zhijue.domain.scoring import SCORING_VERSION, aggregate_report, score_root
@@ -198,6 +200,30 @@ def _report_context(session: Session, interview_id: str) -> dict[str, dict[str, 
     return contexts
 
 
+def _improvement_source_claims(
+    session: Session, improved_answers: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    """回答优化各段引用的已确认事实原文。
+
+    Claim 行的 text 永不改写，按 ID 解析得到的就是生成时校验过的原文；
+    引用了不存在的事实说明数据关系已损坏，必须失败而不是静默跳过。
+    """
+    claim_ids = sorted(
+        {
+            str(claim_id)
+            for item in improved_answers
+            for claim_id in item.get("used_claim_ids", [])
+        }
+    )
+    if not claim_ids:
+        return []
+    rows = session.scalars(select(Claim).where(Claim.id.in_(claim_ids)))
+    by_id = {claim.id: claim for claim in rows}
+    if set(by_id) != set(claim_ids):
+        raise InvalidStateError("回答优化引用的事实不存在。")
+    return [{"id": claim_id, "text": by_id[claim_id].text} for claim_id in claim_ids]
+
+
 def report_view(report: Report, session: Session) -> dict[str, Any]:
     contexts = _report_context(session, report.interview_id)
     assessments = []
@@ -217,15 +243,25 @@ def report_view(report: Report, session: Session) -> dict[str, Any]:
         "improvements_status": report.improvements_status,
         "active_operation_id": report.active_operation_id,
         "improved_answers": list(report.improved_answers or []),
+        "source_claims": _improvement_source_claims(
+            session, list(report.improved_answers or [])
+        ),
         "limitations": list(report.limitations or []),
         "run_metadata": dict(report.run_metadata or {}),
     }
 
 
 class ReportingService:
-    def __init__(self, *, engine: Engine, operations: OperationRepository) -> None:
+    def __init__(
+        self,
+        *,
+        engine: Engine,
+        operations: OperationRepository,
+        packs: KnowledgePackService,
+    ) -> None:
         self._engine = engine
         self._operations = operations
+        self._packs = packs
 
     def create_in_session(
         self,
@@ -336,4 +372,10 @@ class ReportingService:
             report = session.get(Report, interview.report_id)
             if report is None:
                 raise InvalidStateError("面试引用的报告不存在。")
-            return report_view(report, session)
+            view = report_view(report, session)
+            view["knowledge_pack"] = self._packs.summary_for_interview(
+                pack_release_id=interview.pack_release_id,
+                pack_content_digest=interview.pack_content_digest,
+                competency_profile_id=interview.competency_profile_id,
+            )
+            return view

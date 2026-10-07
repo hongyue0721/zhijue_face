@@ -7,12 +7,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import pytest
 
 from zhijue.domain.claims import (
     ClaimStatus,
     InvalidClaimTransition,
+    SourcePosition,
     ensure_transition,
+    order_claims_for_reading,
     validate_exact_quote,
 )
 
@@ -49,6 +53,79 @@ def test_exact_quote_must_be_substring_of_block():
     )
     with pytest.raises(ValueError):
         validate_exact_quote("我们精通 FreeRTOS", "简历提到 FreeRTOS Queue")
+
+
+@dataclass
+class _Claim:
+    id: str
+    block_id: str | None
+    quote: str = ""
+    created_at: str = "2026-10-06T00:00:00Z"
+    supersedes_id: str | None = None
+    source_block_ids: list[str] = field(init=False)
+    source_quotes: list[dict[str, str]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.source_block_ids = [self.block_id] if self.block_id else []
+        self.source_quotes = (
+            [{"source_block_id": self.block_id, "exact_quote": self.quote}]
+            if self.block_id
+            else []
+        )
+
+
+_POSITIONS = {
+    "b_page1_block0": SourcePosition(0, 1, 0, "张三 · 电子信息工程"),
+    "b_page1_block2": SourcePosition(0, 1, 2, "负责 UART 接收；改用 DMA 循环接收"),
+    "b_page2_block0": SourcePosition(0, 2, 0, "熟悉 FreeRTOS Queue"),
+    "b_manual": SourcePosition(1, None, 0, "补充：做过 CAN 多节点"),
+}
+
+
+def test_reading_order_follows_material_not_random_ids():
+    """同批抽取 created_at 相同，展示序必须是材料页→块→块内位置，而非随机 ID。"""
+    claims = [
+        _Claim("claim_a", "b_page2_block0", "FreeRTOS Queue"),
+        _Claim("claim_b", "b_manual", "做过 CAN 多节点"),
+        _Claim("claim_c", "b_page1_block2", "改用 DMA 循环接收"),
+        _Claim("claim_d", "b_page1_block2", "负责 UART 接收"),
+        _Claim("claim_e", "b_page1_block0", "张三"),
+    ]
+    ordered = order_claims_for_reading(claims, _POSITIONS)
+    assert [claim.id for claim in ordered] == [
+        "claim_e",
+        "claim_d",
+        "claim_c",
+        "claim_a",
+        "claim_b",
+    ]
+
+
+def test_correction_keeps_original_position_and_unknown_source_goes_last():
+    claims = [
+        _Claim(
+            "claim_orphan", "b_deleted", "不存在的块", created_at="2026-10-06T00:00:00Z"
+        ),
+        _Claim("claim_rtos", "b_page2_block0", "FreeRTOS Queue"),
+        _Claim(
+            "claim_fix",
+            "b_manual",
+            "做过 CAN 多节点",
+            created_at="2026-10-06T00:05:00Z",
+            supersedes_id="claim_uart",
+        ),
+        _Claim("claim_uart", "b_page1_block2", "负责 UART 接收"),
+        _Claim("claim_none", None),
+    ]
+    ordered = [claim.id for claim in order_claims_for_reading(claims, _POSITIONS)]
+    # 更正沿用被更正事实的位置并紧随其后；无可解析来源的不猜位置，排最后。
+    assert ordered == [
+        "claim_uart",
+        "claim_fix",
+        "claim_rtos",
+        "claim_none",
+        "claim_orphan",
+    ]
 
 
 # ---------------- application：fixture 级（无 Knowledge live） ----------------
@@ -249,3 +326,85 @@ def test_profile_detail_missing_profile_preserves_not_found_contract(profiles):
     service, _profile = profiles
     with pytest.raises(ValueError, match="RESOURCE_NOT_FOUND"):
         service.get_detail("profile_missing")
+
+
+def test_profile_detail_returns_claims_in_resume_reading_order(profiles):
+    """ProfileView 的 proposed/confirmed 列表按材料阅读顺序，不随 ID 随机排列。"""
+    from sqlalchemy.orm import Session
+
+    from zhijue.adapters.db.models import Claim, Document, SourceBlock
+
+    service, profile = profiles
+    engine = service._repo._engine
+    created = "2026-10-06T00:00:00Z"
+    blocks = [
+        ("block_z_first", 1, 0, "千早 · 嵌入式软件开发实习生"),
+        ("block_m_second", 1, 1, "负责 STM32 串口接收；改用 DMA 循环接收"),
+        ("block_a_third", 2, 0, "熟悉 FreeRTOS Queue"),
+    ]
+    # 同一批 created_at；ID 字典序与阅读顺序相反，旧实现会把第三页排第一。
+    claims = [
+        ("claim_0", "block_a_third", "熟悉 FreeRTOS Queue"),
+        ("claim_1", "block_m_second", "改用 DMA 循环接收"),
+        ("claim_2", "block_m_second", "负责 STM32 串口接收"),
+        ("claim_3", "block_z_first", "嵌入式软件开发实习生"),
+    ]
+    with Session(engine) as session, session.begin():
+        session.add(
+            Document(
+                id="document_resume",
+                profile_id=profile.id,
+                kind="resume",
+                filename_display="synthetic.pdf",
+                sha256="0" * 64,
+                mime="application/pdf",
+                size=1,
+                page_count=2,
+                extract_status="parsed",
+                index_status="pending",
+                warnings=[],
+                created_at=created,
+                updated_at=created,
+            )
+        )
+        session.flush()
+        for block_id, page, index, text in blocks:
+            session.add(
+                SourceBlock(
+                    id=block_id,
+                    document_id="document_resume",
+                    page_number=page,
+                    block_index=index,
+                    text=text,
+                    text_hash="0" * 64,
+                    origin="text_layer",
+                )
+            )
+        for claim_id, block_id, quote in claims:
+            session.add(
+                Claim(
+                    id=claim_id,
+                    profile_id=profile.id,
+                    text=quote,
+                    source_block_ids=[block_id],
+                    source_quotes=[
+                        {
+                            "source_block_id": block_id,
+                            "exact_quote": quote,
+                            "section": "project",
+                        }
+                    ],
+                    status="proposed",
+                    supersedes_id=None,
+                    created_at=created,
+                    updated_at=created,
+                )
+            )
+
+    _view, ordered, _documents = service.get_detail(profile.id)
+    assert [claim.id for claim in ordered] == [
+        "claim_3",
+        "claim_2",
+        "claim_1",
+        "claim_0",
+    ]

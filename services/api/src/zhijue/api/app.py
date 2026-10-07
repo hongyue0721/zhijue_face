@@ -281,7 +281,7 @@ def build_services(
         # 内置资产缺失只阻塞“生成面试”；列表/详情/导入入口仍可用（§6.4）。
         readiness["knowledge_packs"] = f"not_ready:{exc.code}"
         readiness["seed_bank_version"] = "pack_unavailable"
-    reporting = ReportingService(engine=engine, operations=operation_repo)
+    reporting = ReportingService(engine=engine, operations=operation_repo, packs=packs)
     generator_metadata = (
         generator.public_summary()
         if generator is not None and hasattr(generator, "public_summary")

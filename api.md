@@ -10,6 +10,8 @@
 
 **恢复与冻结修复（2026-10-03）**：Profile 组合视图以同一数据库读取快照返回 revision、事实及资料；新迁移 `c91f8b34d602` 保存面试受理时的审核身份与批准 Seed 范围。重试按持久化逻辑操作根串行受理，拒绝旧题回退和兄弟分叉；内容生成重启恢复同时检查业务资源与 Operation。健康接口增加 `content_generation` 能力事实。
 
+**声明式岗位规则契约（2026-10-06，本轮实现目标）**：岗位由所选知识包的能力配置决定，不再使用 `role_preset`。规则解析只接受有限关键词列表和能力 ID 引用；负责人包外审核须同时绑定规则摘要、版本与两级核对记录，旧题目审核不自动批准新规则。具体语义见 §6、§9；验证状态另记 process.md，不以契约草案代替运行证据。
+
 ## 1. 全局约定
 
 Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_..."}}`。Content-Type 为 `application/json; charset=utf-8`，上传除外。所有网络 DTO 字段为 snake_case；时间 RFC3339 UTC；ID 为不透明字符串。
@@ -48,6 +50,9 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 | 413 | FILE_TOO_LARGE / TEXT_TOO_LARGE / PACK_UPLOAD_TOO_LARGE | 超过业务资源上限 |
 | 415 | UNSUPPORTED_FILE_TYPE | 格式不支持或魔数不匹配 |
 | 422 | SCHEMA_VALIDATION_FAILED | 合法 JSON 但字段/枚举不符合契约 |
+| 422 | JD_REQUIRED / PACK_PROFILE_INVALID / PACK_SEED_COMPETENCY_INVALID | 所选包无合成 JD 示例且未填写 JD；岗位规则不合法；题目能力不属于该包 |
+| 409 | PACK_RULES_REVIEW_PENDING | 规则未获包外两级审核，或审核不匹配本版规则字节；旧题目批准不能绕过 |
+| 403/422（负责人 CLI 领域错误） | PACK_REVIEW_OWNER_REQUIRED / PACK_REVIEW_CONFIRMATION_REQUIRED | 非 owner 身份或缺少规则/Level 1/Level 2 显式确认，拒绝批准；HTTP 不提供审核入口 |
 | 429 | CAPACITY_LIMITED | 队列或预算限制；可给 Retry-After |
 | 502/503/504 | UPSTREAM_FAILED / SERVICE_NOT_READY / UPSTREAM_TIMEOUT / PACK_CONTENT_MISSING / PACK_CONTENT_CORRUPTED / PACK_UPLOAD_INPUT_LOST | 在异步受理前发现的依赖问题 |
 | 500 | INTERNAL_ERROR | 未预料故障；前台不显示栈/密钥 |
@@ -56,11 +61,11 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 ## 3. 公共对象摘要
 
-`ProfileView`：id、revision、display_name、synthetic、status、documents、proposed_claims、confirmed_claims、latest_snapshot_id、active_operation_id、snapshot_activation。`active_operation_id` 是当前资料写操作（上传/确认/激活）的恢复键，无操作时为 null。`snapshot_activation` 无快照时为 null；否则为 `{snapshot_id,status,operation_id}`，status 仅 `pending/indexing/ready/failed`，operation_id 为该代次最近激活操作（可为 null）。资料事实确认和 Knowledge 就绪是两个状态；不得从 Document 的全局 index_status 推断一个快照代次已经激活。
+`ProfileView`：id、revision、display_name、synthetic、status、documents、proposed_claims、confirmed_claims、latest_snapshot_id、active_operation_id、snapshot_activation。`active_operation_id` 是当前资料写操作（上传/确认/激活）的恢复键，无操作时为 null。`snapshot_activation` 无快照时为 null；否则为 `{snapshot_id,status,operation_id}`，status 仅 `pending/indexing/ready/failed`，operation_id 为该代次最近激活操作（可为 null）。资料事实确认和 Knowledge 就绪是两个状态；不得从 Document 的全局 index_status 推断一个快照代次已经激活。`proposed_claims` 与 `confirmed_claims` 按材料阅读顺序返回：文档登记先后 → 页 → 块 → 块内引文位置；本人更正沿用被更正事实的位置并紧随其后；找不到来源位置的事实排在末尾，同位置按 created_at、id 稳定排序。该顺序只用于展示与核对，不改变确认快照的 `confirmed_claim_ids` 内容。
 
 `DocumentView`：id、profile_id、kind、filename_display、sha256、page_count、extract_status、index_status、warnings；不含实际文件路径。
 
-`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations、knowledge_pack。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`knowledge_pack` 是该场受理时冻结的摘要：`{binding:"frozen"|"frozen_unavailable"|"legacy_unresolved", pack_release_id, pack_id, name, version, content_digest, competency_profile_id}`；旧记录无可证实绑定时 binding=`legacy_unresolved` 并附说明 note，绝不从“当前默认包”倒推或捏造版本。`jd_text` 只读返回该会话冻结的岗位输入原文，供准备页刷新后核对与修改；仅历史记录确未保存原文时为 null，不从 requirements 拼造原文，不写浏览器持久存储。`jd_source` 至少包含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外返回 source_url/retrieved_at，`real_jd_derived` 额外返回 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
+`InterviewView`：id、revision、status、run_mode、profile_id、profile_snapshot_id、jd_text、jd_requirements、jd_source、root_plan、coverage_map、current_question、root_results、active_operation_id、stop_requested、report_id、limitations、knowledge_pack。`profile_id` 只用于把报告明确关联回所属档案，不返回资料正文。`knowledge_pack` 是该场受理时冻结的摘要：`{binding:"frozen"|"frozen_unavailable"|"legacy_unresolved", pack_release_id, pack_id, name, version, content_digest, competency_profile_id, profile_version, profile_digest, capabilities:[{competency_id,label}]}`；旧记录无可证实绑定时 binding=`legacy_unresolved` 并附说明 note，不可解析的配置不猜名称或版本。`jd_text` 返回冻结岗位输入原文，历史确未保存才为 null，不从 requirements 拼造原文或写浏览器持久存储。`jd_source` 至少含 source_type、source_name、content_hash、imported_at、is_synthetic；`official_posting` 额外含 source_url/retrieved_at，`real_jd_derived` 额外含 upstream_source_name/upstream_url/upstream_retrieved_at/upstream_content_hash/derived_artifact_path/derived_content_hash/transformation_note。
 
 `OperationView`：id、kind、status、resource_type、resource_id、parent_operation_id、retry_trigger、retry_reason、next_operation_id、attempts、attempt_limit、chain_started_at、result、error、last_event_seq、created_at、updated_at。`retry_trigger` 为 `automatic / manual / null`：自动来源以持久化 `operation.retry_scheduled` 为准，普通 parent-linked retry 为 manual，原操作为 null。`retry_reason` 为该自动事件记录的 `transient / correction / null`，不从错误文案猜测。`chain_started_at` 为逻辑原操作的 created_at；`attempt_limit` 为回答分析、回答优化和简历生成的当前实际模型总额度，其他操作为 null。`next_operation_id` 指向已受理的唯一直接后继，没有后继时为 null；它不修改原操作的失败状态。attempts 是累计已开始的尝试数，queued 后继尚未开始时继承父值。
 
@@ -69,6 +74,8 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 所有 question 的 rubric/reference_answer 在无提示面试模式下不返回给候选人视图。观察者接口需要显式 observer_mode；P0 可使用同一接口按服务端模式裁剪字段，不以隐藏 CSS 保护答案。
 
 `QuestionView`：id、root_id、kind、seed_id（经历/证据回退题可为 null）、wording、basis、order_index、accepted_answer（可为 null；只含 id、client_turn_id、raw_text、evaluation_status、retry_operation_id）。`retry_operation_id` 仅当 `evaluation_status=failed` 时非 null，指向该回答失败链的链尾 operation（retry 经 parent 链关联，链尾 attempts 为累计预算真值），前端凭它跨刷新走 `/retry`；其他状态为 null，不得用链中其他节点重试以免分叉绕过预算。候选人视图不返回 `rubric_snapshot`、reference_points、red_flags 或参考答案；返回原回答仅用于本人刷新恢复，不能把分析失败伪装成未提交。
+
+`QuestionView.basis.competency_label` 来自本场冻结能力配置，与 `competency_id` 配对；无法解析的历史配置不拿当前默认包补名称。`ReportView.knowledge_pack` 返回同一冻结摘要，所有能力展示只消费后端标签。
 
 `root_results` 当前只返回可观察的程序 Decision 摘要：root_question_id、observation_id、action、reason_code、reason_summary、target；不返回模型原始输出或私有推理。
 
@@ -88,7 +95,7 @@ Base path：`/api/v1`。成功 JSON：`{"data": ..., "meta":{"request_id":"req_.
 
 手填 items 一次最多 50 条，section 为 basic/education/project/skill/award/other，text 长度 1—2,000。合计字符上限沿用配置。展示姓名/联系方式不会自动进入模型评价上下文。
 
-上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。长文档按源文字预算切成连续段、分多次真实 Workflow 调用抽取，切分无损（段可拼接还原），逐字来源不变量不因分块改变；50 条上限对合并结果生效，超出同样全部拒绝。`extraction_metadata` 增加 `model_calls`（本次导入的模型调用次数），`usage` 为各次调用聚合，任一调用缺该字段则保持 null，不填造 0。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。chat/completions 请求默认使用 SSE 流式（`MODEL_STREAM=true`）：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS` 是块间静默预算；实测部分兼容网关的 SSE 通道不落实 `response_format=json_object` 强制，此类网关显式 `MODEL_STREAM=false` 走单 JSON 体，两条路径的严格校验语义一致。`MODEL_STREAM_STALL_SECONDS` 是块间静默预算（生效取较小值），生成器元数据同时公开两者与 `reasoning_effort`。P-EXTRACT 的模型传输超时（含总预算与 stall）记录为 `UPSTREAM_TIMEOUT`，其他模型请求失败记录为 `UPSTREAM_FAILED`；模型已返回但 JSON/逐字来源校验失败仍为 `UPSTREAM_FAILED`，三类错误不得用同一“来源校验失败”文案混淆。
+上传最大 10 MiB、最多 5 页；新传入文件通过 `expected_revision` 乐观锁，Document、SourceBlock、逐字 proposed Claim 与 Profile revision 在一个事务提交。P-EXTRACT 只能从输入块选择 `exact_quote`，Claim 正文必须与该引文完全相同；未知 block、非逐字引文、联系方式、重复候选或超过 50 条全部拒绝，不落部分结果。长文档按源文字预算切成连续段、分多次真实 Workflow 调用抽取，切分无损（段可拼接还原），逐字来源不变量不因分块改变；50 条上限对合并结果生效，超出同样全部拒绝。`extraction_metadata` 增加 `model_calls`（本次导入的模型调用次数），`usage` 为各次调用聚合，任一调用缺该字段则保持 null，不填造 0。Operation result 返回 `resource_revision / document_id / extract_status / index_status / proposed_claim_count / extraction_metadata`；未确认的新内容不改变已经绑定旧快照的面试。提取出的控制字符（PDF 字体缺少文字映射时常见，如上标「²」被读成 NUL；制表符与换行除外）一律替换为 U+FFFD（替换字符）后才写入 SourceBlock，并按页追加 `warnings`（“第 N 页有 K 个字符无法识别……”）；不删除、不猜测缺失字符，由用户在核对时更正。加密 PDF 不要求用户上传密码，返回明确 warning 或失败；扫描文档在 P0 转 `requires_text`，不调用 P-EXTRACT，提示用 `/facts` 粘贴文本。chat/completions 请求默认使用 SSE 流式（`MODEL_STREAM=true`）：`MODEL_TIMEOUT` 是单请求总预算，`MODEL_STREAM_STALL_SECONDS` 是块间静默预算；实测部分兼容网关的 SSE 通道不落实 `response_format=json_object` 强制，此类网关显式 `MODEL_STREAM=false` 走单 JSON 体，两条路径的严格校验语义一致。`MODEL_STREAM_STALL_SECONDS` 是块间静默预算（生效取较小值），生成器元数据同时公开两者与 `reasoning_effort`。P-EXTRACT 的模型传输超时（含总预算与 stall）记录为 `UPSTREAM_TIMEOUT`，其他模型请求失败记录为 `UPSTREAM_FAILED`；模型已返回但 JSON/逐字来源校验失败仍为 `UPSTREAM_FAILED`，三类错误不得用同一“来源校验失败”文案混淆。
 
 confirm 只能操作属于当前 Profile 且未被撤回的 Claim。correct 必须提供 corrected_text，创建新的 user_input 依据；用户不能把随意改写的内容继续绑定为原文 exact_quote。一个明确提交的批次原子写入裁决、确认快照、Profile revision 和确认 Operation，再异步激活该代次 Knowledge。单个批次最多 50 项；不替用户默认选中。Knowledge 失败保留确认事实与同一快照，snapshot_activation.status=failed；重试仅激活该快照，不再次应用 decisions、不再增加 revision。创建计划和开始面试均要求各自绑定的快照代次 ready，失败返回 409 INVALID_STATE。所有未完成/失败激活必须能从 ProfileView 恢复，不依赖单个标签页缓存。
 
@@ -114,7 +121,7 @@ jd_text 最多 8,000 字符，只作为岗位上下文，不成为候选人事�
 
 | 方法与路径 | 输入 | 成功 | 语义 |
 |---|---|---|---|
-| POST `/interviews` | profile_id、profile_revision、jd_text?、jd_source_name?、role_preset、memory_enabled=false、observer_mode=false、pack_release_id? | 202 OperationAccepted | 检查确认/索引状态，固定快照、生成五题计划；受理时冻结岗位包 release+摘要；成功 ready |
+| POST `/interviews` | profile_id、profile_revision、jd_text?、jd_source_name?、memory_enabled=false、observer_mode=false、pack_release_id? | 202 OperationAccepted | 检查确认/索引状态，固定快照、生成五题计划；受理时冻结岗位包、规则与审核范围；成功 ready |
 | GET `/interviews/{id}` | 无 | 200 InterviewView | 当前问题与服务端状态；不靠聊天文本恢复 |
 | POST `/interviews/{id}/start` | expected_revision | 202 OperationAccepted | ready→active，显示第一题；幂等 |
 | POST `/interviews/{id}/answers` | expected_revision、question_id、client_turn_id、answer_text | 202 OperationAccepted | 接受原回答，分析、决策、生成下一题或结束 |
@@ -126,21 +133,21 @@ end 在回答操作进行中也可受理：服务端原子记录 `stop_requested
 
 已受理的 end 若排队等待期间由最后一题 skip/answer 完成同一报告，end 成功复用该已持久化 report_id，不产生矛盾的 INVALID_STATE、不再评分或创建报告。该收敛只作用于已受理操作；completed 会话的新结束命令仍拒绝，既有同键重放及同输入 end 去重保持原回执。
 
-role_preset P0 只支持 `embedded_junior`。JD 不提供时使用显著标注的预置（`SYNTHETIC_DEMO_JD`）；不将其称为某企业真实招聘要求。JD 最多 8,000 字符。五主问题与追问上限由服务端配置，客户端不得无限增加。
+岗位仅由所选知识包的 `competencies.json` 决定；删除 `role_preset`，旧字段不再被接受。JD 最多 8,000 字符。JD 未提供时只允许使用所选包 manifest 明确登记的合成 `example_jd_file`；没有示例则要求用户提供 JD，不套用嵌入式岗位。五主问题与追问上限由服务端配置，客户端不得无限增加。
 
-`pack_release_id`（`kpr_` + 16 hex）为可选：省略 = 服务端在受理瞬间解析默认岗位包。无论显式或默认，release ID、内容摘要与能力配置 ID 都在受理时冻结进 Interview；后续默认变化、包被替换或损坏都不改变本场。未审核/被拒/损坏/能力配置未注册的包在受理前同步返回 409（`PACK_REVIEW_PENDING`/`PACK_REVIEW_REJECTED`/`PACK_CONTENT_*`/`COMPETENCY_PROFILE_UNSUPPORTED`），不进入后台。幂等重放按 §1 先找回原操作返回受理结果：客户端未显式给 `pack_release_id` 时，服务端解析出的默认值不参与输入 hash，避免“默认变化导致重放误报冲突”。
+`pack_release_id`（`kpr_` + 16 hex）为可选：省略 = 服务端在受理瞬间解析默认岗位包。无论显式或默认，release ID、内容摘要、能力配置 ID/版本及规则摘要都随不可变 release 在受理时冻结；后续默认变化、包被替换或损坏都不改变本场。未审核规则/题目、被拒或损坏的包在受理前同步失败，不进入后台。幂等重放按 §1 先找回原操作返回受理结果：客户端未显式给 `pack_release_id` 时，服务端解析出的默认值不参与输入 hash，避免“默认变化导致重放误报冲突”。
 
 冻结绑定还包含受理时的审核记录、审核内容摘要和逐 Seed 批准范围（内部 `pack_review_snapshot`）。受理后的审核撤销或范围变更只影响新面试，不能重新解释旧场次的题库资格。旧行的审核快照保持 null，不用今天的审核倒填历史事实；缺少可证实审核绑定时不得启动或继续生成依赖该绑定的新题，已有报告仍可读取。相同幂等键必须比对规范化的显式输入：JD、revision、显式 release 或选项变化返回 `IDEMPOTENCY_CONFLICT`；合法重放不重新解析默认包。
 
 开始面试（`POST /interviews/{id}/start`）只按本场冻结绑定解析岗位包：绑定 release 内容与登记摘要不符返回 409 并明确失败，绝不回落其他包顶替；`legacy_unresolved` 记录不允许再开始新回答流程，原报告仍可读。
 
-开始面试时，服务端按五个冻结 slot 逐一实例化根问题：优先绑定同 competency 的 approved Seed；`embedded.rtos.fundamentals` 只允许映射到未重复使用的 approved `embedded.rtos.*` Seed。没有相符 Seed 时，退回经历/证据表达题并令 `seed_id=null`，其 Rubric 不评价无技术参考支持的技术正确性。不得为了凑五题绑定无关 Seed，也不得把回退题冒充经 Level 2 审核的技术题。
+开始面试时，服务端按五个冻结 slot 逐一实例化根问题：优先绑定同 competency 的包外批准 Seed；精确匹配之外只允许该包规则显式声明的家族借用，不能使用其它岗位的题目。没有相符 Seed 时退回经历/证据表达题并令 `seed_id=null`，其 Rubric 不评价无技术参考支持的技术正确性；不为了凑五题绑定无关 Seed。
 
-同场规划优先覆盖不同能力；能力不足五类时，仅以该能力的不同验证切面补足，不能循环复制同一道泛化题。回退题面保留注册能力的中文名称、真实岗位要求和验证切面；缺失技术参考不会被包装为已批准技术题。
+同场规划优先覆盖不同能力；能力不足五类时，仅以该能力的不同验证切面补足，不能循环复制同一道泛化题。能力中文名由后端解析本场冻结配置下发：`knowledge_pack.capabilities=[{competency_id,label}]`，`knowledge_pack.profile_version/profile_digest` 标识冻结规则；问题依据附 `competency_label`。前端不维护另一个岗位字典；不可解析的历史配置不猜名称。
 
 来源类型由服务端根据可信输入路径决定，客户端不能仅凭枚举把 JD 升格为真实来源：
 
-- 未提供 `jd_text`：加载 `data/jd/preset_embedded_junior.txt`，固定标记为 `synthetic_demo_jd`；
+- 未提供 `jd_text`：加载所选知识包声明的 `example_jd_file`，固定标记为 `synthetic_demo_jd`；文件缺失或未声明时拒绝，不回落另一岗位示例；
 - 提供 `jd_text`：固定标记为 `user_provided`，`jd_source_name` 只作用户可见标签，不构成来源认证；
 - `official_posting` 和 `real_jd_derived` 只能通过后续受信任导入路径创建。前者必须有可验证的 HTTP(S) source_url 与 retrieved_at；后者必须同时有上游名称、URL、抓取时间、上游内容 hash、本地派生工件 hash 和转换说明；
 - 本地路径、保留示例域名和未经记录的 `confirmed_by` 不构成真实来源。缺少上游事实时必须保持 `synthetic_demo_jd` 或 `user_provided`，不得静默升级。
@@ -155,12 +162,12 @@ answer_text 为非空 1—6,000 字符；全空白拒绝。client_turn_id 是浏
 
 `ReportView` 精确字段：
 
-- `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improvements_status / active_operation_id / improved_answers / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
+- `id / revision / interview_id / completion / overall_score / coverage / root_assessments / improvements_status / active_operation_id / improved_answers / source_claims / limitations / run_metadata`；`completion` 只取 `complete / incomplete`，不包含 `hire/no_hire` 等招聘决定。
 - `coverage` 为 `{planned_root_count, asked_root_count, answered_root_count, scored_root_count, insufficient_root_count, disputed_root_count, skipped_root_count, unmeasured_root_count, skipped_question_count, overall_eligible}`。这些是范围计数，不把未测根题换算成 0 分。
 - 每个 `root_assessments[]` 为 `{id, root_question_id, question_text, answers, status, score, coverage, criterion_results, answer_ids}`；`question_text` 为持久化根问题全文；`answers[]` 按题目顺序保留 `{answer_id,question_id,question_kind,question_text,raw_text}`，包括主回答与追问/澄清回答。未回答的根题数组为空。原题和回答来自已有 Question/Answer，不依赖回答优化是否成功，不现场生成。`status` 只取 `scored / insufficient / disputed / skipped / unmeasured`；`score` 可为 null，coverage 是该根题可评分 criterion 权重占冻结总权重的比例。
 - 每个 `criterion_results[]` 为 `{criterion_id, kind, weight, level, finding, answer_quotes, knowledge_refs, explanations}`。同一根题的主回答与追问按 criterion 合并，权重只计算一次；`supported` 与 `contradicted` 同时出现时保留 `finding=disputed` 且 `level=null`，不得自行挑一个版本。
 - `improvements_status` 只取 `not_requested / generating / ready / failed`。生成中或失败时保留唯一 active/last operation；失败时 `active_operation_id` 即该失败操作（可重试恢复键，跨浏览器刷新后仍可 GET 该 Operation 并走 `/retry`），只有 succeeded 后清 null。同一 Report 已 ready 后，即使换 Idempotency-Key 也返回原成功 operation，不再次调用模型。
-- 每个 `improved_answers[]` 为 `{root_question_id,original_answers,rewritten_answer,segments,used_claim_ids,changes,missing_facts,cautions}`。`original_answers[]` 保留 `{answer_id,question_id,question_kind,raw_text}`；`segments[]` 的每段必须绑定当前根题回答 exact_quote 或当前 ProfileSnapshot 的 confirmed claim_id，服务端校验 ID、精确引文、数值与责任边界后才提交。
+- 每个 `improved_answers[]` 为 `{root_question_id,original_answers,rewritten_answer,segments,used_claim_ids,changes,missing_facts,cautions}`。`original_answers[]` 保留 `{answer_id,question_id,question_kind,raw_text}`；`segments[]` 的每段必须绑定当前根题回答 exact_quote 或当前 ProfileSnapshot 的 confirmed claim_id，服务端校验 ID、精确引文、数值与责任边界后才提交。`source_claims[]` 为各 `improved_answers[].used_claim_ids` 并集按 ID 排序的 `{id,text}`，取自不可改写的 Claim 行，用于按段展示出处；无引用时为空数组，引用的 Claim 不存在时返回 409 `INVALID_STATE`，不静默跳过。
 - `run_metadata` 的评分部分只返回运行事实：`run_mode / seed_bank_version / rubric_version / prompt_versions / policy_version / model_fingerprint / sdk_version / scoring_version`。回答优化成功后追加 `content_generation={run_mode,workflow,workflow_version,prompt_version,generator,usage}`；未知模型、SDK 或 usage 字段为 null，不填造默认值。
 
 回答优化的首次生成是显式异步操作，不与结束评分绑成一次隐式模型调用。它使用真实 openJiuwen `Start → Generator → SemanticValidation → End` Workflow；模型只生成候选文案，不能改 Assessment/score。首次可恢复失败允许一次自动后继；自动处理终止且仍失败时 Report 保留且 `improvements_status=failed`。自动与手动 retry 都复用同一 Report 与输入快照。缺失数字、职责或实验事实必须进入 missing_facts/cautions，不得进入 rewritten_answer。
@@ -235,13 +242,15 @@ P0 不推送未验证的模型 token，因此不会先把错误前提渲染给�
 
 - 无“全局激活”写接口。默认 release 固定为当前进程启动时登记的内置资产，不按最新导入版本查找；导入同一 pack_id 的新版本不得改变默认值。选择只影响新创建的面试；已创建面试使用其冻结绑定（§6）。
 - 导入幂等：相同 key + 相同上传内容 hash 复用原操作；相同 key 不同内容返回 409 `IDEMPOTENCY_CONFLICT`。相同内容不同 ZIP 重打包按内容 digest 去重复用原 release（`result.reused=true`），不生成第二项；同 `(pack_id, version)` 不同内容返回 409 `PACK_VERSION_CONFLICT`，禁止覆盖旧包。
-- 上传限制由 `config/demo.yaml knowledge_packs.limits` 集中声明（ZIP 5 MiB、解压 20 MiB、单文件 1 MiB、条目 256、压缩比 50、路径深度 5）；超限 413 `PACK_UPLOAD_TOO_LARGE`；ZIP 内绝对路径/`..`/符号链接/设备文件/加密条目/声明外文件全部拒绝（`PACK_PATH_*`/`PACK_SYMLINK_FORBIDDEN`/`PACK_ENCRYPTED`/`PACK_UNDECLARED_FILE` 等，422 类不可重试修复）。
+- 上传限制由 `config/demo.yaml knowledge_packs.limits` 集中声明（ZIP 5 MiB、解压 20 MiB、单文件 1 MiB、条目 256、压缩比 50、路径深度 5）；超限 413 `PACK_UPLOAD_TOO_LARGE`；ZIP 内绝对路径/`..`/符号链接/设备文件/加密条目/声明外文件全部拒绝（`PACK_PATH_*`/`PACK_SYMLINK_FORBIDDEN`/`PACK_ENCRYPTED`/`PACK_UNDECLARED_FILE` 等，422 类不可重试修复）。声明了 `example_jd_file` 的包在导入时按本包规则试抽取示例，识别不到任何岗位要求返回 422 `PACK_EXAMPLE_JD_INVALID`，不登记 release。
 - 普通 ZIP 目录条目（例如 `seeds/`）经过路径和类型校验后允许存在，不作为内容文件计入摘要；目录与文件同名冲突、路径穿越等仍拒绝。是否可用只由实际声明文件与内容校验决定。
-- ZIP manifest 里的 `approved` 只是作者声明，服务端一律从 `unreviewed` 开始。有效审核 = 绑定当前 `content_digest` 的包外负责人记录 ∩ Seed 内容 hash 批准范围；批准经 `scripts/manage_knowledge_pack.py` CLI 由负责人登记，HTTP 面不提供自批接口。
+- 包内 `approved/passed` 只是作者声明，不构成授权。有效审核 = 包外 owner 两级确认 + 当前包内容摘要 + 当前 `competencies.json` 规则摘要/ID/版本 + 逐 Seed 内容 hash 批准范围；经 `scripts/manage_knowledge_pack.py` 登记，HTTP 面没有自批接口。允许 draft Seed 经负责人外部两级审核后批准，避免要求修改包内自报状态造成内容摘要变化的循环。
 - Operation result：`{release_id, pack_id, version, content_digest, reused, review_status, selectable_for_new_interview}`。导入成功 ≠ 可用于技术评分。
 - 列表/详情/导入不依赖模型或候选人 embedding 就绪；没有可用包时这些入口仍可访问，仅“生成面试”能力不就绪（`/health/ready` 的 `knowledge_packs` 与 `default_pack_release_id` 增量报告）。
-- 内置 embedded-software-junior release 由启动时 `ensure_builtin` 登记，批准范围锁定为 M2-01 负责人已批六条 Seed 的固定历史版本与内容 hash；不从本次待导入文件重新计算“可信批准值”。新增或修改的内置 Seed 不会自动获批。
+- 内置 embedded-software-junior release 启动登记仍保留 M2-01 六条 Seed 的固定历史版本与内容 hash；不从待注册文件计算“可信批准值”。该旧记录没有规则两级审核事实，不能倒填为已批规则，不能用于新场；已有可证实冻结范围的历史面试不随当前审核变化。新增规则审核必须由负责人明确登记。
 - 列表与详情读取实际存储并重新核对内容摘要；损坏、缺失或不合法时 `validation_status=failed`、`selectable=false`，附真实阻断原因与完整性失败明细。历史审核记录不因损坏被改写，也不能替损坏内容取得当前使用资格；面试受理与恢复仍独立复查，不依赖浏览器标签作安全判断。
+- `competencies.json` 是规则本体而非代码注册表镜像：必须包含配置 ID/版本、唯一能力 ID 与中文名、JD 关键词规则、直接证据/相关经历关键词规则、家族借用引用。解析拒绝未知字段、重复/悬空 ID、空白或超限条目；不接受脚本、动态导入、可执行表达式或正则引擎。JD 首条匹配优先，相关经历不升级为直接证据。
+- 列表/详情补 `profile_version/profile_digest/rules_reviewed`，能力名称来自同一包。规则字节变化必须重新审核；相同包版本异内容继续拒绝覆盖，须提高包版本。规则摘要仅做内容身份，不等于规则质量审核。
 
 ## 10. 示例业务请求
 

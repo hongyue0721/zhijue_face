@@ -1,0 +1,22 @@
+{
+  "format_version": "1.0",
+  "pack_id": "python-backend-junior",
+  "version": "1.0.1",
+  "name": "Python 后端实习/初级岗位",
+  "description": "六条原创、未审核技术 Seed：Python 可变性、HTTP API、SQLite 事务、SQL 参数绑定、asyncio 阻塞与测试异常边界；含可定位官方来源与声明式能力规则。仅供负责人审核准备，不包含候选人资料或任何批准记录。",
+  "competency_profile_id": "python-backend-junior-v1",
+  "seeds": [
+    "seeds/seed_python_backend_python_mutability.json",
+    "seeds/seed_python_backend_http_api_semantics.json",
+    "seeds/seed_python_backend_sql_transaction_boundary.json",
+    "seeds/seed_python_backend_sql_parameter_binding.json",
+    "seeds/seed_python_backend_asyncio_blocking_boundary.json",
+    "seeds/seed_python_backend_testing_error_boundary.json"
+  ],
+  "competencies_file": "competencies.json",
+  "sources_file": "sources.json",
+  "example_jd_file": "examples/jd.txt",
+  "supported_scope": "Python 3.11 基础后端面试训练：对象共享/复制、HTTP 语义、Python sqlite3/SQLite 事务与值参数绑定、asyncio 同步阻塞、单元测试与异常边界；仅限逐条来源与审核事实。",
+  "unsupported_scope": "未审核技术评分、生产能力认证、真实履历/身份认证、招聘录用判断；分布式事务、生产高并发/SLA、OAuth、安全全覆盖、其他数据库/驱动默认语义与任意岗位自动外推。",
+  "source_kind": "official_document_registry"
+}

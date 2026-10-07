@@ -139,7 +139,6 @@ class CreateInterviewRequest(BaseModel):
     profile_id: str = Field(min_length=1)
     profile_revision: int = Field(ge=0)
     jd_text: str | None = Field(default=None, max_length=8000)
-    role_preset: Literal["embedded_junior"] = "embedded_junior"
     memory_enabled: bool = False
     observer_mode: bool = False
     jd_source_name: str | None = Field(default=None, min_length=1, max_length=200)

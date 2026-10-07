@@ -20,7 +20,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Claim, Profile
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
+from zhijue.domain.competency_profiles import CompetencyProfile
 from zhijue.domain.errors import DomainError, ResourceNotFoundError
 from zhijue.domain.ids import new_id
 from zhijue.domain.planning import (
@@ -116,7 +116,7 @@ class JDPlanningService:
         self,
         *,
         profile_id: str,
-        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+        profile: CompetencyProfile,
     ) -> tuple[
         dict[str, list[str]],
         dict[str, list[str]],
@@ -177,7 +177,7 @@ class JDPlanningService:
         self,
         *,
         profile_id: str,
-        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+        profile: CompetencyProfile,
     ) -> dict[str, list[str]]:
         """仅返回所选能力配置的直接证据映射。"""
         direct, _, _ = self.evidence_indices(profile_id=profile_id, profile=profile)
@@ -196,7 +196,7 @@ class JDPlanningService:
         min_competencies: int = MIN_COMPETENCIES,
         related_context_index: dict[str, list[str]] | None = None,
         relation_index: dict[str, EvidenceRelation] | None = None,
-        profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+        profile: CompetencyProfile,
     ) -> JDPlanResult:
         requirements = extract_requirements(snapshot, profile=profile)
         if not requirements:

@@ -16,9 +16,8 @@ import pytest
 
 from zhijue.application.seed_bank import load_seed_bank
 from zhijue.domain.competency_profiles import (
-    EMBEDDED_JUNIOR_V1,
     CompetencyProfileError,
-    match_registered_profile,
+    parse_competency_profile,
 )
 from zhijue.domain.knowledge_packs import (
     MANIFEST_FILE,
@@ -78,7 +77,7 @@ def test_builtin_pack_passes_full_contract() -> None:
     manifest = parse_manifest(files)
     assert manifest.pack_id == "embedded-software-junior"
     assert len(manifest.seeds) == 6
-    profile = match_registered_profile(parse_competencies(files))
+    profile = parse_competency_profile(parse_competencies(files))
     assert profile.profile_id == "embedded-junior-v1"
     sources = parse_sources(files)
     seed_payloads = {
@@ -206,21 +205,33 @@ def test_unknown_format_version_rejected() -> None:
         parse_manifest(_corrupt(files, MANIFEST_FILE, manifest))
 
 
-def test_unknown_competency_profile_rejected_not_defaulted() -> None:
-    """C04：未登记 profile 明确拒绝，不套用嵌入式关键词兜底。"""
-    declared = EMBEDDED_JUNIOR_V1.as_declared_dict()
+def test_new_competency_profile_is_data_not_code_registration() -> None:
+    declared = parse_competencies(canonical_from(builtin_files()))
     declared["competency_profile_id"] = "java-backend-v1"
-    with pytest.raises(CompetencyProfileError) as excinfo:
-        match_registered_profile(declared)
-    assert excinfo.value.code == "COMPETENCY_PROFILE_UNSUPPORTED"
-
-
-def test_competency_mirror_tampering_rejected() -> None:
-    declared = EMBEDDED_JUNIOR_V1.as_declared_dict()
     declared["jd_keyword_rules"][0]["keywords"].append("rust")
+    profile = parse_competency_profile(declared)
+    assert profile.profile_id == "java-backend-v1"
+    assert profile.jd_keyword_rules[0][0][-1] == "rust"
+
+
+@pytest.mark.parametrize(
+    "mutation", ["duplicate", "dangling", "prefix", "script", "size"]
+)
+def test_competency_profile_strict_structure_and_references(mutation) -> None:
+    declared = parse_competencies(canonical_from(builtin_files()))
+    if mutation == "duplicate":
+        declared["capabilities"].append(declared["capabilities"][0])
+    elif mutation == "dangling":
+        declared["direct_evidence_rules"][0]["competency_id"] = "undeclared.skill"
+    elif mutation == "prefix":
+        declared["seed_family_rules"][0]["target_prefix"] = "undeclared."
+    elif mutation == "script":
+        declared["jd_keyword_rules"][0]["expression"] = "eval(input)"
+    else:
+        declared["jd_keyword_rules"][0]["keywords"] = ["x" * 1000]
     with pytest.raises(CompetencyProfileError) as excinfo:
-        match_registered_profile(declared)
-    assert excinfo.value.code == "PACK_PROFILE_MISMATCH"
+        parse_competency_profile(declared)
+    assert excinfo.value.code == "PACK_PROFILE_INVALID"
 
 
 def test_dangling_reference_id_rejected() -> None:

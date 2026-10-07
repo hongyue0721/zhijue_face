@@ -1,0 +1,201 @@
+{
+  "competency_profile_id": "python-backend-junior-v1",
+  "profile_version": "1.0.0",
+  "capabilities": [
+    {
+      "competency_id": "python.data.mutability",
+      "label": "Python 数据与可变性"
+    },
+    {
+      "competency_id": "backend.http.api",
+      "label": "HTTP API 语义"
+    },
+    {
+      "competency_id": "backend.sql.transactions",
+      "label": "SQL 事务边界"
+    },
+    {
+      "competency_id": "backend.sql.parameter_binding",
+      "label": "参数绑定与 SQL 注入"
+    },
+    {
+      "competency_id": "python.asyncio.blocking",
+      "label": "asyncio 与阻塞边界"
+    },
+    {
+      "competency_id": "backend.testing.error_boundaries",
+      "label": "测试与异常边界"
+    }
+  ],
+  "jd_keyword_rules": [
+    {
+      "competency_id": "backend.sql.parameter_binding",
+      "keywords": [
+        "参数绑定",
+        "sql 注入",
+        "sql注入",
+        "参数化查询"
+      ]
+    },
+    {
+      "competency_id": "backend.sql.transactions",
+      "keywords": [
+        "sql 事务",
+        "数据库事务",
+        "事务边界",
+        "提交与回滚"
+      ]
+    },
+    {
+      "competency_id": "python.asyncio.blocking",
+      "keywords": [
+        "asyncio",
+        "异步 io",
+        "阻塞调用",
+        "事件循环"
+      ]
+    },
+    {
+      "competency_id": "backend.testing.error_boundaries",
+      "keywords": [
+        "单元测试",
+        "异常边界",
+        "错误边界",
+        "unittest",
+        "pytest"
+      ]
+    },
+    {
+      "competency_id": "backend.http.api",
+      "keywords": [
+        "http api",
+        "http 接口",
+        "rest api",
+        "restful",
+        "状态码"
+      ]
+    },
+    {
+      "competency_id": "python.data.mutability",
+      "keywords": [
+        "python 基础",
+        "python 数据结构",
+        "可变默认参数",
+        "浅拷贝",
+        "深拷贝"
+      ]
+    }
+  ],
+  "direct_evidence_rules": [
+    {
+      "competency_id": "python.data.mutability",
+      "keywords": [
+        "可变默认参数",
+        "浅拷贝",
+        "深拷贝",
+        "对象别名",
+        "列表共享"
+      ]
+    },
+    {
+      "competency_id": "backend.http.api",
+      "keywords": [
+        "http api",
+        "http 接口",
+        "状态码",
+        "post /",
+        "get /"
+      ]
+    },
+    {
+      "competency_id": "backend.sql.transactions",
+      "keywords": [
+        "数据库事务",
+        "事务回滚",
+        "事务提交",
+        "with con",
+        "begin immediate"
+      ]
+    },
+    {
+      "competency_id": "backend.sql.parameter_binding",
+      "keywords": [
+        "参数绑定",
+        "参数化查询",
+        "sql 注入",
+        "sql注入",
+        "占位符绑定"
+      ]
+    },
+    {
+      "competency_id": "python.asyncio.blocking",
+      "keywords": [
+        "asyncio",
+        "事件循环",
+        "to_thread",
+        "阻塞调用"
+      ]
+    },
+    {
+      "competency_id": "backend.testing.error_boundaries",
+      "keywords": [
+        "单元测试",
+        "异常边界",
+        "错误边界",
+        "assertraises",
+        "unittest",
+        "pytest"
+      ]
+    }
+  ],
+  "related_context_rules": [
+    {
+      "competency_id": "python.data.mutability",
+      "keywords": [
+        "python",
+        "数据处理"
+      ]
+    },
+    {
+      "competency_id": "backend.http.api",
+      "keywords": [
+        "fastapi",
+        "后端接口",
+        "web 服务"
+      ]
+    },
+    {
+      "competency_id": "backend.sql.transactions",
+      "keywords": [
+        "sqlite",
+        "数据库",
+        "数据存储"
+      ]
+    },
+    {
+      "competency_id": "backend.sql.parameter_binding",
+      "keywords": [
+        "sqlite",
+        "数据库查询",
+        "搜索接口"
+      ]
+    },
+    {
+      "competency_id": "python.asyncio.blocking",
+      "keywords": [
+        "异步",
+        "文件读取",
+        "并发请求"
+      ]
+    },
+    {
+      "competency_id": "backend.testing.error_boundaries",
+      "keywords": [
+        "回归",
+        "失败处理",
+        "输入校验"
+      ]
+    }
+  ],
+  "seed_family_rules": []
+}

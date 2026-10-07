@@ -48,25 +48,41 @@ class ScriptedContentGenerator:
             )
         if task == "coach_answers":
             items = []
+            # valid_with_claim 让第二段引用一条已确认事实，覆盖按段来源的两种类型。
+            cited = (
+                next(iter(payload["allowed_claims"].items()))
+                if mode == "valid_with_claim"
+                else None
+            )
             for root_id, root_answers in payload["answers_by_root"].items():
                 answer_id, answer_text = next(iter(root_answers.items()))
+                segments = [
+                    {
+                        "text": answer_text,
+                        "source_refs": [
+                            {
+                                "type": "answer_quote",
+                                "answer_id": answer_id,
+                                "exact_quote": answer_text,
+                            }
+                        ],
+                    }
+                ]
+                if cited is not None:
+                    segments.append(
+                        {
+                            "text": cited[1],
+                            "source_refs": [{"type": "claim", "claim_id": cited[0]}],
+                        }
+                    )
                 items.append(
                     {
                         "root_question_id": root_id,
-                        "rewritten_answer": answer_text,
-                        "segments": [
-                            {
-                                "text": answer_text,
-                                "source_refs": [
-                                    {
-                                        "type": "answer_quote",
-                                        "answer_id": answer_id,
-                                        "exact_quote": answer_text,
-                                    }
-                                ],
-                            }
-                        ],
-                        "used_claim_ids": [],
+                        "rewritten_answer": "".join(
+                            segment["text"] for segment in segments
+                        ),
+                        "segments": segments,
+                        "used_claim_ids": [cited[0]] if cited is not None else [],
                         "changes": ["保持事实不变，整理表达顺序"],
                         "missing_facts": [],
                         "cautions": [],
@@ -228,6 +244,48 @@ def test_coaching_and_resume_draft_complete_without_mutating_score(tmp_path):
         with Session(client.app.state.services.engine) as session:
             assert session.scalar(select(func.count(Report.id))) == 1
             assert session.scalar(select(func.count(ResumeDraft.id))) == 1
+
+
+def test_report_returns_text_of_claims_cited_by_improvement_segments(tmp_path):
+    """前端按段展示出处时，需要被引用的已确认事实原文，而不只是 ID。"""
+    app = create_app(
+        _config(tmp_path),
+        knowledge=InMemoryKnowledge(),
+        analyzer=ScriptedAnalyzer("adequate"),
+        generator=ScriptedContentGenerator("valid_with_claim"),
+    )
+    with TestClient(app) as client:
+        interview, report_before = _complete_after_one_answer(client)
+        assert report_before["source_claims"] == []
+        accepted = client.post(
+            f"/api/v1/interviews/{interview['id']}/report/improvements",
+            json={"expected_revision": report_before["revision"]},
+            headers={"Idempotency-Key": "content-coach-claim-key-0001"},
+        ).json()["data"]
+        operation = client.get(f"/api/v1/operations/{accepted['operation_id']}").json()[
+            "data"
+        ]
+        assert operation["status"] == "succeeded", operation["error"]
+        report = client.get(f"/api/v1/interviews/{interview['id']}/report").json()[
+            "data"
+        ]
+        item = report["improved_answers"][0]
+        cited = [
+            ref["claim_id"]
+            for segment in item["segments"]
+            for ref in segment["source_refs"]
+            if ref["type"] == "claim"
+        ]
+        assert cited and item["used_claim_ids"] == cited
+        profile = client.get(f"/api/v1/profiles/{interview['profile_id']}").json()[
+            "data"
+        ]
+        confirmed = {
+            claim["id"]: claim["text"] for claim in profile["confirmed_claims"]
+        }
+        assert report["source_claims"] == [
+            {"id": cited[0], "text": confirmed[cited[0]]}
+        ]
 
 
 def test_failed_coaching_automatically_corrects_and_preserves_original(tmp_path):

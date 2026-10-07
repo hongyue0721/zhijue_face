@@ -18,6 +18,12 @@ from uuid import uuid4
 
 import httpx
 
+SYNTHETIC_JD = (
+    "SYNTHETIC_DEMO_JD｜合成练习，不是真实招聘广告。\n"
+    "必要项：能够编写基础 C 程序；理解 MCU 中断；解释 UART DMA 调试；"
+    "说明 SPI I2C CAN 总线选择；解释 FreeRTOS 任务和共享资源。"
+)
+
 RESUME_TEXT = """合成演示资料，以下人物与经历均为虚构。
 教育：演示大学电子信息工程本科，学习 C 语言与嵌入式系统。
 项目：参与 STM32 串口数据采集课程项目，负责 UART 接收与环形缓冲区调试。
@@ -177,6 +183,8 @@ class DemoAcceptance:
             {
                 "profile_id": profile["id"],
                 "profile_revision": profile["revision"],
+                "jd_text": SYNTHETIC_JD,
+                "jd_source_name": "SYNTHETIC_DEMO_JD_live_smoke",
             },
             None,
         )

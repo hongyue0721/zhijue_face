@@ -31,7 +31,11 @@ from zhijue.application.documents import (
     _split_block_text,
 )
 from zhijue.domain.errors import DocumentRejected, UpstreamError
-from zhijue.domain.extraction import ExtractionLimits
+from zhijue.domain.extraction import (
+    ExtractionLimits,
+    PageText,
+    mark_unreadable_characters,
+)
 
 
 def _limits(**overrides):
@@ -182,6 +186,44 @@ def test_model_timeout_is_reported_as_upstream_timeout(service):
     assert raised.value.message == "P-EXTRACT 模型请求超时，请重新选择并上传文件。"
     with live_service.session() as session:
         assert session.query(Document).count() == 0
+
+
+def test_unmapped_glyphs_are_marked_and_warned_not_stored_as_control_chars(service):
+    # 字体缺少文字映射的上标「²」被 pypdf 提取成 NUL；不得把控制字符写进来源块。
+    data = make_pdf(["技能：UART、I\x00C、SPI", "第二页正常"])
+    assert "\x00" in extract_pdf_pages(data, limits=_limits())[0].text
+
+    document = service.import_document(
+        profile_id="profile_1",
+        expected_revision=0,
+        data=data,
+        filename="resume.pdf",
+        kind="resume",
+    ).document
+
+    assert document.extract_status == "parsed"
+    assert document.warnings == [
+        "第 1 页有 1 个字符无法识别，已用「\ufffd」标出；核对经历时请更正这些位置。"
+    ]
+    blocks = service.list_blocks(document.id, cursor=None, limit=20).items
+    assert blocks[0].text == "技能：UART、I\ufffdC、SPI"
+    assert (
+        hashlib.sha256(blocks[0].text.encode("utf-8")).hexdigest()
+        == blocks[0].text_hash
+    )
+
+
+def test_mark_unreadable_characters_keeps_layout_whitespace():
+    pages, warnings = mark_unreadable_characters(
+        [
+            PageText(page_number=None, text="第一行\t缩进\r\n第二行\x07"),
+            PageText(1, "干净"),
+        ]
+    )
+    assert [page.text for page in pages] == ["第一行\t缩进\r\n第二行\ufffd", "干净"]
+    assert warnings == [
+        "文本里有 1 个字符无法识别，已用「\ufffd」标出；核对经历时请更正这些位置。"
+    ]
 
 
 def test_mixed_pages_keep_readable_and_warn_on_missing(service):

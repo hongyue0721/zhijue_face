@@ -20,7 +20,7 @@ import hashlib
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
+from zhijue.domain.competency_profiles import CompetencyProfile
 from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.requisition import (
     NEVER_A_WEAKNESS,
@@ -335,7 +335,7 @@ def plan_interview_slots(
     slot_count: int = ROOT_SLOT_COUNT,
     min_competencies: int = MIN_COMPETENCIES,
     evidence_index: dict[str, list[str]] | None = None,
-    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+    profile: CompetencyProfile,
 ) -> RootPlan:
     """生成固定数量的 Interview Slots；同输入必然同输出。
 

@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
+from pack_fixtures import EMBEDDED_PROFILE
 
 from zhijue.application.seed_bank import Seed, SeedBank
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, Capability
+from zhijue.domain.competency_profiles import Capability
 from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.planning import InterviewSlot, SlotReason
 from zhijue.domain.questions import QuestionDraft, instantiate_root_questions
@@ -101,7 +102,10 @@ def test_exact_live_competency_match_wins_and_non_live_seed_is_ignored():
     unrelated = _seed("seed_unrelated", "embedded.peripheral.serial_bus")
 
     (question,) = instantiate_root_questions(
-        (slot,), _bank(draft, unrelated, approved), interview_id="interview_fixture"
+        (slot,),
+        _bank(draft, unrelated, approved),
+        interview_id="interview_fixture",
+        profile=EMBEDDED_PROFILE,
     )
 
     assert question.seed_id == approved.id
@@ -122,6 +126,7 @@ def test_rtos_family_mapping_is_deterministic_nonduplicating_and_reserves_exact_
         (broad_slot, exact_slot),
         _bank(scheduling, queue),
         interview_id="interview_fixture",
+        profile=EMBEDDED_PROFILE,
     )
 
     assert [question.seed_id for question in questions] == [queue.id, scheduling.id]
@@ -131,6 +136,7 @@ def test_rtos_family_mapping_is_deterministic_nonduplicating_and_reserves_exact_
             (broad_slot, exact_slot),
             _bank(queue, scheduling),
             interview_id="interview_fixture",
+            profile=EMBEDDED_PROFILE,
         )
         == questions
     )
@@ -147,6 +153,7 @@ def test_unsupported_slot_gets_bounded_nontechnical_experience_evidence_fallback
         (slot,),
         _bank(_seed("seed_unrelated", "embedded.mcu.interrupt")),
         interview_id="interview_fixture",
+        profile=EMBEDDED_PROFILE,
     )
 
     snapshot = question.rubric_snapshot
@@ -173,8 +180,12 @@ def test_five_slot_instantiation_is_stable_ordered_and_unique():
     )
     bank = _bank()
 
-    first = instantiate_root_questions(slots, bank, interview_id="interview_fixture")
-    second = instantiate_root_questions(slots, bank, interview_id="interview_fixture")
+    first = instantiate_root_questions(
+        slots, bank, interview_id="interview_fixture", profile=EMBEDDED_PROFILE
+    )
+    second = instantiate_root_questions(
+        slots, bank, interview_id="interview_fixture", profile=EMBEDDED_PROFILE
+    )
 
     assert first == second
     assert isinstance(first[0], QuestionDraft)
@@ -195,7 +206,7 @@ def test_seed_backed_snapshot_freezes_approved_provenance_and_nested_values():
     seed = _seed("seed_interrupt", slot.competency)
 
     (question,) = instantiate_root_questions(
-        (slot,), _bank(seed), interview_id="interview_fixture"
+        (slot,), _bank(seed), interview_id="interview_fixture", profile=EMBEDDED_PROFILE
     )
     snapshot = question.rubric_snapshot
 
@@ -237,7 +248,10 @@ def test_no_candidate_wording_exposes_internal_competency_ids():
     )
 
     questions = instantiate_root_questions(
-        (exact, unsupported), _bank(seed), interview_id="interview_fixture"
+        (exact, unsupported),
+        _bank(seed),
+        interview_id="interview_fixture",
+        profile=EMBEDDED_PROFILE,
     )
 
     for slot, question in zip((exact, unsupported), questions):
@@ -254,7 +268,7 @@ def test_unrelated_approved_seed_is_never_bound_to_non_rtos_slot():
     )
 
     (question,) = instantiate_root_questions(
-        (slot,), bank, interview_id="interview_fixture"
+        (slot,), bank, interview_id="interview_fixture", profile=EMBEDDED_PROFILE
     )
 
     assert question.seed_id is None
@@ -263,7 +277,7 @@ def test_unrelated_approved_seed_is_never_bound_to_non_rtos_slot():
 
 def test_fallback_uses_frozen_chinese_label_and_addresses_candidate():
     profile = replace(
-        EMBEDDED_JUNIOR_V1,
+        EMBEDDED_PROFILE,
         capabilities=(Capability("embedded.c.basics", "C 指针与内存管理"),),
     )
     slot = replace(
@@ -288,11 +302,18 @@ def test_duplicate_approved_stems_are_rejected_not_renumbered_or_rewritten():
         _seed("same_stem_b", slots[1].competency),
     )
     with pytest.raises(PlanningRejected, match="主问题存在重复"):
-        instantiate_root_questions(slots, bank, interview_id="duplicate_stems")
+        instantiate_root_questions(
+            slots, bank, interview_id="duplicate_stems", profile=EMBEDDED_PROFILE
+        )
 
 
 def test_duplicate_fallback_slots_are_rejected_even_with_different_ids():
     slot = _slot(1, "embedded.c.basics")
     duplicate = replace(slot, slot_id="different_id")
     with pytest.raises(PlanningRejected, match="主问题存在重复"):
-        instantiate_root_questions((slot, duplicate), _bank(), interview_id="duplicate")
+        instantiate_root_questions(
+            (slot, duplicate),
+            _bank(),
+            interview_id="duplicate",
+            profile=EMBEDDED_PROFILE,
+        )

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_fixtures import TEST_JD, approve_test_pack
 
 from zhijue.api.app import AppConfig, create_app
 from zhijue.application.profiles import ActivationReceipt
@@ -154,8 +155,12 @@ def test_list_excludes_candidate_data_and_marks_builtin_approved(client):
         i for i in body["items"] if i["pack_id"] == "embedded-software-junior"
     )
     assert builtin["review_status"] == "approved"
-    assert builtin["approved_seed_count"] == 6 and builtin["seed_count"] == 6
-    assert builtin["selectable"] is True
+    assert builtin["approved_seed_count"] == 0 and builtin["seed_count"] == 6
+    assert builtin["selectable"] is False
+    assert builtin["rules_reviewed"] is False
+    assert builtin["profile_version"] == "1.0.0"
+    assert builtin["profile_digest"].startswith("sha256:")
+    assert builtin["blocked_reasons"][0]["code"] == "PACK_RULES_REVIEW_PENDING"
     assert body["default_pack_release_id"] == builtin["pack_release_id"]
     # 候选人可见面绝不泄露参考答案/评分细则字段。
     text = json.dumps(body, ensure_ascii=False)
@@ -227,12 +232,14 @@ def test_importing_new_default_pack_version_does_not_activate_it(client, tmp_pat
             ]
             == default_id
         )
+        approve_test_pack(restarted.app.state.services.knowledge_packs)
         profile = confirmed_profile(restarted, "默认包隔离资料", "default-version")
         response = restarted.post(
             "/api/v1/interviews",
             json={
                 "profile_id": profile["id"],
                 "profile_revision": profile["revision"],
+                "jd_text": TEST_JD,
             },
             headers={"Idempotency-Key": "default-version-plan"},
         )
@@ -307,6 +314,9 @@ def test_review_then_selectable_and_freeze_on_plan(client):
         reviewer_id="review_api_owner_test",
         reviewer_role="owner",
         note="契约测试：负责人批准该条 Seed 原内容。",
+        level1_reviewed=True,
+        level2_reviewed=True,
+        rules_reviewed=True,
     )
     assert review["decision"] == "approved"
     items = client.get("/api/v1/knowledge-packs").json()["data"]["items"]
@@ -318,6 +328,7 @@ def test_review_then_selectable_and_freeze_on_plan(client):
         json={
             "profile_id": profile["id"],
             "profile_revision": profile["revision"],
+            "jd_text": TEST_JD,
             "pack_release_id": release_id,
         },
         headers={"Idempotency-Key": "plan-with-aux-pack"},
@@ -350,9 +361,14 @@ def test_default_plan_freezes_builtin_release(client):
     default_id = client.get("/api/v1/knowledge-packs").json()["data"][
         "default_pack_release_id"
     ]
+    approve_test_pack(client.app.state.services.knowledge_packs)
     planned = client.post(
         "/api/v1/interviews",
-        json={"profile_id": profile["id"], "profile_revision": profile["revision"]},
+        json={
+            "profile_id": profile["id"],
+            "profile_revision": profile["revision"],
+            "jd_text": TEST_JD,
+        },
         headers={"Idempotency-Key": "plan-default-pack"},
     )
     plan = wait_operation(client, planned.json()["data"]["operation_id"])

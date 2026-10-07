@@ -4,8 +4,8 @@
 
 - 这是对既有资源（SeedBank/能力配置/来源登记）的**加载与信任边界**，
   不是第二套 Knowledge 引擎；候选人 Knowledge 仍走 openJiuwen 原路径。
-- 包内任何 `approved` 只是作者声明。服务端有效审核 = 绑定当前
-  `content_digest` 的包外审核记录 ∩ Seed 内容 hash 范围 ∩ 声明状态门槛。
+- 包内任何 `approved` 只是作者声明。服务端有效审核必须绑定包内容摘要、
+  能力规则原始 canonical 字节摘要和包外 owner 两级确认；draft Seed 可外部批准。
 - release 不可变：`(pack_id, version)` 唯一；同摘要幂等复用，
   异摘要冲突拒绝覆盖（B09/E09）。存储文件每次解析都重算摘要，
   损坏显式失败，绝不悄悄回落默认包（D06）。
@@ -39,10 +39,9 @@ from zhijue.application.seed_bank import (
 )
 from zhijue.domain.competency_profiles import (
     CompetencyProfile,
-    get_registered_profile,
-    match_registered_profile,
+    parse_competency_profile,
 )
-from zhijue.domain.errors import DomainError, ResourceNotFoundError
+from zhijue.domain.errors import DomainError, JdRejected, ResourceNotFoundError
 from zhijue.domain.ids import new_id
 from zhijue.domain.knowledge_packs import (
     MANIFEST_FILE,
@@ -55,6 +54,7 @@ from zhijue.domain.knowledge_packs import (
     assert_seed_reference_ids_resolve,
     canonicalize_file_bytes,
     compute_content_digest,
+    file_sha256,
     parse_competencies,
     parse_manifest,
     parse_sources,
@@ -62,6 +62,11 @@ from zhijue.domain.knowledge_packs import (
     safe_extract_zip,
     seed_content_hash,
     strict_json_loads,
+)
+from zhijue.domain.requisition import (
+    JDSourceType,
+    extract_requirements,
+    make_snapshot,
 )
 
 # 内置六条 Seed 的历史批准记录（M2-01 负责人结论）。ensure_builtin 只登记
@@ -132,10 +137,17 @@ class ResolvedKnowledgePack:
     name: str
     content_digest: str
     profile: CompetencyProfile
+    profile_digest: str
+    rules_reviewed: bool
+    example_jd: str | None
     seed_bank: SeedBank
     sources: tuple[dict[str, Any], ...]
     review: dict[str, Any] | None
     binding: InterviewPackBinding
+
+
+def example_jd_source_name(pack_id: str) -> str:
+    return "SYNTHETIC_DEMO_JD_" + pack_id
 
 
 def _error(code: str, message: str, status_code: int) -> PackDomainError:
@@ -227,7 +239,9 @@ class KnowledgePackService:
     ) -> ImportOutcome:
         """校验 → 摘要 → 原子登记；同 (pack_id, version, digest) 幂等复用。"""
         manifest = parse_manifest(files)
-        profile = match_registered_profile(parse_competencies(files))
+        profile = parse_competency_profile(parse_competencies(files))
+        if profile.profile_id != manifest.competency_profile_id:
+            raise _error("PACK_PROFILE_INVALID", "manifest 与能力配置 ID 不一致。", 422)
         sources = parse_sources(files)
         checks: list[ValidationCheck] = [
             ValidationCheck(
@@ -239,10 +253,11 @@ class KnowledgePackService:
             ValidationCheck(
                 "competencies",
                 ValidationStatus.PASSED,
-                f"声明镜像与注册表 {profile.profile_id} 一致",
+                f"有限能力规则 {profile.profile_id}/{profile.profile_version} 通过严格解析",
             ),
         ]
-        seed_index = self._validate_seeds(files, manifest, sources, checks)
+        seed_index = self._validate_seeds(files, manifest, sources, checks, profile)
+        self._validate_example_jd(files, manifest, profile, checks)
         digest, index = compute_content_digest(
             pack_id=manifest.pack_id, version=manifest.version, files=files
         )
@@ -345,6 +360,7 @@ class KnowledgePackService:
         manifest: PackManifest,
         sources: tuple[dict[str, Any], ...],
         checks: list[ValidationCheck],
+        profile: CompetencyProfile,
     ) -> list[dict[str, Any]]:
         payloads: dict[str, Any] = {}
         for seed_path in manifest.seeds:
@@ -385,6 +401,8 @@ class KnowledgePackService:
         ids = [entry["seed_id"] for entry in index]
         if len(set(ids)) != len(ids):
             raise _error("PACK_DUPLICATE_SEED_ID", "包内 Seed ID 重复", 422)
+        if any(entry["competency_id"] not in profile.competency_ids for entry in index):
+            raise _error("PACK_SEED_COMPETENCY_INVALID", "Seed 引用未声明的能力。", 422)
         checks.append(
             ValidationCheck(
                 "seeds_schema",
@@ -393,6 +411,46 @@ class KnowledgePackService:
             )
         )
         return index
+
+    @staticmethod
+    def _validate_example_jd(
+        files: dict[str, bytes],
+        manifest: PackManifest,
+        profile: CompetencyProfile,
+        checks: list[ValidationCheck],
+    ) -> None:
+        """声明的示例 JD 会在未填 JD 时直接用于出题，导入时就按出题同一路径试抽取。
+
+        抽不出任何要求的示例等于声明了一份不可用的输入，应在导入时拒绝，
+        而不是等到生成计划才失败。
+        """
+        if manifest.example_jd_file is None:
+            return
+        try:
+            snapshot = make_snapshot(
+                snapshot_id="example_jd_check",
+                profile_id="example_jd_check",
+                raw_text=files[manifest.example_jd_file].decode("utf-8"),
+                source_type=JDSourceType.SYNTHETIC_DEMO_JD,
+                source_name=example_jd_source_name(manifest.pack_id),
+            )
+        except JdRejected as exc:
+            raise _error("PACK_EXAMPLE_JD_INVALID", exc.message, 422) from exc
+        requirements = extract_requirements(snapshot, profile=profile)
+        if not requirements:
+            raise _error(
+                "PACK_EXAMPLE_JD_INVALID",
+                "示例 JD 按本包能力规则识别不到任何岗位要求；"
+                "需要「必要项：」「加分项：」等显式分区，且条目命中 JD 关键词。",
+                422,
+            )
+        checks.append(
+            ValidationCheck(
+                "example_jd",
+                ValidationStatus.PASSED,
+                f"示例 JD 按本包规则识别出 {len(requirements)} 条岗位要求",
+            )
+        )
 
     def import_pack_bytes(
         self, zip_bytes: bytes, *, operation_id: str | None = None
@@ -431,11 +489,11 @@ class KnowledgePackService:
     # ---------------------------------------------------------------- 内置迁移
 
     def ensure_builtin_release(self) -> KnowledgePackRelease:
-        """把仓库内置资产登记为 release，并映射负责人历史批准范围。
+        """Register built-in assets and retain only historical Seed approval facts.
 
-        只继承 M2-01 已批准六条的范围（逐条内容 hash）；任何新增/改写
-        内容不会因此获得批准。同摘要幂等复用；异摘要冲突属于资产变更，
-        必须走新的审核而不是静默重批。
+        M2-01 approved six exact Seed byte hashes, not competency mapping rules.
+        This migration leaves all new rule-review columns NULL and never permits
+        a new plan until an owner explicitly reviews both levels and rules.
         """
         root = self._repo_root / BUILTIN_PACK_STORAGE_ROOT
         if not root.is_dir():
@@ -539,6 +597,12 @@ class KnowledgePackService:
             "reviewed_at": review.reviewed_at,
             "content_digest": review.content_digest,
             "approved_seed_scope": list(review.approved_seed_scope),
+            "competency_profile_id": review.competency_profile_id,
+            "profile_version": review.profile_version,
+            "profile_digest": review.profile_digest,
+            "level1_reviewed": review.level1_reviewed,
+            "level2_reviewed": review.level2_reviewed,
+            "rules_reviewed": review.rules_reviewed,
         }
 
     def record_review(
@@ -551,6 +615,9 @@ class KnowledgePackService:
         reviewer_role: str,
         note: str,
         approved_seed_ids: list[str] | None = None,
+        level1_reviewed: bool = False,
+        level2_reviewed: bool = False,
+        rules_reviewed: bool = False,
     ) -> dict[str, Any]:
         """负责人登记审核结论（CLI 与测试信任注入共用此入口）。
 
@@ -564,6 +631,20 @@ class KnowledgePackService:
                 "INVALID_REQUEST",
                 "负责人标识与审核备注必须非空（谁在何时批了什么）",
                 400,
+            )
+        if reviewer_role != "owner":
+            raise _error(
+                "PACK_REVIEW_OWNER_REQUIRED", "审核登记必须由 owner 完成。", 403
+            )
+        if decision == "approved" and not (
+            level1_reviewed is True
+            and level2_reviewed is True
+            and rules_reviewed is True
+        ):
+            raise _error(
+                "PACK_REVIEW_CONFIRMATION_REQUIRED",
+                "批准必须显式确认 Level 1、Level 2 及能力规则内容均已核对。",
+                422,
             )
         with Session(self._engine, expire_on_commit=False) as session, session.begin():
             row = session.get(KnowledgePackRelease, release_id)
@@ -579,6 +660,8 @@ class KnowledgePackService:
                     "期望摘要与当前 release 实际内容不符；拒绝登记审核。",
                     409,
                 )
+            profile = parse_competency_profile(parse_competencies(files))
+            profile_digest = "sha256:" + file_sha256(files["competencies.json"])
             seed_index = row.manifest_snapshot.get("seed_index", [])
             scope: list[dict[str, Any]] = []
             if decision == "approved":
@@ -595,13 +678,6 @@ class KnowledgePackService:
                 for entry in seed_index:
                     if wanted is not None and entry["seed_id"] not in wanted:
                         continue
-                    if entry["declared_review_status"] != "approved":
-                        raise _error(
-                            "PACK_REVIEW_SCOPE_INVALID",
-                            f"Seed {entry['seed_id']} 包内声明未达 approved；"
-                            "批准范围只覆盖两级审核通过的原文。",
-                            422,
-                        )
                     scope.append(
                         {
                             "seed_id": entry["seed_id"],
@@ -618,6 +694,12 @@ class KnowledgePackService:
                 reviewer_role=reviewer_role,
                 note=note,
                 approved_seed_scope=scope,
+                competency_profile_id=profile.profile_id,
+                profile_version=profile.profile_version,
+                profile_digest=profile_digest,
+                level1_reviewed=level1_reviewed,
+                level2_reviewed=level2_reviewed,
+                rules_reviewed=rules_reviewed,
                 reviewed_at=utc_now_rfc3339(),
             )
             session.add(review)
@@ -628,17 +710,35 @@ class KnowledgePackService:
         self, session: Session, row: KnowledgePackRelease
     ) -> int:
         review = self.effective_review(session, row)
-        if review is None or review["decision"] != "approved":
+        files = self._load_canonical_files(row)
+        profile = parse_competency_profile(parse_competencies(files))
+        if not self._rules_reviewed(
+            review, profile, "sha256:" + file_sha256(files["competencies.json"])
+        ):
             return 0
         scope = {
-            entry["seed_content_sha256"] for entry in review["approved_seed_scope"]
+            (entry["seed_id"], entry["seed_version"], entry["seed_content_sha256"])
+            for entry in review["approved_seed_scope"]
         }
-        threshold = REVIEW_RANK[self._live_allowed_review_status]
         return sum(
-            1
+            (entry["seed_id"], entry["seed_version"], entry["content_sha256"]) in scope
             for entry in row.manifest_snapshot.get("seed_index", [])
-            if entry["content_sha256"] in scope
-            and REVIEW_RANK.get(entry["declared_review_status"], -1) >= threshold
+        )
+
+    @staticmethod
+    def _rules_reviewed(
+        review: dict[str, Any] | None, profile: CompetencyProfile, profile_digest: str
+    ) -> bool:
+        return bool(
+            review is not None
+            and review.get("decision") == "approved"
+            and review.get("reviewer_role") == "owner"
+            and review.get("level1_reviewed") is True
+            and review.get("level2_reviewed") is True
+            and review.get("rules_reviewed") is True
+            and review.get("competency_profile_id") == profile.profile_id
+            and review.get("profile_version") == profile.profile_version
+            and review.get("profile_digest") == profile_digest
         )
 
     # ---------------------------------------------------------------- 解析边界
@@ -647,6 +747,7 @@ class KnowledgePackService:
         self, release_id: str, *, binding: InterviewPackBinding | None = None
     ) -> ResolvedKnowledgePack:
         """Validate bytes on every load; existing interviews use admission review facts."""
+        legacy_snapshot = False
         with Session(self._engine, expire_on_commit=False) as session:
             row = session.get(KnowledgePackRelease, release_id)
             if row is None:
@@ -677,7 +778,7 @@ class KnowledgePackService:
                 review = snapshot.get("review")
                 review_status = snapshot.get("live_allowed_review_status")
                 if (
-                    snapshot.get("schema_version") != 1
+                    snapshot.get("schema_version") not in (1, 2)
                     or not isinstance(review, dict)
                     or review.get("decision") != "approved"
                     or review.get("content_digest") != row.content_digest
@@ -687,10 +788,18 @@ class KnowledgePackService:
                     raise _error(
                         "PACK_REVIEW_SNAPSHOT_INVALID", "冻结审核快照无效。", 409
                     )
+                legacy_snapshot = snapshot["schema_version"] == 1
         files = self._load_canonical_files(row)
-        profile = get_registered_profile(row.competency_profile_id)
+        profile = parse_competency_profile(parse_competencies(files))
+        profile_digest = "sha256:" + file_sha256(files["competencies.json"])
         manifest = parse_manifest(files)
-        match_registered_profile(parse_competencies(files))
+        if profile.profile_id != row.competency_profile_id:
+            raise _error("PACK_PROFILE_INVALID", "能力配置身份与 release 不符。", 503)
+        rules_reviewed = self._rules_reviewed(review, profile, profile_digest)
+        if binding is not None and not legacy_snapshot and not rules_reviewed:
+            raise _error(
+                "PACK_REVIEW_SNAPSHOT_INVALID", "冻结的两级规则审核无效。", 409
+            )
         sources = parse_sources(files)
         # seed_id → 内容 hash 的唯一权威映射来自与摘要一起校验过的文件本体。
         hash_by_seed_id: dict[str, str] = {}
@@ -699,6 +808,10 @@ class KnowledgePackService:
             payload = strict_json_loads(
                 files[seed_path].decode("utf-8"), path=seed_path
             )
+            if payload["competency_id"] not in profile.competency_ids:
+                raise _error(
+                    "PACK_SEED_COMPETENCY_INVALID", "Seed 引用未声明能力。", 503
+                )
             hash_by_seed_id[payload["id"]] = seed_content_hash(files[seed_path])
             payloads[seed_path] = payload
         assert_seed_reference_ids_resolve(payloads, sources)
@@ -719,7 +832,11 @@ class KnowledgePackService:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         scope: set[tuple[str, str, str]] = set()
-        if review is not None and review["decision"] == "approved":
+        if (
+            review is not None
+            and review["decision"] == "approved"
+            and (rules_reviewed or legacy_snapshot)
+        ):
             scope = {
                 (
                     entry["seed_id"],
@@ -733,12 +850,16 @@ class KnowledgePackService:
             seed
             for seed in full_bank.seeds
             if (seed.id, seed.version, hash_by_seed_id.get(seed.id)) in scope
-            and REVIEW_RANK.get(seed.review_status, -1) >= threshold
+            and (
+                not legacy_snapshot
+                or REVIEW_RANK.get(seed.review_status, -1) >= threshold
+            )
         ]
         bank = SeedBank(
             eligible,
             schema_version=full_bank.schema_version,
             live_allowed_review_status=review_status,
+            externally_approved=not legacy_snapshot,
         )
         if (
             binding is not None
@@ -753,7 +874,7 @@ class KnowledgePackService:
             competency_profile_id=row.competency_profile_id,
             seed_bank_version=bank.version_fingerprint(),
             review_snapshot={
-                "schema_version": 1,
+                "schema_version": 1 if legacy_snapshot else 2,
                 "review": review,
                 "live_allowed_review_status": review_status,
             },
@@ -765,6 +886,13 @@ class KnowledgePackService:
             name=row.name,
             content_digest=row.content_digest,
             profile=profile,
+            profile_digest=profile_digest,
+            rules_reviewed=rules_reviewed,
+            example_jd=(
+                files[manifest.example_jd_file].decode("utf-8")
+                if manifest.example_jd_file is not None
+                else None
+            ),
             seed_bank=bank,
             sources=sources,
             review=review,
@@ -817,7 +945,28 @@ class KnowledgePackService:
                     "message": "负责人审核未通过：" + review["note"],
                 }
             )
+        if not resolved.rules_reviewed and not reasons:
+            reasons.append(
+                {
+                    "code": "PACK_RULES_REVIEW_PENDING",
+                    "message": "能力规则尚未获绑定当前内容的 owner Level 1 / Level 2 审核。",
+                }
+            )
         return (not reasons), reasons
+
+    def example_jd(self, requested_release_id: str | None) -> tuple[str, str]:
+        """Only the selected pack's explicit example may supply an omitted JD."""
+        release_id = requested_release_id or self._default_release_id
+        if release_id is None:
+            raise _error(
+                "SERVICE_NOT_READY", "没有默认岗位包，请显式选包并提供 JD。", 503
+            )
+        resolved = self.resolve(release_id)
+        if resolved.example_jd is None or not resolved.example_jd.strip():
+            raise _error(
+                "JD_REQUIRED", "所选岗位包未声明示例 JD，请提供 jd_text。", 422
+            )
+        return resolved.example_jd, example_jd_source_name(resolved.pack_id)
 
     # ---------------------------------------------------------------- 视图
 
@@ -895,17 +1044,30 @@ class KnowledgePackService:
             files = self._load_canonical_files(row)
         except DomainError as exc:
             integrity_error = exc.code
-        return self._item_dict(row, review, integrity_error), files, integrity_error
+        return (
+            self._item_dict(row, review, integrity_error, files),
+            files,
+            integrity_error,
+        )
 
     def _item_dict(
         self,
         row: KnowledgePackRelease,
         review: dict[str, Any] | None,
         integrity_error: str | None,
+        files: dict[str, bytes],
     ) -> dict[str, Any]:
         """裁剪展示视图：绝不包含 rubric/reference_points/参考答案/Seed 正文。"""
         review_status = ReviewStatus.UNREVIEWED
         blocked: list[dict[str, str]] = []
+        profile = None
+        profile_digest = None
+        if files:
+            profile = parse_competency_profile(parse_competencies(files))
+            profile_digest = "sha256:" + file_sha256(files["competencies.json"])
+        rules_reviewed = profile is not None and self._rules_reviewed(
+            review, profile, profile_digest
+        )
         if integrity_error is not None:
             blocked.append(
                 {
@@ -927,30 +1089,21 @@ class KnowledgePackService:
             )
         else:
             review_status = ReviewStatus.APPROVED
+        if review_status == ReviewStatus.APPROVED and not rules_reviewed:
+            blocked.append(
+                {
+                    "code": "PACK_RULES_REVIEW_PENDING",
+                    "message": "能力规则尚未获当前内容的 owner 两级审核。",
+                }
+            )
         selectable = row.validation_status == ValidationStatus.PASSED and not blocked
         scope_hashes: set[str] = set()
-        if (
-            review is not None
-            and review["decision"] == "approved"
-            and not integrity_error
-        ):
+        if rules_reviewed and not integrity_error:
             scope_hashes = {
                 entry["seed_content_sha256"] for entry in review["approved_seed_scope"]
             }
         capabilities: list[dict[str, Any]] = []
-        try:
-            profile = get_registered_profile(row.competency_profile_id)
-        except ValueError:
-            selectable = False
-            blocked.append(
-                {
-                    "code": "COMPETENCY_PROFILE_UNSUPPORTED",
-                    "message": "能力配置未在服务端注册。",
-                }
-            )
-            profile = None
         if profile is not None:
-            threshold = REVIEW_RANK[self._live_allowed_review_status]
             seed_index = row.manifest_snapshot.get("seed_index", [])
             for capability in profile.capabilities:
                 covered = any(
@@ -963,8 +1116,6 @@ class KnowledgePackService:
                         )
                     )
                     and entry["content_sha256"] in scope_hashes
-                    and REVIEW_RANK.get(entry["declared_review_status"], -1)
-                    >= threshold
                     for entry in seed_index
                 )
                 capabilities.append(
@@ -974,7 +1125,10 @@ class KnowledgePackService:
                         "technical_seed_available": covered,
                     }
                 )
-        approved = row.approved_seed_count if scope_hashes else 0
+        approved = sum(
+            entry["content_sha256"] in scope_hashes
+            for entry in row.manifest_snapshot.get("seed_index", [])
+        )
         review_summary = None
         if review is not None:
             review_summary = {
@@ -991,6 +1145,9 @@ class KnowledgePackService:
             "content_digest": row.content_digest,
             "format_version": row.format_version,
             "competency_profile_id": row.competency_profile_id,
+            "profile_version": profile.profile_version if profile else None,
+            "profile_digest": profile_digest,
+            "rules_reviewed": bool(rules_reviewed),
             "scope_summary": row.supported_scope,
             "unsupported_scope": row.unsupported_scope,
             "validation_status": str(ValidationStatus.FAILED)
@@ -1018,24 +1175,46 @@ class KnowledgePackService:
             return {
                 "binding": "legacy_unresolved",
                 "pack_release_id": None,
+                "profile_version": None,
+                "profile_digest": None,
+                "capabilities": [],
                 "note": (
                     "历史会话没有可证实的岗位包绑定；保留原报告与冻结题目，"
                     "继续新面试需重新创建计划并显式选择岗位包。"
                 ),
             }
         name = version = pack_id = None
+        profile_version = profile_digest = None
+        capabilities: list[dict[str, str]] = []
         with Session(self._engine) as session:
             row = session.get(KnowledgePackRelease, pack_release_id)
             if row is not None and row.content_digest == pack_content_digest:
                 name, version, pack_id = row.name, row.version, row.pack_id
+                try:
+                    files = self._load_canonical_files(row)
+                    profile = parse_competency_profile(parse_competencies(files))
+                    profile_version = profile.profile_version
+                    profile_digest = "sha256:" + file_sha256(files["competencies.json"])
+                    capabilities = [
+                        {"competency_id": c.competency_id, "label": c.label}
+                        for c in profile.capabilities
+                    ]
+                except (DomainError, ValueError):
+                    # Stored questions/reports remain readable; do not guess labels.
+                    pass
         return {
-            "binding": "frozen" if pack_id is not None else "frozen_unavailable",
+            "binding": "frozen"
+            if profile_version is not None
+            else "frozen_unavailable",
             "pack_release_id": pack_release_id,
             "pack_id": pack_id,
             "name": name,
             "version": version,
             "content_digest": pack_content_digest,
             "competency_profile_id": competency_profile_id,
+            "profile_version": profile_version,
+            "profile_digest": profile_digest,
+            "capabilities": capabilities,
         }
 
     # ---------------------------------------------------------------- 导入回执

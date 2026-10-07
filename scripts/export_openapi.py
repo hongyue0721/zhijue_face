@@ -16,16 +16,23 @@ sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
 
 
 def main() -> int:
-    import tempfile
+    from tempfile import TemporaryDirectory
 
-    runtime = tempfile.mkdtemp(prefix="zhijue-openapi-")
-    import os
+    from zhijue.api.app import AppConfig, create_app
 
-    os.environ.setdefault("ZHIJUE_RUNTIME_DIR", runtime)
-    os.environ.setdefault("ZHIJUE_RUN_MODE", "fixture")
-    from zhijue.api.app import create_default_app
-
-    document = create_default_app().openapi()
+    # Contract export never reads private model/embedding env or a user runtime DB.
+    with TemporaryDirectory(prefix="zhijue-openapi-") as temporary:
+        runtime = Path(temporary)
+        app = create_app(AppConfig(
+            run_mode="fixture",
+            database_url=f"sqlite:///{runtime / 'contract.db'}",
+            runtime_dir=runtime,
+            milvus_uri=runtime / "knowledge.db",
+        ))
+        try:
+            document = app.openapi()
+        finally:
+            app.state.services.engine.dispose()
     target = ROOT / "contracts" / "openapi.json"
     target.write_text(
         json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

@@ -11,7 +11,7 @@ WEB_DIR := apps/web
 NODE ?= node
 PY := $(API_DIR)/.venv/bin/python
 
-.PHONY: help doctor check test test-live lint spec integrity api web dev setup demo-fixture demo-live competition-bundle verify-bundle checksums openapi
+.PHONY: help doctor check test test-live lint spec integrity api web dev setup demo-fixture demo-live knowledge-pack competition-bundle verify-bundle checksums openapi
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n", $$1, $$2}'
@@ -62,6 +62,10 @@ openapi: ## 重新导出 contracts/openapi.json（路由/DTO 变更后必须执�
 
 checksums: ## 重新生成 CHECKSUMS.sha256（与 doctor 口径一致）
 	$(PY) scripts/write_checksums.py
+
+knowledge-pack: ## 把岗位知识包目录打成可上传 ZIP：make knowledge-pack PACK=knowledge_packs/python_backend_junior
+	@test -n "$(PACK)" || { echo "需要 PACK=<岗位知识包目录>"; exit 2; }
+	$(PY) scripts/build_knowledge_pack.py "$(PACK)"
 
 competition-bundle: ## 生成参赛源码发行包（zip + sha256）
 	$(PY) scripts/build_bundle.py

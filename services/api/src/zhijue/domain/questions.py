@@ -13,7 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from zhijue.domain.competency_profiles import EMBEDDED_JUNIOR_V1, CompetencyProfile
+from zhijue.domain.competency_profiles import CompetencyProfile
 from zhijue.domain.errors import PlanningRejected
 from zhijue.domain.planning import InterviewSlot
 from zhijue.domain.requisition import CoverageStatus
@@ -41,15 +41,14 @@ def instantiate_root_questions(
     seed_bank: SeedBank,
     *,
     interview_id: str,
-    profile: CompetencyProfile = EMBEDDED_JUNIOR_V1,
+    profile: CompetencyProfile,
 ) -> tuple[QuestionDraft, ...]:
     """Instantiate exactly one deterministic root question per input slot.
 
     Exact competency matches are allocated before the family mappings
     declared by the interview's frozen CompetencyProfile.  This prevents an
     early generic slot from consuming a seed needed by a later exact slot.
-    A seed is never reused within one plan.  Embedded behaviour is unchanged:
-    ``embedded-junior-v1`` carries the historical RTOS family rule.
+    A seed is never reused within one plan.
     """
 
     ordered_slots = tuple(slots)
@@ -70,8 +69,7 @@ def instantiate_root_questions(
             assigned[index] = seed
             used_seed_ids.add(seed.id)
 
-    # 家族借用只允许 profile.seed_family_rules 显式声明的根槽位；
-    # embedded-junior-v1 即原“RTOS fundamentals → embedded.rtos.*”规则。
+    # Family borrowing is limited to the selected profile's explicit rules.
     for index, slot in enumerate(ordered_slots):
         if assigned[index] is not None:
             continue
@@ -111,7 +109,10 @@ def instantiate_root_questions(
                 kind="main",
                 seed_id=seed.id if seed is not None else None,
                 wording=wording,
-                basis=_slot_basis(slot),
+                basis={
+                    **_slot_basis(slot),
+                    "competency_label": profile.label_for(slot.competency),
+                },
                 rubric_snapshot=snapshot,
                 order_index=order_index,
             )

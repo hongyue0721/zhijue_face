@@ -1,0 +1,13 @@
+Python 后端实习/初级岗位知识包 1.0.1
+
+本包为项目作者原创的审核准备材料，包含有限声明式能力规则、六条原创技术 Seed、评分细则、来源登记及 SYNTHETIC_DEMO_JD。没有真实候选人资料、企业招聘公告或生产绩效数据。
+
+所有 Seed 的 review_status 为 draft，Level 1 / Level 2 的 reviewer_role 均为 owner、status 均为 pending，checked 为空、at 与 review_record_id 为 null。助手读取官方资料仅为来源核对，不是负责人审核；包内任何声明不能替代包外负责人对精确内容摘要、规则版本及批准 Seed 字节范围的两级审核。
+
+官方文档仅通过 sources.json 登记 URL、版本/更新时间与段落定位，不随包复制全文。Python 文档由 Python Software Foundation 发布，许可参见官方页面；RFC 9110 由 IETF / RFC Editor 发布，版权及许可参见 RFC 正文；SQLite 文档来源为 SQLite 官方站。本包的中文题面、要点和评分描述是原创转述或明确标记的工程推导，不冒充官方原文，也不对来源页面签署批准。
+
+sources.json 的 content_sha256 为 null：本包未存档官方页面原始字节，不能用阅读器输出冒充原文快照或发布版指纹。SQLite 在线页面没有绑定具体引擎发行号，Python 内容只核对 3.11 文档；不得外推其他驱动/运行时、全面安全、真实履历或录用结论。
+
+负责人审核入口：docs/reviews/python-backend-junior-review.md（仓库外层审核材料，不进入本包 ZIP）。可上传 ZIP 由 make knowledge-pack PACK=knowledge_packs/python_backend_junior 从本目录确定性生成（产物不入库）；本 NOTICE 不声明 ZIP 校验通过或岗位已批准。
+
+1.0.1 相对 1.0.0：示例 JD 改用显式「必要项：」分区（1.0.0 的示例在本包规则下识别不到任何要求），能力规则与六条 Seed 字节未变。

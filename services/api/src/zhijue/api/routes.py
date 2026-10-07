@@ -602,24 +602,7 @@ def get_document_blocks(
 
 # ---- M2-02：JD 与五题计划（卡面：固定快照 + 生成五题计划，成功 ready）----
 
-PRESET_JD_SOURCE = "SYNTHETIC_DEMO_JD_preset_embedded_junior"
 USER_JD_SOURCE = "USER_PROVIDED_JD"
-
-
-def _preset_jd_path() -> Any:
-    from pathlib import Path
-
-    here = Path(__file__).resolve()
-    for candidate in here.parents:
-        path = candidate / "data/jd/preset_embedded_junior.txt"
-        if path.is_file():
-            return path
-    raise ApiError(
-        status_code=503,
-        code="SERVICE_NOT_READY",
-        message="合成 Demo JD 不可用，请显式提供 jd_text。",
-        retryable=True,
-    )
 
 
 @router.post("/interviews", status_code=202)
@@ -635,18 +618,10 @@ def create_interview(
     """
     key = _require_idempotency_key(idempotency_key)
     services = request.app.state.services
-    if payload.role_preset != "embedded_junior":
-        raise ApiError(
-            status_code=422,
-            code="SCHEMA_VALIDATION_FAILED",
-            message="P0 仅支持 role_preset=embedded_junior。",
-        )
 
     jd_text = payload.jd_text
     if jd_text is None:
-        path = _preset_jd_path()
-        jd_text = path.read_text(encoding="utf-8")
-        source_name = PRESET_JD_SOURCE
+        source_name = "SYNTHETIC_DEMO_JD_selected_pack"
         jd_source_type = JDSourceType.SYNTHETIC_DEMO_JD
     else:
         source_name = payload.jd_source_name or USER_JD_SOURCE
@@ -657,7 +632,9 @@ def create_interview(
     request_input = {
         "profile_id": payload.profile_id,
         "expected_revision": payload.profile_revision,
-        "jd_sha256": hashlib.sha256(jd_text.encode("utf-8")).hexdigest(),
+        "jd_sha256": hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
+        if jd_text is not None
+        else None,
         "jd_source_name": source_name,
         "jd_source_type": jd_source_type.value,
         # Hash the explicit selection, never the mutable server default.
@@ -679,8 +656,10 @@ def create_interview(
             )
         return envelope(_accepted(replay).model_dump(), _ctx(request).request_id)
     # 受理时冻结（主文件 §3）：release + 内容摘要 + 能力配置随本场落库；
-    # 不可选择（未审核/损坏/未注册 profile）在这里同步拒绝，不进入后台。
+    # 不可选择（未审规则/损坏）同步拒绝；未知岗位 profile 经严格数据解析可使用。
     binding = services.knowledge_packs.freeze_for_new_plan(payload.pack_release_id)
+    if jd_text is None:
+        jd_text, source_name = services.knowledge_packs.example_jd(binding.release_id)
     accepted = services.interviews.accept_plan(
         profile_id=payload.profile_id,
         expected_revision=payload.profile_revision,

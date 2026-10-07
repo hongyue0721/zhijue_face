@@ -39,7 +39,11 @@ from zhijue.domain.errors import (
     ServiceUnavailableError,
     UpstreamError,
 )
-from zhijue.domain.extraction import ExtractionLimits, decide_status
+from zhijue.domain.extraction import (
+    ExtractionLimits,
+    decide_status,
+    mark_unreadable_characters,
+)
 from zhijue.domain.ids import new_id
 
 _ALLOWED_KINDS = {"resume", "project"}
@@ -220,8 +224,11 @@ class DocumentService:
             )
 
         sniffed = sniff_kind(data)
-        pages = self._extractors[sniffed](data, limits=self.limits)
+        pages, unreadable_warnings = mark_unreadable_characters(
+            self._extractors[sniffed](data, limits=self.limits)
+        )
         status, warnings = decide_status(pages)
+        warnings.extend(unreadable_warnings)
         blocks = [
             SourceBlockWrite(
                 id=new_id("block"),

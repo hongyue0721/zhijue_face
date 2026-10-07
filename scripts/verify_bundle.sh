@@ -97,11 +97,15 @@ api_port, web_port = free_ports()
 runtime = Path("runtime/bundle-verification").resolve()
 runtime.mkdir(parents=True)
 environment = {
-    **os.environ,
+    key: value for key, value in os.environ.items()
+    if key not in {"ZHIJUE_MODEL_ENV_FILE", "ZHIJUE_EMBEDDING_ENV_FILE"}
+}
+environment.update({
     "ZHIJUE_RUNTIME_DIR": str(runtime),
+    "ZHIJUE_DATABASE_URL": f"sqlite:///{runtime / 'business.db'}",
     "ZHIJUE_DEMO_API_PORT": str(api_port),
     "ZHIJUE_DEMO_WEB_PORT": str(web_port),
-}
+})
 with (runtime / "launcher.log").open("w") as log:
     launcher = subprocess.Popen(
         ["bash", "scripts/demo.sh", "fixture"],
@@ -147,7 +151,24 @@ with (runtime / "launcher.log").open("w") as log:
                 return response.json()["data"]
 
             packs = get("/knowledge-packs")
-            release = next(p for p in packs["items"] if p["selectable"])
+            release = next(
+                p for p in packs["items"]
+                if p["pack_release_id"] == packs["default_pack_release_id"]
+            )
+            assert not release["rules_reviewed"] and not release["selectable"]
+            # Only this disposable synthetic verification database receives test
+            # trust. This is not owner approval of shipped rules or source material.
+            subprocess.run([
+                "services/api/.venv/bin/python", "scripts/manage_knowledge_pack.py",
+                "review", "--release-id", release["pack_release_id"],
+                "--expect-digest", release["content_digest"],
+                "--decision", "approved", "--reviewer", "TEST_ONLY_BUNDLE",
+                "--role", "owner", "--note", "Synthetic acceptance trust injection; not owner approval",
+                "--confirm-content-reviewed", "--confirm-level1-reviewed",
+                "--confirm-level2-reviewed", "--confirm-rules-reviewed",
+            ], env=environment, check=True, capture_output=True, text=True)
+            release = get("/knowledge-packs/" + release["pack_release_id"])
+            assert release["selectable"] and release["rules_reviewed"]
             profile = post("/profiles", {"display_name": "发行验证合成资料", "synthetic": True})
             path = "/profiles/" + profile["id"]
             post(path + "/facts", {
@@ -171,6 +192,10 @@ with (runtime / "launcher.log").open("w") as log:
             plan = post("/interviews", {
                 "profile_id": profile["id"], "profile_revision": profile["revision"],
                 "pack_release_id": release["pack_release_id"],
+                "jd_text": "岗位：嵌入式软件实习生（发行验证合成 JD）\n必要项：\n"
+                           "熟悉 C 语言基础\n了解 UART/DMA 调试\n"
+                           "了解 FreeRTOS 任务、队列与共享资源\n了解中断与 NVIC",
+                "jd_source_name": "发行验证合成 JD",
             })
             await_operation(client, plan)
             interview_path = "/interviews/" + plan["resource_id"]

@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from pack_fixtures import approve_test_pack
 from sqlalchemy.orm import Session
 
 from zhijue.adapters.db.models import Base, KnowledgePackRelease, KnowledgePackReview
@@ -55,12 +56,16 @@ def review(service, binding, *, decision, ids=None):
         reviewer_role="owner",
         note="Explicit test-only review decision",
         approved_seed_ids=ids,
+        level1_reviewed=True,
+        level2_reviewed=True,
+        rules_reviewed=True,
     )
 
 
 def test_admission_scope_survives_revocation_but_new_interviews_do_not(pack_service):
     service, _, _ = pack_service
     release = service.ensure_builtin_release()
+    approve_test_pack(service, release.id)
     binding = service.freeze_for_new_plan(release.id)
     original = service.resolve(release.id, binding=binding)
     review(service, binding, decision="rejected")
@@ -78,6 +83,7 @@ def test_admission_scope_survives_revocation_but_new_interviews_do_not(pack_serv
 def test_new_admissions_use_changed_scope_while_old_scope_is_stable(pack_service):
     service, _, _ = pack_service
     release = service.ensure_builtin_release()
+    approve_test_pack(service, release.id)
     old = service.freeze_for_new_plan(None)
     chosen = next(iter(BUILTIN_APPROVED_SEEDS))
     review(service, old, decision="approved", ids=[chosen])
@@ -96,6 +102,7 @@ def test_new_admissions_use_changed_scope_while_old_scope_is_stable(pack_service
 def test_frozen_scope_still_rejects_corrupted_content(pack_service):
     service, _, repo = pack_service
     release = service.ensure_builtin_release()
+    approve_test_pack(service, release.id)
     binding = service.freeze_for_new_plan(release.id)
     path = repo / BUILTIN_PACK_STORAGE_ROOT / "sources.json"
     path.write_bytes(path.read_bytes() + b"\n")
@@ -130,6 +137,7 @@ def test_legacy_and_invalid_bindings_never_borrow_latest_approval(
 ):
     service, _, _ = pack_service
     release = service.ensure_builtin_release()
+    approve_test_pack(service, release.id)
     binding = replace(service.freeze_for_new_plan(release.id), **changes)
     with pytest.raises(PackDomainError) as error:
         service.resolve(release.id, binding=binding)
@@ -139,7 +147,11 @@ def test_legacy_and_invalid_bindings_never_borrow_latest_approval(
 def test_historical_baseline_matches_unchanged_reviewed_assets(pack_service):
     service, _, repo = pack_service
     release = service.ensure_builtin_release()
-    assert release.approved_seed_count == 6
+    assert release.approved_seed_count == 0
+    assert service.detail_view(release.id)["rules_reviewed"] is False
+    with pytest.raises(PackDomainError) as error:
+        service.freeze_for_new_plan(release.id)
+    assert error.value.code == "PACK_RULES_REVIEW_PENDING"
     for seed_id, (version, digest) in BUILTIN_APPROVED_SEEDS.items():
         path = repo / BUILTIN_PACK_STORAGE_ROOT / "seeds" / f"{seed_id}.json"
         raw = canonicalize_file_bytes(path.read_bytes(), path=path.name)

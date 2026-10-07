@@ -36,6 +36,7 @@ from zhijue.adapters.db.models import (
     utc_now_rfc3339,
 )
 from zhijue.adapters.db.operations import OperationCommand, OperationRepository
+from zhijue.domain.claims import SourcePosition, order_claims_for_reading
 from zhijue.domain.errors import (
     CapacityLimitedError,
     InvalidStateError,
@@ -176,7 +177,35 @@ class ProfileRepository:
                     .order_by(Document.created_at, Document.id)
                 )
             )
-            return view, claims, documents
+            positions = self._source_positions(session, documents)
+            return view, order_claims_for_reading(claims, positions), documents
+
+    @staticmethod
+    def _source_positions(
+        session: Session, documents: list[Document]
+    ) -> dict[str, SourcePosition]:
+        """同一读快照内的来源块位置；文档按登记先后编号。"""
+        rank = {document.id: index for index, document in enumerate(documents)}
+        if not rank:
+            return {}
+        blocks = session.execute(
+            select(
+                SourceBlock.id,
+                SourceBlock.document_id,
+                SourceBlock.page_number,
+                SourceBlock.block_index,
+                SourceBlock.text,
+            ).where(SourceBlock.document_id.in_(rank))
+        )
+        return {
+            block_id: SourcePosition(
+                document_rank=rank[document_id],
+                page_number=page_number,
+                block_index=block_index,
+                block_text=block_text,
+            )
+            for block_id, document_id, page_number, block_index, block_text in blocks
+        }
 
     # ---------- 事实与 Claim ----------
 

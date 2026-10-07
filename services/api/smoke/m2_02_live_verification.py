@@ -219,7 +219,7 @@ def run_live_verification():
         f"6. 确认事实与 Knowledge 向量化成功: 耗时 {elapsed_confirm:.2f}s, 快照={snapshot_id}, 确认条数={len(profile['confirmed_claims'])}"
     )
 
-    # 7. 不提供 jd_text，验证服务端只会加载显式标注的合成 Demo JD。
+    # 7. 原嵌入式包无示例：调用方显式提供合成 JD，包外规则审核仍是前置条件。
     preset_jd_path = WORKSPACE / "data" / "jd" / "preset_embedded_junior.txt"
     assert preset_jd_path.is_file(), f"缺少合成 Demo JD: {preset_jd_path}"
     preset_jd_text = preset_jd_path.read_text(encoding="utf-8").strip()
@@ -228,7 +228,8 @@ def run_live_verification():
     interview_req = {
         "profile_id": profile_id,
         "profile_revision": profile["revision"],
-        "role_preset": "embedded_junior",
+        "jd_text": preset_jd_text,
+        "jd_source_name": "SYNTHETIC_DEMO_JD_live_m202",
     }
     res = client.post(
         "/api/v1/interviews",
@@ -269,11 +270,11 @@ def run_live_verification():
     )
 
     # 9. 核心业务与事实完整性断言（特别核查要求 4, 5, 6, 7）
-    # (a) JD 来源元数据：本地演示配置必须诚实标记 synthetic。
+    # (a) Caller-provided synthetic text remains user input, not a server example.
     jd_source = view["jd_source"]
-    assert jd_source["source_type"] == "synthetic_demo_jd", jd_source
-    assert jd_source["source_name"] == "SYNTHETIC_DEMO_JD_preset_embedded_junior"
-    assert jd_source["is_synthetic"] is True
+    assert jd_source["source_type"] == "user_provided", jd_source
+    assert jd_source["source_name"] == "SYNTHETIC_DEMO_JD_live_m202"
+    assert jd_source["is_synthetic"] is False
     assert jd_source["source_url"] is None
     assert jd_source["upstream_url"] is None
     assert jd_source["content_hash"]

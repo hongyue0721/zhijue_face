@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "id": "seed_python_backend_sql_transaction_boundary",
+  "version": "1.0.0",
+  "competency_id": "backend.sql.transactions",
+  "difficulty": "medium",
+  "archetype": "scenario",
+  "intent": "核对多步数据库修改的同一事务、提交/回滚以及 SQLite/Python 版本边界。",
+  "stem": "假设 Python 3.11 sqlite3 连接使用 isolation_level=\"DEFERRED\"：先插入学习记录，再插入审计行，要求第二步失败时第一步也不留下。你会把事务放在哪里？成功和异常路径怎样处理？多个连接同时写入时还要考虑什么？",
+  "prerequisites": [
+    "了解 SQL INSERT 与数据库连接"
+  ],
+  "allowed_context": [
+    "材料明确包含数据库事务或回滚",
+    "假设仅包含同一 SQLite 数据库内两次写入，不夹带网络请求或其他数据库"
+  ],
+  "reference_ids": [
+    "sqlite_transactions",
+    "python311_sqlite_transactions"
+  ],
+  "reference_points": [
+    {
+      "point_id": "rp_tx_same_boundary",
+      "kind": "technical",
+      "reference_ids": [
+        "sqlite_transactions",
+        "python311_sqlite_transactions"
+      ],
+      "statement": "SQLite 手动事务通常持续到 COMMIT 或 ROLLBACK。Python 3.11 sqlite3 在 isolation_level 非 None 时会在 INSERT/UPDATE/DELETE/REPLACE 前隐式开事务；需要作为一个工作单元的两次写入须留在同一连接、同一事务内，不能第一步就独立提交。最后一句是依据事务范围作出的工程推导。"
+    },
+    {
+      "point_id": "rp_tx_context_manager",
+      "kind": "technical",
+      "reference_ids": [
+        "python311_sqlite_transactions"
+      ],
+      "statement": "Python 3.11 的 with con 在已有开放事务上，块无异常则提交；提交失败或块抛出未捕获异常则回滚。该上下文管理器不自行开新事务，也不关闭连接；无开放事务时是 no-op，不能忽略 isolation_level=None 的配置边界。"
+    },
+    {
+      "point_id": "rp_tx_error_not_automatic",
+      "kind": "technical",
+      "reference_ids": [
+        "sqlite_transactions"
+      ],
+      "statement": "SQLite 文档 §3：错误不一定自动回滚整个事务，可能只撤销当前语句并保留先前变更；需要核对事务状态和回滚路径，不能把任何 SQL 异常等同于整个工作单元已撤销。"
+    },
+    {
+      "point_id": "rp_tx_single_writer",
+      "kind": "technical",
+      "reference_ids": [
+        "sqlite_transactions"
+      ],
+      "statement": "SQLite §2.1–2.3 支持多个同时读事务，但只支持一个同时写事务；读升级写、BEGIN IMMEDIATE 或 COMMIT 等路径可能出现 SQLITE_BUSY。COMMIT 因相关竞争失败时，事务可以仍然活动，不能把失败解释为已经成功提交。"
+    },
+    {
+      "point_id": "rp_tx_verify_failure",
+      "kind": "acceptable_alternative",
+      "reference_ids": [],
+      "statement": "可以使用显式 BEGIN/COMMIT/ROLLBACK，或正确配置的连接上下文管理器；注入第二步失败后查询两张表以检查残留属于验证方案，不是已经执行的测试证据。"
+    }
+  ],
+  "red_flags": [
+    {
+      "signal_id": "rf_tx_early_commit",
+      "pattern": "第一条 INSERT 后 commit，仍声称第二步失败可以整体回滚",
+      "requires_followup": true,
+      "note": "追问 commit 前后事务边界，不用应用补删冒充原事务原子性。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    },
+    {
+      "signal_id": "rf_tx_swallow_error",
+      "pattern": "在 with con 内吞掉第二步异常后正常离开，却声称上下文必定回滚",
+      "requires_followup": true,
+      "note": "追问上下文管理器看到的是正常退出还是未捕获异常；不把异常捕获本身说成错误。 危险信号仅触发核对，不自动扣分；未作答/未问到/证据不足不等于错误。"
+    }
+  ],
+  "follow_up_strategy": {
+    "max_followups": 1,
+    "preferred_intents": [
+      "counterfactual",
+      "detail"
+    ],
+    "stop_conditions": [
+      "已说明同一事务、成功提交、失败传播/回滚和竞争失败的非成功状态",
+      "候选人未知驱动配置时记录配置待核对，不假设某 ORM 会自动保证"
+    ]
+  },
+  "review_levels": {
+    "level1": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    },
+    "level2": {
+      "status": "pending",
+      "reviewer_role": "owner",
+      "checked": [],
+      "at": null
+    }
+  },
+  "rubric": [
+    {
+      "criterion_id": "seed_python_backend_sql_transaction_boundary_atomic_work_unit",
+      "kind": "technical",
+      "weight": 2,
+      "levels": {
+        "0": "经澄清仍坚持先提交第一步后可由第二步自动整体撤销",
+        "1": "提到事务，但未把两次写入与一次提交联系起来",
+        "2": "说明同连接同事务，成功提交，第二步失败导致回滚",
+        "3": "解释 with con 的异常传播、不开事务/不关连接和 None 配置边界"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_sql_transaction_boundary_failure_contention",
+      "kind": "technical",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍断言任何错误自动回滚全事务或并行写绝无竞争",
+        "1": "知道写入会失败，但未说明事务可能仍活动",
+        "2": "说明错误未必整事务回滚，并识别 SQLite 单写者竞争",
+        "3": "区分 SQLITE_BUSY、提交成功与仍开放事务，提出检查失败后残留的验证方案"
+      }
+    },
+    {
+      "criterion_id": "seed_python_backend_sql_transaction_boundary_evidence",
+      "kind": "evidence_reasoning",
+      "weight": 1,
+      "levels": {
+        "0": "经澄清仍把题设或未运行方案冒充本人已经验证的实现",
+        "1": "能回答假设机制，但个人负责部分与未验证条件不清楚",
+        "2": "区分题设、个人自述和资料结论，明确个人负责与未知边界",
+        "3": "能提出具体检查步骤和所需证据，明确尚未执行/尚未确认，不补造实绩"
+      }
+    }
+  ],
+  "followup_intents": [
+    "counterfactual",
+    "detail"
+  ],
+  "out_of_scope": [
+    "SQLite 与 Python 3.11 的结论不能直接套用 PostgreSQL/MySQL/ORM 的事务默认值",
+    "不承诺跨数据库、文件系统或网络调用的一起回滚；不评价分布式事务",
+    "未作答、跳过、未问到与缺少经历证据不进入技术零分；0 级描述只适用于已作答且经澄清确认的错误主张",
+    "未经包外负责人两级审核与规则审核批准，不用于新场次技术评分；不核实真实身份或给录用结论"
+  ],
+  "source_origin": "original_draft",
+  "review_status": "draft",
+  "review_record_id": null
+}

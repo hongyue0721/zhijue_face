@@ -177,12 +177,6 @@
             "minimum": 0.0,
             "title": "Profile Revision",
             "type": "integer"
-          },
-          "role_preset": {
-            "const": "embedded_junior",
-            "default": "embedded_junior",
-            "title": "Role Preset",
-            "type": "string"
           }
         },
         "required": [

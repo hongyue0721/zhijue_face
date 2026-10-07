@@ -1,14 +1,11 @@
 """种子库加载与筛选（docs/05 §4）。
 
-本模块是种子进入业务链的**唯一入口**：从岗位知识包 seeds 目录（内置资产
-或已注册不可变 release 的存储目录）读取、
-按契约校验、只放行 live 允许的审核状态。加载失败必须显式失败——
-不允许"读不到就当作空题库"继续跑出看似正常的面试（AGENTS §2）。
-
-live 门槛来自 `config/demo.yaml` 的 `seed_bank.live_allowed_review_status`；
-加载时读取并校验该权威配置，`live_only=True` 只返回达到门槛的种子。
-**不把模型知识当作技术参考依据**：技术参考要点必须带非空的
-reference_ids（已由 Schema 强制），本模块只做加载与筛选。
+本模块校验调用方明确指定目录的 Seed 契约。作者 review_status 仅用于原始
+资产检查及历史 schema1 冻结；新场的权威是 KnowledgePackService 对包外
+owner 两级记录、规则摘要与 Seed 字节范围的交集。外部批准可覆盖 draft，
+不改写作者字节。失败显式报错，不回落默认岗位或伪造空题库成功。
+**不把模型知识当作技术参考依据**：技术要点必须含非空 reference_ids，
+这里只校验形状；实际来源核对属于负责人审核。
 """
 
 from __future__ import annotations
@@ -67,12 +64,16 @@ class SeedBank:
         *,
         schema_version: str,
         live_allowed_review_status: str,
+        externally_approved: bool = False,
     ) -> None:
         if live_allowed_review_status not in REVIEW_RANK:
             raise SeedBankError(f"未知的 live 审核门槛：{live_allowed_review_status}")
         self._seeds = tuple(seeds)
         self.schema_version = schema_version
         self.live_allowed_review_status = live_allowed_review_status
+        # Pack resolution already intersects exact byte scope with owner approval.
+        # Do not mutate draft source content merely to cross the author-status gate.
+        self._externally_approved = externally_approved
         self._by_id = {seed.id: seed for seed in self._seeds}
         if len(self._by_id) != len(self._seeds):
             raise SeedBankError("存在重复的 seed id")
@@ -91,6 +92,8 @@ class SeedBank:
             raise SeedBankError(f"RESOURCE_NOT_FOUND: seed {seed_id}") from exc
 
     def live_eligible(self) -> tuple[Seed, ...]:
+        if self._externally_approved:
+            return self._seeds
         threshold = REVIEW_RANK[self.live_allowed_review_status]
         return tuple(
             seed

@@ -194,7 +194,7 @@
       ]
     },
     "review_levels": {
-      "description": "ADR-013：两级审核。approved 必须两级均 passed；不允许只做一级就写 approved。",
+      "description": "ADR-013 包内作者声明：approved 必须两级均 passed，但不产生服务端授权。包外 owner 两级审核可批准仍为 draft 的原始字节，无需先改包自报 approved。",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -306,7 +306,7 @@
         "rejected",
         "deprecated"
       ],
-      "description": "ADR-013 映射：draft=未审；technical_review=Level 1 通过、Level 2 待做；approved=两级均通过。不再另立 reviewed 值，避免两套并行语义。"
+      "description": "作者声明状态，非服务端授权：draft=未自报审核；technical_review=自报 Level 1 通过、Level 2 待做；approved=自报两级均通过。服务端岗位包许可只来自绑定字节的包外 owner 两级记录，draft 也可外部批准。"
     },
     "review_record_id": {
       "type": [
