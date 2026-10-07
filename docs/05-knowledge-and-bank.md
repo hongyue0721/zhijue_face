@@ -163,12 +163,12 @@ v1.0.0），Seed 文件字节与 `data/seeds` 历史内容逐 hash 一致，不�
   原路径；结构化 Seed 不强制向量化。
 - 内容摘要 `sha256(规范化文件集)` 是版本事实；同内容不同打包复用同一 release，
   同版本异内容拒绝覆盖。每次解析重算摘要，损坏显式失败，绝不回落其他包。
-- 包内 `approved` 声明不构成批准：服务端有效审核 = 绑定当前摘要的包外负责人
-  记录 ∩ 逐条 Seed 的 ID、版本与内容 hash。内置六条的批准范围是 M2-01 记录
-  `review_m2_01_level2_owner_20260919` 的可审计迁移映射；服务端固定六条
-  0.2.1 原文的 SHA-256 基线，不能根据待注册文件重新生成批准白名单。
-  同 ID 正文或版本改变也不继承批准，新增/修改 Seed 必须经
-  `scripts/manage_knowledge_pack.py` 由负责人重新核对后登记。
+- 包内 `approved/passed` 不构成批准：有效审核来自绑定当前包摘要、规则摘要与
+  配置 ID/版本的包外负责人两级核对记录，以及逐条 Seed 的 ID/版本/内容 hash。
+  `competencies.json` 是规则本体，规则内容变化不能继承旧审核。draft Seed 可以
+  由负责人在包外批准，不要求先篡改包内自报状态。内置六条的 M2-01 记录只保留
+  历史题目批准，不补造规则已审；新场使用前须明确完成规则审核。登记入口仍为
+  `scripts/manage_knowledge_pack.py`，执行 Agent 不得替负责人批准。
 - 面试在计划受理时冻结 `pack_release_id + content_digest + competency_profile_id`，
   并持久化版本化 `pack_review_snapshot`（审核记录事实、逐条批准范围、审核门槛）。
   新面试使用最新审核；后续撤销或收窄审核不悄然改变旧面试的选题范围。
@@ -177,5 +177,12 @@ v1.0.0），Seed 文件字节与 `data/seeds` 历史内容逐 hash 一致，不�
   不从当前审核捏造历史批准，需生成新题时显式要求新建面试。
 - ZIP 支持标准空目录条目；目录不计入内容摘要，但仍校验穿越、重复、大小写、
   文件/目录冲突、符号链接和资源上限。目录尾部 `/` 不再误判为冗余路径分隔。
-- 服务端只注册 `embedded-junior-v1` 能力配置；未注册 profile 的包不可选择，
-  不宣称任意职业换包即用。
+- 能力配置来自包内有限声明，服务端不再维护单岗位注册表。严格校验关键词列表、
+  能力 ID 与借用关系；不执行脚本、表达式或任意正则。未知要求明确保留未支持，
+  不用另一岗位的规则兜底。能力中文名由后端下发，前端没有平行能力词典。
+- 第二岗位 `knowledge_packs/python_backend_junior/` 为 Python 后端实习/初级：
+  六条技术 Seed、能力规则与官方来源齐备，但负责人两级审核保持待完成。
+  配套合成简历姓名为长崎素世，文件见 `docs/demo/python-backend-nagasaki-soyo-resume.txt`；
+  合成 JD 为包内 `examples/jd.txt`，不是企业招聘公告；导入时按本包规则试抽取，
+  识别不到要求的示例使整个包拒绝登记（`PACK_EXAMPLE_JD_INVALID`）。审核材料见
+  `docs/reviews/python-backend-junior-review.md`，不得用格式通过代替负责人批准。

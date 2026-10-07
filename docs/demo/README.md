@@ -15,7 +15,7 @@
 
 ## Demo JD v1
 
-冻结版本见 [demo-jd-v1.md](demo-jd-v1.md)。它是负责人提供的比赛演示岗位配置，但没有可核验的企业原始公告与上游哈希，因此来源必须标记为 `SYNTHETIC_DEMO_JD`。业务接口未提供 `jd_text` 时使用更小的 `data/jd/preset_embedded_junior.txt`，同样显式标记为 synthetic；任何本地文件路径都不构成真实来源认证。
+冻结版本见 [demo-jd-v1.md](demo-jd-v1.md)。它是负责人提供的比赛演示岗位配置，但没有可核验的企业原始公告与上游哈希，因此材料仍标记为 `SYNTHETIC_DEMO_JD`。`data/jd/preset_embedded_junior.txt` 保留为显式测试输入，接口不再自动加载；用户提交文本的来源为 `user_provided`，不能因材料标签升格为受信任来源。省略 JD 只使用所选包登记的合成示例，没有示例则要求填写 JD。
 
 ## 冻结链路与边界
 
@@ -38,3 +38,12 @@ Resume → Evidence Extraction；JD → Requirement Extraction；Evidence × Req
 2026-09-19 更新：正式 openJiuwen 0.1.18 wheel 的 `delete_documents` list 返回缺陷仍保留为历史失败，但项目已锁定到基于官方 v0.1.18、仅含 PR #1344 两个提交的兼容 commit `72c4985111b835530ec616f70dd67117eb2e015c`。补丁 worktree 和项目锁定安装各完成一次四进程 live，解析、入库、检索、provenance、重启、两 profile 删除及删除后重启零命中均通过，因此 M0-03/M0-03-DEL 为 `VERIFIED`；这不代表正式 wheel 已修复或负责人 `ACCEPTED`。
 
 LLM 请求名 `deepseek-flash` 已能在官方文档定位，但本项目尚未 live 调用，token/cost 仍为 null / NOT_MEASURED。旧本地 BGE-small/torch 方案已放弃，不再重试。详见 [ADR-012](../adr/012-native-knowledge-local-compatibility.md)、[M0-03-DEL 交接](../handoffs/2026-09-19-m0-03-del.md)和根目录 [process.md](../../process.md)。
+
+## 2026-10-06 Python 后端配套演示
+
+上面的 2026-09-18 登记与门禁按原日期理解，不代表当前审批状态。
+本轮新增 `knowledge_packs/python_backend_junior/`，以及
+[长崎素世合成简历](python-backend-nagasaki-soyo-resume.txt)。简历及包内 `examples/jd.txt`
+均明确合成，不作为现实履历认证或企业招聘公告。第二包包含完整规则与六道技术种子，
+但本人两级审核仍待完成；审核依据见
+[Python 岗位待审材料](../reviews/python-backend-junior-review.md)。

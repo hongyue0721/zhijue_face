@@ -77,7 +77,28 @@ ZHIJUE_DATABASE_URL="sqlite:///$PWD/runtime/competition-accept/business.db" \
 services/api/.venv/bin/python scripts/manage_knowledge_pack.py list
 ```
 
-CLI 不再隐式迁移或创建数据库。`list` 使用 SQLite 只读连接；库不存在、尚未初始化或版本不兼容时失败，先核对目标实例并由 API 启动流程迁移。`review` 仍要求负责人实际核对、期望 digest、身份/备注及 `--confirm-content-reviewed`；未确认不会打开库。此入口不能替代来源审核，也不能让执行 Agent 自行批准新题。
+CLI 不隐式迁移或创建数据库。`list` 使用 SQLite 只读连接；库不存在、尚未初始化或版本不兼容时失败，先核对目标实例并由 API 启动流程迁移。`review --decision approved` 必须由负责人实际完成两级核对，并显式提供下列四项确认及 `--role owner`；缺确认拒绝执行，不读取包内自报 approved 作为授权。
+
+```bash
+ZHIJUE_RUNTIME_DIR="$PWD/runtime/competition-accept" \
+ZHIJUE_DATABASE_URL="sqlite:///$PWD/runtime/competition-accept/business.db" \
+services/api/.venv/bin/python scripts/manage_knowledge_pack.py review \
+  --release-id <list返回的release> --expect-digest <list返回的完整content_digest> \
+  --decision approved --reviewer hongyue --role owner \
+  --note "已核对本版岗位规则及题目，Level 1/2 依据见审核材料" \
+  --confirm-content-reviewed --confirm-level1-reviewed \
+  --confirm-level2-reviewed --confirm-rules-reviewed
+```
+
+不要把上面的命令当成无需审核的一键激活。负责人先核对规则、关键词映射/借用边界，
+再逐题对照官方来源、评分细则和追问策略；Python 包的待审材料为
+`docs/reviews/python-backend-junior-review.md`。长崎素世合成简历为
+`docs/demo/python-backend-nagasaki-soyo-resume.txt`，合成 JD 位于包内 `examples/jd.txt`。
+新包 ZIP 先执行 `make knowledge-pack PACK=knowledge_packs/python_backend_junior`，再上传生成的 `dist/knowledge-packs/python-backend-junior-1.0.1.zip`；格式通过后仍不可出题。
+
+迁移 `d63b8a24f710` 在旧审核行新增规则身份/两级核对字段，旧值保持 NULL。
+旧嵌入式六题审批不等于岗位规则已审，新场可能提示规则待审；历史已冻结面试不随
+当前审核改变。不得替负责人执行批准命令，也不得迁移其真实业务库来做开发验证。
 
 ### 3.3 显式付费 live 闭环
 

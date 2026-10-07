@@ -1,8 +1,8 @@
-# 职觉 ZhiJue｜嵌入式软件岗位面试陪练
+# 职觉 ZhiJue｜基于已审核岗位知识包的面试陪练
 
-以经用户确认的材料为起点，通过 openJiuwen Knowledge 与 Workflow 完成五题面试、有限追问、可追溯评分和不编造经历的回答优化。React/Vite/AnyUI 前端，单一 FastAPI/SQLite 业务数据库；结构化岗位 Seed 不强制向量化。
+以经用户确认的材料为起点，通过 openJiuwen Knowledge 与 Workflow 完成五题面试、有限追问、可追溯评分和不编造经历的回答优化。React/Vite/AnyUI 前端，单一 FastAPI/SQLite 业务数据库；结构化岗位 Seed 与有限岗位规则随知识包声明，不强制向量化。
 
-**当前状态（2026-10-03）：功能已实现；本地离线与实际浏览器已验证；live 存在成功链和明确失败样本，尚未完成最终版本全新上传闭环及负责人独立验收。没有公网发布。**
+**当前轮次（2026-10-06）：声明式岗位规则、内容绑定审核、按包出题和 Python 后端第二岗位已实现；本地离线与隔离 fixture 实际浏览器已验证。Python 包仍待负责人本人两级与规则审核；旧嵌入式 Seed-only 批准不自动升级为规则批准。新岗位 live 效果未验证，没有公网发布。**
 
 ## 首次运行
 
@@ -22,17 +22,18 @@ fixture 的 Knowledge/分析结果是合成实现，不能证明模型质量；�
 
 ## 岗位知识与数据边界
 
-- 当前只支持嵌入式初级领域，一个能力配置与六条历史已审 Seed；不宣称任意职业换包即用。
+- 岗位由所选包的声明式能力规则决定，不接受脚本；现有嵌入式包保持原始内容，另提供 Python 后端实习/初级待审核包。自定义数据通过格式校验不等于岗位质量通过，更不等于支持任意职业。
 - 岗位包 ZIP 是结构化出题资料，不是候选人文档索引。格式通过、负责人审核、可用于新面试是三个独立状态；上传自带 `approved` 不构成授权。
-- 选择只影响新建面试。受理时冻结 release、实际内容摘要与当时批准范围；导入新版不全局切换默认包，历史场次不追随当前审核。
+- 选择只影响新建面试。受理时冻结 release、规则 ID/版本/摘要、实际内容摘要与负责人两级批准范围；规则字节变化需重审，历史场次不追随当前审核。旧题目批准不能自动批准岗位规则。
 - 未经明确授权，不迁移真实业务库、不批准新知识、不发送真实材料、不公开部署。
 
 ## 当前验证与演示证据
 
-- 后端离线：**476 passed / 2 deselected**；Ruff check/format 全范围通过（96 文件）。
-- 前端：**44 passed**；TypeScript/Vite 构建通过（122 modules）。
-- 实际 Chromium：六页 × 四个尺寸，以及导入恢复、JD 往返、慢响应、空态/连接失败、拒绝/损坏状态、键盘焦点与浅色方案，见 [本轮验收及边界](docs/aic/2026-10-03-acceptance.md)。
-- 正常 live launcher 使用 qwen3.8-flash 与已确认、真实 BGE-M3 索引资料：五根题、两次追问、87 分完整报告、五条优化建议已取得真实结果；简历复用同快照同目标的既有 accepted 草稿。**这不覆盖全新上传：两次独立上传分别失败于事实来源校验和上游请求。**
+- 本轮后端离线：**615 passed / 2 deselected**（268 warnings，含示例 JD 导入校验与发行包完整性）；前端：**107 passed**，TypeScript/Vite 构建通过（130 modules）。本机 Node 26.10.0，测试使用 `NODE_OPTIONS=--no-webstorage`；未复验锁定 Node 24。
+- 本轮实际 Chromium：导入第二包、未审阻断、测试库显式审核后 Python 五题与复盘、撤销审核后旧场继续/新场阻断、390px 无横向溢出、冻结能力名称。嵌入式发行验证 HTTP 切片也实际完成五题，模型与 embedding 调用均为 0；这不是 live 质量或负责人批准证明。记录与截图见 `runtime/multi-role-current/`，细节见 `process.md` §69。
+- 直接导入 ZIP：`make knowledge-pack PACK=knowledge_packs/python_backend_junior` 确定性生成 `dist/knowledge-packs/python-backend-junior-1.0.1.zip`（构建产物不入库）；[逐题两级审核入口](docs/reviews/python-backend-junior-review.md)、[长崎素世合成简历 PDF](docs/demo/长崎素世_Python后端实习简历.pdf)、[简历文本](docs/demo/python-backend-nagasaki-soyo-resume.txt)、[合成 JD](knowledge_packs/python_backend_junior/examples/jd.txt)。未审核内容不可用于新场次评分。
+- 历史 Chromium（2026-10-03）：六页 × 四个尺寸，以及导入恢复、JD 往返、慢响应、空态/连接失败、拒绝/损坏状态、键盘焦点与浅色方案，见 [验收及边界](docs/aic/2026-10-03-acceptance.md)。
+- 历史 live（2026-10-03）：正常 launcher 使用 qwen3.8-flash 与已确认、真实 BGE-M3 索引资料，五根题、两次追问、87 分完整报告、五条优化建议取得真实结果；简历复用同快照同目标的既有 accepted 草稿。**这不覆盖本轮新岗位或全新上传：当时两次独立上传分别失败于事实来源校验和上游请求。**
 
 ![正常 live 报告实拍，合成资料、既有确认快照，不是全新上传端到端证明](docs/aic/evidence/2026-10-03/live-report-desktop.png)
 
@@ -67,21 +68,21 @@ make verify-bundle
 - 模型实测：BGE-M3 embedding 已 live；`deepseek-flash` Answer Analyzer 成功样本为 10.650749 秒、usage 1156/2544/3700；Content Generator 成功 coaching/resume 分别为 27.727351/10.839200 秒、usage 669/6377/7046 与 535/2325/2860。provider 未返回价格，cost 均为 null / NOT_MEASURED；不估造费用。
 - `AIC-PACKS`：结构化岗位知识包契约（manifest/competencies 声明镜像/sources/内容摘要）、不可变 release 与包外负责人审核（CLI 登记，逐条绑定 Seed 内容 hash）、ZIP 安全解压上限、`GET/POST /knowledge-packs*` 异步导入（202+Operation+回执持久）、面试受理时冻结 `pack_release_id+content_digest+competency_profile_id`、`/knowledge-packs` 知识页与准备页选择器已实现；ADR-014 记录决策边界。离线回归 395 passed / 0 failed，前端 29/29 + build，真实浏览器 fixture 纵切面（导入→unreviewed→负责人批准→冻结出题）通过。2026-09-27 负责人授权后 live 模型端到端已 VERIFIED（见 process.md §63：真实 P-EXTRACT/分析/评分/优化/草稿全链通过，浏览器实拍 live 报告页；embedding 腿为本地隔离 shim，非 BGE-M3 等价声明）。负责人对审核 CLI 结论与本批网关兼容变更的独立复核仍 NOT_RUN。
 
-当前事实与待验收项以 [process.md §64](process.md#64-2026-10-03竞赛工作区集成与验收收口implemented本地范围-verified) 和 [本轮验收记录](docs/aic/2026-10-03-acceptance.md) 为准；历史模型和系统记录不能替代本轮。已有数据库部署前需显式选择、停写备份，再执行 `a7c4e1f29b58` 和 `c91f8b34d602` 迁移；后者新增的旧行审核快照保持 null，不倒填今天的审核。本轮迁移 smoke 仅使用自建 synthetic 库的副本，未迁移负责人真实业务库。
+当前事实以 `process.md` 最新章节为准；历史模型和系统记录不能替代本轮验证。已有数据库部署前需显式选择、停写备份，再由匹配版本执行 Alembic 迁移；旧行缺少的审核事实保持 null，不倒填今天的审核。不得让开发验证迁移负责人真实业务库。
 
 ## 项目一句话
 
-面向本科生的嵌入式软件岗位面试陪练：以经用户确认的材料为起点，使用真实 openJiuwen Knowledge 与 Workflow 完成出题、回答分析、有限追问、可追溯评分及不编造经历的回答优化。
+面向实习／初级岗位的面试陪练：以经用户确认的材料为起点，使用真实 openJiuwen Knowledge 与 Workflow，以及经负责人审核的岗位规则和题目，完成出题、回答分析、有限追问、可追溯评分与回答优化。
 
 ## 冻结的 Demo 边界
 
 - 两个入口：**整理简历**、**直接面试**；共用一份版本化资料，不强制先生成简历。
-- 一个主演示岗位：嵌入式软件实习/校招初级岗位。五道主问题，每题最多一次补充追问或澄清。
+- 已有嵌入式初级包与新增 Python 后端初级包；每场五道主问题，每题最多一次补充追问或澄清。新场只使用负责人明确批准规则及题目范围的包。
 - 初期六条题目种子打通流程；发布目标二十四条经审核种子。数量不是发布成绩。六条种子现以 `embedded-software-junior` 内置岗位知识包登记（M2-01 负责人批准范围逐条内容 hash 迁移映射，见 ADR-014）。
 - 核心：材料确认 → Knowledge 入库检索 → 五题计划 → 作答 → 分析与规则决策 → 评分 → 优化回答。
 - PDF/文本上传先落不可变 SourceBlock，再由真实 P-EXTRACT Workflow 选择可逐字回查的待确认事实；上传不会自动确认候选事实。
 - OCR、跨场次训练记忆属于 P1。P0 必须识别扫描 PDF 并提供粘贴文本的降级路径，不能把降级说成 OCR 已实现。
-- 不做招聘录用判断、岗位爬虫、联网全知问答、语音、多人 Agent 协商、复杂概率能力模型、完整简历编辑平台。岗位知识包只支持已注册能力配置（当前一个领域包）；不宣称任意职业换包即用，也不做影响历史面试的全局切换。
+- 不做招聘录用判断、岗位爬虫、联网全知问答、语音、多人 Agent 协商、复杂概率能力模型或完整简历编辑平台。支持有限数据声明的岗位规则，不接受可执行代码，不宣称规则格式通过即具备职业专业性；没有影响历史面试的全局切换。
 
 ## 和前期讨论的明确调整
 
@@ -150,4 +151,4 @@ MUST＝必须执行；SHOULD＝默认执行，偏离要记录原因；MAY＝可�
 
 `PLANNED / IN_PROGRESS / BLOCKED / IMPLEMENTED / VERIFIED / ACCEPTED` 是六种不同状态。写出了代码只能叫 IMPLEMENTED，必须有测试记录才叫 VERIFIED，负责人确认后才叫 ACCEPTED。
 
-文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。当前 `services/api/` 已实现资料确认、岗位包、面试、确定性评分和受事实约束的内容生成；`apps/web` 保留原五页并新增轻量岗位知识页。仍需最终版本全新资料 live 闭环和负责人独立验收；不自动扩大题库或职业领域。
+文档中的 Mermaid 是架构源文件形式；Markdown 阅读器不支持渲染时仍可读节点关系。`services/api/` 已实现资料确认、岗位包、面试、确定性评分和受事实约束的内容生成；`apps/web` 包含原五页与岗位知识页。本轮新增 Python 岗位材料、长崎素世合成简历和配套 JD；负责人两级审核与新岗位 live 验收不得由开发者自检代替。

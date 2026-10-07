@@ -1308,3 +1308,61 @@ M2-02：JD 输入（正式 JD 未到时用 `SYNTHETIC_DEMO_JD` 并持久化来�
 - 390×844 报告无横向溢出，五题选择器可切第 5 题，概览默认收起、页签顶部 **528px**。受控 61 秒事实提取在真实 SDK **61.319 秒成功**，不再被默认 60 秒截断。打印 PDF 实际只有 accepted 正文，没有操作/来源核对区。
 - 证据保留于 ignored `runtime/flow-fixes-current/verification.json`、deadline-result.json、截图与 accepted-resume.pdf；临时脚本和验证服务清理。合成输入、受控模型边界，付费模型调用 **0**；本轮真实供应商成功率、最终全新资料正常 live 验收仍 NOT_RUN，不覆盖历史 live 失败。未修改既有用户运行库、发布或更新旧发行 ZIP。
 
+
+## 66. 2026-10-06｜竞赛展示前端统一视觉与核对体验（IMPLEMENTED；本地离线/浏览器/live 单样本 VERIFIED）
+
+- 来源：负责人要求参赛展示前“修 bug + 美化 + 操作逻辑与体验做好”，并授权本轮使用 deepseek-flash 与 SiliconFlow BAAI/bge-m3 做 live 测试。基线：HEAD `9bb09da`，工作区干净；本机 Node 26（锁定 Node 24），vitest 需 `NODE_OPTIONS=--no-webstorage`，否则 Node 内置 Web Storage 遮蔽 happy-dom，基线 39 项假失败；加参数后基线 89 passed。差异仅为测试环境，未改依赖。
+- 实测缺陷（fixture 浏览器复现）：AnyUI Button 是块级 `div[role=button]`，父容器未布局时被拉满整行（知识页“导入岗位包”、各页返回入口）；多行输入框边框画在外层而真实 textarea 只有默认高度，第三行文字被截；面试页分段进度与 AnyUI Progress 重复，完成后末段颜色错误，完成态布局跳动；准备页知识包选择在提交按钮之后；临时暂存说明挤占主流程；资料核对同批 claim `created_at` 相同按随机 ID 排序、44 条只能逐条点选；`changeDecision` 读闭包旧状态，同帧多次选择互相覆盖；知识页 `Tag color="success"` 不是合法颜色，状态标签全部同色；删除确认出现在页面底部、远离触发菜单。另发现 AnyUI Alert 图标与 Button 加载图标使用 Iconify 名称字符串，浏览器运行时会请求 `api.iconify.design`，违背不加载远程资源约定。
+- 后端（契约同步）：新增纯函数 `domain/claims.order_claims_for_reading`，`ProfileRepository.get_detail` 在同一读快照内取 SourceBlock 位置，按“文档登记先后→页→块→块内引文位置”返回；本人更正沿用被更正事实位置，无可解析来源的排末尾，同位置按 created_at、id 稳定。只影响 ProfileView 展示顺序，确认快照 `confirmed_claim_ids` 不变；api.md ProfileView 已写明。新增 3 项测试（领域 2、仓储 1）；仓储测试在旧实现上实际失败、修复后通过。
+- 前端：样式由互相覆盖的 `styles.css + workspace.css`（约 2,820 行）重组为 `src/styles/` 令牌/基础/组件库覆盖/骨架/组件/六页/打印分层，删除被覆盖与无引用规则及两个无引用组件（TechnicalDetails、ManualFactForm）。按钮在根上改为行内弹性盒，输入框边框画在真实输入元素上。新增 `common/ui.tsx` 统一 Button/Alert 并以本地内联 SVG 渲染图标，`PageNav/BackLink/PageHeading` 共享导航与标题；知识页、准备、复盘、简历统一返回入口。
+- 交互：资料核对按 `source_quotes[0].section` 分组（组按首次出现，组内保持服务端顺序，未知段落归“其他信息”），提供显式“本组全部采用 / 全部不采用 / 清除本组选择”，不覆盖已暂存更正，超出单批 50 条时整组不生效；选择以 ref 为同步真值修复竞态；固定提交栏、保存成功提示；删除档案改为对话框二次确认，菜单选择后自动收起。准备页先填岗位、再确认知识包、最后提交，暂存说明收为“刷新恢复（浏览器暂存）”折叠项并在恢复/不可用时自动展开；计划页先列五个方向（状态标签）、计划说明（服务端 limitations）再列覆盖统计。面试页问题与回答并排，深蓝问题卡标明主问题/追问/澄清，追问/澄清的决策理由默认展开，新主问题上方显示上一题的结构化决策（只读 root_results 的 action/reason_summary）；单一分段进度，完成态整齐。复盘页总分卡、下一步建议自适应、页签不再拉满；窄屏页头改为不固定。
+- 回归（2026-10-06，本机）：后端 `pytest tests -q -m 'not integration_live'` **589 passed / 2 deselected**（exit 0）；Ruff check/format **97 files** 通过；前端 **93 passed**（新增 4 项：整组选择 2、分组 1、同帧选择竞态 1；竞态测试在旧闭包实现上实际失败）；TypeScript 通过，Vite 构建 **129 modules**。API 结构无变化，仅 ProfileView claim 顺序语义写入 api.md；无数据库迁移。
+- 实际 Chromium（CDP 驱动，fixture 与 live 两套隔离 runtime）：1440×900 与 390×844 走完上传→核对→确认→准备→计划→面试→完成→复盘→知识页，另看解析文本抽屉、更正/上传/删除对话框与打印媒体；390×844 无横向溢出；全程浏览器对外请求为 0（修复前 Alert/加载图标会请求 Iconify）。打印 PDF 只含已确认简历正文。
+- live 单样本（2026-10-06 14:48:05–14:53:59 UTC，deepseek `deepseek-flash` @ api.deepseek.com，SiliconFlow `BAAI/bge-m3` 1024 维；Demo Resume v1 合成材料，私密配置位于仓库外 0600 文件）：P-EXTRACT `p-extract.1` 59.5 秒、2 次模型调用、usage 1854/16881/18735，产出 21 条事实且按简历段落与原文顺序展示；确认+激活 5.2 秒；五根题 + 1 次澄清共 6 次回答分析，单次 6.0–14.8 秒，usage 合计 8406/15230/23636；80 分报告（100/100/67/100/33）。回答优化首次 UPSTREAM_FAILED（35.2 秒）后服务端自动重试成功（27.3 秒，成功轮 usage 7593/7918/15511，失败轮 usage 未返回记 null）；简历草稿 41.4 秒、usage 1686/12559/14245，确认后可打印。费用 provider 未返回，cost 全部 null / NOT_MEASURED；embedding 调用次数未计量。
+- 已知问题（未在本轮修改）：live 回答优化 5 题中 3 题 `rewritten_answer` 与原回答逐字相同，而 changes 说明声称已重组，现有来源校验未拦截“无改写”；需单独任务决定后端是否把“未改写”作为显式状态或校验失败，前端不自行比对掩盖。fixture 抽取会产生“1”“个月”等碎片、5 条必要项中 “有 STM32 或其他 Cortex-M MCU 开发经验” 因未匹配能力关键词被规则跳过，属既有抽取/规则行为，本轮未改。
+- 改动路径：`api.md`、`services/api/src/zhijue/domain/claims.py`、`services/api/src/zhijue/adapters/db/profiles.py`、`services/api/tests/unit/test_profile_confirm.py`、`apps/web/src/**`（样式目录、common/ui/icons、layout/PageNav、prepare/PackSelector、profile/claimGroups 等）、`apps/web/tests/claimInteractions.test.ts`、`apps/web/tests/recovery.test.tsx`、`docs/08-ux.md`、`docs/ui-contract.md`、`CHANGELOG.md`、`CHECKSUMS.sha256`。未提交、未推送、未更新发行 ZIP，未改既有 `.env.local`/`.env.embedding.local`。
+- NOT_RUN：Node 24 锁定版本下的前端回归、1366×768/1024×768 尺寸逐页测量、负责人独立验收。下一任务建议：负责人在演示机用锁定 Node 24 复跑前端测试，并决定“回答优化未改写”的后端语义。
+
+## 67. 2026-10-06｜竞赛演示前端文案润色（IMPLEMENTED；本地离线/浏览器 VERIFIED）
+
+- 来源：负责人在 §66 后要求按审查清单润色前端文案，目标为比赛演示。范围只含界面文字、显示映射与一处按出题依据切换的说明；不改接口、状态机、评分、事实门禁与恢复语义。
+- 原始值外露修复：知识包审核记录不再显示 `approved · owner · ISO 微秒时间`，改为“负责人审核通过 · YYYY-MM-DD HH:mm”；导入结果审核状态、校验项状态与名称走中文映射，未登记取值如实显示“审核结论待确认”或原检查名，不猜测。复盘评分项去掉易被误读成分数的序号（同类重复时才显示“（n）”），等级显示为“等级 n / 3”（依据 api.md level 0—3）。
+- 用词统一：经历（不再混用事实/资料）、待核对、手动填写、追问/澄清、岗位知识包、本场固定使用；去掉“受理、请求标识、sessionStorage、release、冻结、服务端默认”等术语。防御性长句改为直述，但“不会拿预录结果冒充实时处理”“未回答/跳过不算零分”“已发出的模型请求可能无法立刻停止”等规范要求告知的事实全部保留。
+- 逻辑修正：“为什么问这一题”的说明按 `basis.basis_type` 区分；只有 `gap`（材料未体现）时才说明“没写到不代表不会”，`resume` 时说明核对细节与本人负责部分。
+- 测试：新增 `tests/presentation.test.ts` 5 项（评分项名称/等级、审核与校验映射、未知值不猜测、时间格式）；9 处断言随文案更新为新措辞（尝试次数、等待时间、补充按钮），断言语义不变。前端 **98 passed**，TypeScript 通过，Vite **129 modules**。真实 Chromium（fixture 与既有 live 会话，新增模型调用 0）复查资料核对、面试依据与结束确认、复盘、简历、知识包页；顺带修正展开“查看来源”时待提交标记被挤到侧边。
+- 未改且需负责人决定：模型评分解释中夹带英文 “level”（提示词侧）；参考资料仅显示来源编号（需报告接口附带来源标题）；澄清题题面为通用模板；知识包“负责人审核”校验项为导入时快照，与后续审核记录并列显示时可能让人误解（后端文本）。API 无变化。
+
+## 68. 2026-10-06｜演示视频录制中暴露的四处缺陷修复（IMPLEMENTED；本地离线/浏览器/live VERIFIED）
+
+- 来源：负责人要求制作项目演示视频，录制需在 live 下真实走完全流程；录制过程暴露以下问题，按根因修复后才继续录制。live 使用 deepseek-flash 与 SiliconFlow BAAI/bge-m3，私密配置在仓库外 0600 文件，合成简历为 demo-data 指定 PDF（原始字节未改）。
+- 回答优化“点一段看出处”：ReportView 新增 `source_claims: [{id, text}]`，取各题 `used_claim_ids` 并集按 id 排序，从 Claim 行解析原文，任一缺失返回 409 INVALID_STATE（`reporting._improvement_source_claims`，api.md 已同步）。前端 `report/ImprovementComparison` 按服务端已校验的分段渲染“优化后”，点击一段即在原回答中标出其逐字引文并列出引用的已确认经历；分段拼接与正文不一致时退回整段展示，不在前端拼接出处。新增后端 1 项、前端 2 项测试。
+- 视口滚动：重写样式时未覆盖 AnyUI 全局 `html/body {100vw×100vh; body overflow-y:auto}`，导致 body 成为滚动容器，`window.scrollTo`、粘性页头、固定提交栏与整页截图失效；`styles/base.css` 恢复由视口滚动。
+- 回答优化分段过粗：live 中每题只返回 1 段、只引原话不引经历，“看出处”失去意义。COACHING 提示词增加按句/紧密分句分段（多句回答通常 2–5 段）且依赖经历事实的段必须引用对应 claim_id；`prompt_version` 升为 `m4-02.2`。live 复测每题 3–6 段，5 题中 4 题有段落引用已确认经历。
+- 复盘页切题残留：`ImprovementComparison` 与“待补充”`details` 在同一父节点下使用同一个 key（root_question_id），React 对重复 key 不保证协调，切题后旧对照块不被移除而叠加（实测 1→2→3 块）。改为以题目为 key 重建整个 `.selected-improvement` 容器，切题同时复位分段选中与展开状态。新增回归测试，旧实现上实测失败（2 块）、修复后通过。
+- PDF 无法映射的字形：演示 PDF 嵌入字体缺少上标“²”与列表圆点的 Unicode 映射，pypdf 提取为 U+0000（共 16 处，含 3 处“I²C”），NUL 被原样写入 SourceBlock 与 Claim；简历生成时模型把“I\0C”写成“I2C”，被事实门禁正确拒绝为未绑定技术词，两次自动/手动尝试均失败。修复：`domain/extraction.mark_unreadable_characters` 把制表、换行以外的控制字符替换为 U+FFFD（替换字符）并按页追加文档警告，`DocumentService.import_document` 在判定状态前调用；不删除、不猜测缺失字符，由用户在核对页用既有“更正”改正。新增 2 项测试（fixture PDF 复现 NUL；纯函数保留布局空白）。api.md 文档导入语义、docs/08-ux.md 已同步。
+- 回归（2026-10-06，本机）：后端 `pytest tests -q -m 'not integration_live'` **592 passed / 2 deselected**，Ruff check/format 通过；前端 **101 passed**（`NODE_OPTIONS=--no-webstorage`），`npm run build`（含 tsc）通过。
+- live 全流程（2026-10-06 20:41–20:50 UTC，单样本）：导入成功，16 处不可识别字符标为 U+FFFD 并提示，3 条含该字符的“I_C”经历由用户在核对页逐字更正为“I2C”后确认 26 条；面试五根题 + 1 次澄清；报告 70 分（100/83/67/67/33）；回答优化首次失败后自动修正成功；简历草稿首次生成成功（修复前同一资料两次均失败）。
+- 未闭合、需负责人决定：① 修复后 live 导入曾连续 2 次被 P-EXTRACT 来源校验拒绝，而同一 PDF 经同一模型、同一工作流离线复现 13 次全部通过，之后 live 再试成功；当前日志与库中不记录具体校验问题码，根因未确认。建议决定是否持久化不含原文的校验问题码与路径。② 回答优化仍有题目改写与原文逐字相同（本次 5 题中 2 题），§66 已记录，后端语义待定。③ 离线诊断时一次 P-EXTRACT 调用 600 秒未返回被外部超时终止，未复现，未定位。
+- 改动路径：`api.md`、`docs/08-ux.md`、`docs/ui-contract.md`、`services/api/src/zhijue/{domain/extraction.py,application/documents.py,application/reporting.py,application/content_generation.py,adapters/model.py}`、`services/api/tests/{test_content_generation.py,test_interview_runtime.py,unit/test_document_import.py}`、`apps/web/src/{api.ts,pages/ReportPage.tsx,components/report/ImprovementComparison.tsx,styles/base.css,styles/pages/report.css}`、`apps/web/tests/reportGuidance.test.tsx`、`CHANGELOG.md`。未提交、未推送；演示数据仓库与既有 `.env*.local` 未改。
+
+## 69. 2026-10-06｜声明式多岗位规则与 Python 后端第二岗位（IMPLEMENTED；本地离线/fixture 浏览器 VERIFIED）
+
+- 负责人明确提出四项：规则随包声明、审核同时绑定规则、岗位由选包决定/前端只显示后端能力名、完整第二岗位及本人两级审核；第二岗位选定 Python 后端实习/初级。追加配套简历姓名长崎素世，材料明确合成，不推断真人履历。
+- 接手有用户未提交修改，保留全部现有内容；未读私密配置、未迁移真实库、未批准任何实际新规则/题目。实现所有权按后端、前端、岗位材料分开，api.md 与文档由集成负责。
+- 契约：`competencies.json` 作为有限规则本体，删除注册表与 role_preset 权威；包外 owner 审核绑定包摘要、规则 ID/版本/字节摘要、两级确认与逐题内容范围。旧 Seed-only 批准不补造规则审核，新場须明确批准，历史已有冻结事实不跟当前审核变化。
+- 已交付 Python 岗位包六题、10 条官方来源定位、合成 JD、长崎素世文本/PDF 简历与本人待审核表；Agent 来源核对与隔离测试信任注入不签发正式批准。ZIP 根可直接上传，ZIP SHA256 `a4bcf263cd1f20762cf7324dae79bf713b961b8da1dc9bf3b3fac6810c809aa9`；包摘要 `sha256:8d23588e2a96a7915f8a1052c100388b29f0206ed9abbec2783f17f275943892`；规则摘要 `sha256:fc575eba1be946bc10c1860d11f86a91780f3ff2148cdd88146e4bdb80369890`。待本人逐题审查入口 `docs/reviews/python-backend-junior-review.md`。
+- 本轮实施前检查实际通过：后端 592 passed / 2 deselected / 268 warnings；前端 101 passed，TypeScript/Vite 构建 130 modules。本机 Node 26.10.0（不是锁定 Node 24），使用 NODE_OPTIONS=--no-webstorage 避免运行环境 Web Storage 遮蔽。
+- 变更后统一离线回归：后端 **613 passed / 2 deselected / 268 warnings，82.25s**，Ruff check/format 通过；前端 **107 passed / 9 files**，TypeScript/Vite 构建 **130 modules** 通过。未复验锁定 Node 24。
+- 实际浏览器/HTTP（隔离 fixture，合成材料，零付费模型/embedding）：导入 ZIP 后 `rules_reviewed=false / selectable=false`，新场 `409 PACK_REVIEW_PENDING`；旧嵌入式 Seed-only 批准的新场 `409 PACK_RULES_REVIEW_PENDING`；obsolete `role_preset` 为 422。仅临时数据库登记 `TEST_ONLY` 的 owner/两级/规则测试事实后，Python 五题计划使用新能力与原始规则摘要。场次受理后撤销审核，新場 `409 PACK_REVIEW_REJECTED`，旧场仍按已冻结规则完成五题；完整复盘 answered/scored roots 均 5，fixture 分数 67，不能当作真人能力评估。规则能力名改一字并升级包版本后，新 release 未审且规则摘要改变，旧报告仍显示原名。
+- 长崎素世简历：明确 `SYNTHETIC_DEMO_RESUME`，两页 PDF，实际 pypdf 提取 2218 字符；姓名、合成标识与末项项目均可读取，无 U+0000/U+FFFD。首次 PDF 字体产生仅肉眼可读而提取丢字问题，改用覆盖材料字符的 Unicode 子集字体后重生成并验证；现有 demo-data 原始 PDF 与材料未改。fixture 导入得到 50 条分块候选，仅确认 17 条非截断、与岗位相关的合成事实。
+- 实际报告桌面/390×844 手机页面保留 Python 后端能力名；手机 `documentElement.scrollWidth=innerWidth=390`。默认包列表标记仅表示默认身份，不再写成“默认用于新面试”误导可用性。记录与实拍 `runtime/multi-role-current/{verification.json,python-report-desktop.png,python-report-mobile.png}`。
+- 发行验证脚本 HTTP 切片实际启动另一隔离 fixture，透过 Vite proxy 完成嵌入式五题和报告；新 schema 的 example JD 声明与全部审核确认参数已迁移。首轮错误假定审核 CLI stdout 为纯 JSON，但 SDK 注册日志也写 stdout；验证改为读取 API 上实际持久化的审核/可选状态，不以 CLI 展示文本签发通过。完整源码发行包重新安装验证本轮未执行。
+- 历史数据库迁移只在隔离回归用例与临时库验证；真实库不自动补造规则批准。既有场次读取冻结的旧规则/批准范围，历史未知旧行规则字段保持 NULL。源码中的六条原始嵌入式 Seed 和规则字节保留；当前默认嵌入式包仍需本人明确规则审核才可新建技术评分。
+- 本轮未读 `.env`、未调用真实模型、未迁移用户数据库、未提交/推送、未公网部署。待哥哥本人完成新包 Level 1 / Level 2 / 规则审核；Python 新岗位 live 效果 NOT_RUN，既有模型来源偶发校验与优化语义风险仍见 §68，不假称在本轮被解决。
+
+## 70. 2026-10-06｜示例 JD 导入校验与岗位包确定性打包（IMPLEMENTED；本地离线 VERIFIED）
+
+- 复核 §69 时实际发现两处缺陷：① Python 包 `examples/jd.txt` 以「岗位练习要求（…）：」开头，不是显式分区标题，按本包规则抽取 0 条要求，未填 JD 时生成计划必然失败；隔离 fixture 的示例 JD 用「必要项：」，所以未暴露。② README/审核材料链接被 gitignore 的 `dist/` ZIP，源码发行包内断链，`test_spec_check_in_extracted_bundle_preserves_source_integrity` 实际失败（612 passed / 1 failed），§69 记录的 613 passed 不再成立。
+- 根因修复：导入时按出题同一路径（SYNTHETIC_DEMO_JD 快照 + 本包规则抽取）试抽取声明的示例，0 条即 422 `PACK_EXAMPLE_JD_INVALID`、不登记 release。示例改为「必要项：」分区，六条要求逐一映射六个能力。包版本升至 1.0.1：规则与六条 Seed 字节未变，profile 摘要仍为 `sha256:fc575eba…890`；新 `content_digest=sha256:6ab03d0eddc710733a5389f5390eb6365238eafe84cbfec818066e7bd6f454a1`。本机各 runtime 库均未登记过 python-backend-junior，删除了已作废的 1.0.0 dist ZIP。
+- 新增 `scripts/build_knowledge_pack.py` 与 `make knowledge-pack PACK=<目录>`：文件集合复用 `parse_manifest`，固定时间戳，重复构建字节一致；文档引用命令而不链接构建产物。1.0.1 ZIP SHA256 `785e81d64b77047bf5695ceee116a6ac18b7e5a23bcc97bdfb397f35e9b68d33`。
+- 验证：后端 **615 passed / 2 deselected**（新增示例拒绝用例、仓库 Python 包打包→导入→示例覆盖全部能力回归），Ruff 通过，规范 48/48，发行包完整性用例通过。前端代码未改。审核状态不变：Python 包与嵌入式规则仍待哥哥本人登记，未调用模型。

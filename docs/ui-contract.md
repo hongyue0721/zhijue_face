@@ -28,12 +28,12 @@
 | 事实确认/更正 | `POST /api/v1/profiles/{id}/confirm` | `decisions[].claim_id/action/corrected_text`、Operation；每批最多 50 | `correct` 是独立动作，不自动改为 accept；暂存更正后隐藏冲突的三态控件；第 51 条选择/更正保持界面并提示上限；弹卡焦点圈闭在 dialog 内，ESC/遮罩/取消关闭后焦点归还触发按钮 |
 | 资料激活 | `ProfileView.snapshot_activation`、`POST /profiles/{id}/activate`、Operation retry | `snapshot_id/status/operation_id` | pending 显式激活，failed 重试原操作；只接受该代 ready，不用 Document 全局状态 |
 | 用户 JD | `POST /api/v1/interviews` | `jd_text` 最多 8,000 字符、`jd_source_name` 1—200 字符 | 客户端不传 `source_type`；不把用户 JD 标成演示数据；不得截断超限正文后静默提交 |
-| 受控演示 JD（API/fixture） | `POST /api/v1/interviews` | 省略 `jd_text`、`jd_source_name`；正式准备页不提供此入口 | 来源必须由响应 `jd_source.source_type=synthetic_demo_jd` 证明；不得把受控 fixture 能力包装成正式页面默认值 |
+| 受控演示 JD（API/fixture） | `POST /api/v1/interviews` | 省略 `jd_text/jd_source_name` 只使用所选包登记的示例；正式准备页仍要求明确填写 | 没有包内示例则失败；不调用嵌入式预置；响应 `synthetic_demo_jd` 不冒充企业公告 |
 | JD 来源 | `InterviewView.jd_source` | 只按 `source_type` 映射：`synthetic_demo_jd`→演示岗位配置、`user_provided`→用户提供岗位描述、`official_posting`→官方公开岗位、`real_jd_derived`→公开岗位衍生材料 | 不用按钮文案或 `source_name` 推断、升级来源可信度 |
 | 冻结 JD 原文 | `InterviewView.jd_text` | string；历史确未保存才 null | 刷新/修改回填来自服务端，不从要求列表拼造，不持久化到浏览器 storage |
 | 岗位要求 | `InterviewView.jd_requirements` | `tier/statement/source_span`；主摘要只按 `tier` 派生四类数量，完整 N 条默认折叠并可展开 | 不改写 requirement；主界面不显示内部 ID；聚合数量不构成新业务事实 |
 | Coverage Map | `InterviewView.coverage_map` | `status/relation/requirement_ids/evidence_ids` | `unknown` 必须解释为“材料未体现 ≠ 不会” |
-| 五题计划 | `InterviewView.root_plan.slots` | 五个真实 slot；保持服务端顺序；`competency` 只查受控中文词典，未知值显示“验证方向 N” | 不提前生成或展示具体题目；不直接展示内部 `competency`；未知值不按字符串猜含义 |
+| 五题计划 | `InterviewView.root_plan.slots` 与 `knowledge_pack.capabilities` | 五个真实 slot；能力名称按本场冻结配置的 `{competency_id,label}` 显示 | 不提前生成题面；不维护岗位能力词典；不可解析名称时保留原 ID，不猜另一岗位名称 |
 | 技术明细 | `InterviewView.root_plan`、`limitations` | `competency/priority/reason_code/seed_id/version` | 默认折叠；不得与主流程视觉竞争 |
 | 开始面试 | `POST /api/v1/interviews/{id}/start` | `expected_revision`、operation；成功时按冻结的五个 Slot 实例化本场根问题 | 只有 start operation succeeded 后进入面试页；不把后续 Policy 动态决策描述成主问题即时生成 |
 | 当前题 | `InterviewView.current_question` | `wording/kind/order_index/basis/accepted_answer` | 不缓存或自造题面替代 GET 快照 |
@@ -45,7 +45,7 @@
 | 面试完成 | `InterviewView.status/current_question/profile_id` | completed 且无 current question时进入 `/interviews/{id}/report`；Profile 关系取服务端 `profile_id` | 不从 URL 或 storage 猜 Profile；不自行计算评分 |
 | 面试控制 | `POST /api/v1/interviews/{id}/control` | `action=skip/end`、`expected_revision`、原 key | 二次确认；取消零写入；end 可在已受理分析中提交；与回答独立恢复 |
 | 评分报告 | `GET /api/v1/interviews/{id}/report` | `root_assessments[].question_text/answers[]`、score、coverage、completion、limitations | 原题/主答/追问来自持久化数据，不等优化生成；null 不显示 0，浏览器不算分 |
-| 回答优化 | `POST /api/v1/interviews/{id}/report/improvements` | Report revision、Operation、`improved_answers[].root_question_id/original_answers/rewritten_answer/missing_facts/cautions` | 只有整场显式点击才生成；页签/问题切换只读；不把改写答案回写成面试证据或改变分数 |
+| 回答优化 | `POST /api/v1/interviews/{id}/report/improvements` | Report revision、Operation、`improved_answers[].root_question_id/original_answers/rewritten_answer/segments/missing_facts/cautions`、`source_claims` | 只有整场显式点击才生成；页签/问题切换只读；分段可点击查看出处（原话逐字标出、经历取 `source_claims` 原文），分段与正文不一致时整段展示、不在前端拼接出处；切题整体重建对照区；不把改写答案回写成面试证据或改变分数 |
 | 简历草稿 | `POST /api/v1/profiles/{id}/resume-drafts`、`GET /resume-drafts/{id}` | 当前 snapshot、可选 interview 目标、sections/changes/source_claims/missing_facts/cautions；正文与差异只按 `item_id`，来源只按 `claim_id` 显式关联 | JD/报告只影响目标表达；正文事实只来自当前快照 Claim；正文选择不写 API；主界面不展示裸 Claim ID |
 | 草稿确认与打印 | `POST /api/v1/resume-drafts/{id}/accept` | expected_revision；accepted 后开放打印 | 确认不改 Claim/评分；未确认正文不得进入打印区域；打印解除屏幕高度/overflow 限制 |
 
@@ -121,6 +121,7 @@
 | 复制标识 | 当前已取得的 DTO | 本地 clipboard 动作，失败给友好提示 | 不为此新增后端接口 |
 | 准备页选择器 | `GET /api/v1/knowledge-packs`（selectable 项） | 默认“服务端默认”；选择经 `pack_release_id` 随创建提交；包被删/失选自动回落默认 | 列表读取失败只警告，仍可用默认包生成（服务器受理时校验）；不禁用其它入口 |
 | 本场包摘要 | `InterviewView.knowledge_pack`（冻结字段） | 准备/面试/报告三页显示 frozen / frozen_unavailable / legacy_unresolved 三种真实状态 | 绝不从当前列表默认项倒推历史绑定 |
+| 岗位规则与审核 | item `profile_version/profile_digest/rules_reviewed`；冻结摘要 `capabilities` | 知识页显示规则版本与是否完成规则审核；准备/面试/报告仅使用所选或本场冻结包的名称 | 不由题目已审推导规则已审；新规则未经包外负责人两级审核不得选择用于新面试 |
 
 能力就绪分离：岗位包列表/详情/导入不依赖模型或候选人 embedding；`serviceReady=false` 只锁模型相关流程（生成计划、开始面试、回答分析），知识页不因它整体禁用。候选人接口面（列表/详情/面试视图）不返回参考答案、rubric 明细或评分细则。
 
@@ -148,4 +149,25 @@
 - 实际模型等待补充：文件发送阶段不承诺可刷新恢复；收到 document.import Operation 后，扫描动画下展示真实状态与耗时。模型识别失败给出重新上传/手填入口说明，原始错误仍可展开核对，不把服务失败归因于用户资料。
 - 回答优化页签内就地展示生成进度；切回评分页签仍可查看任务状态，同一时刻不重复渲染两份进度。
 - 简历 generation_failed 与 generating 分开：终态不再写“生成完成后”或无条件要求重试；无正文时不显示误导的“0 项来源”。原错误、预算和返回资料/报告入口保留，重试仍完全受服务端门禁控制。
+
+## 2026-10-06 竞赛展示统一视觉与核对体验
+
+| 页面元素 | 唯一数据来源 | 行为 | 禁止的客户端推断 |
+|---|---|---|---|
+| 事实列表顺序 | `ProfileView.proposed_claims/confirmed_claims` | 服务端按材料阅读顺序返回（api.md ProfileView） | 前端不按文字内容重排 |
+| 事实分组 | `claim.source_quotes[0].section` | 受控六值映射中文组名；组按首次出现，组内保持服务端顺序；缺失/未知归“其他信息” | 不按文字猜测段落 |
+| 整组选择 | 本地 decisions | 用户显式点击才批量设为采用/不采用；不覆盖更正；整组超 50 条不生效；零写入 | 不默认采用任何事实 |
+| 上一题决策提示 | `InterviewView.root_results` 中最近一条非当前根题结果 | 显示 `action` 中文与 `reason_summary` | 不展示 Observation、模型推理或自行推断换题原因 |
+| 计划说明 | `InterviewView.limitations` | 经 `reportLimitationText` 改写领域词后折叠展示 | 不自行解释重复能力原因 |
+| 删除档案确认 | 本地对话框 | 确认后才调用 `DELETE /profiles/{id}`；取消零写入 | — |
+| 图标 | 本地内联 SVG | Button 加载态与 Alert 图标本地渲染 | 不请求任何远程图标或字体 |
+
+### 2026-10-06 文案与显示映射
+
+| 页面元素 | 数据来源 | 显示规则 | 禁止 |
+|---|---|---|---|
+| 知识包审核记录 | `review_summary.decision/reviewer_role/reviewed_at` | `reviewDecisionText`、`reviewerRoleText`、本地时区到分钟 | 显示原始枚举或 ISO 微秒时间；未知结论显示“审核结论待确认” |
+| 知识包校验结果 | `validation_checks[].check/status` | `validationCheckText`、`validationStatusText`；未登记检查名原样显示 | 自造检查含义 |
+| 复盘评分项 | `criterion_results[].kind/level` | 同类重复才加序号；等级“n / 3”（api.md level 0—3），null 显示“未形成等级” | 把序号或 null 显示成分数 |
+| 出题依据说明 | `current_question.basis.basis_type` | `gap` 才提示“没写到不代表不会”；`resume` 说明核对细节与本人负责部分 | 对所有题统一套用 |
 
