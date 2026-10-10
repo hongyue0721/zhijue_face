@@ -27,11 +27,11 @@ M0 至少完成：
 
 初始 chunk 大约 300 中文字符、重叠 40 字符，仅是工程起始参数；尊重 embedding 的 token 上限，超长块继续分割并保留原块映射。姓名/电话/邮箱不需要参与技术向量索引；分开存展示资料。
 
-索引 metadata 必需：profile_id、profile_snapshot_id、source_block_ids、document_hash、knowledge_generation、source_kind。权限与快照筛选不是让模型遵守一句提示词，而是在检索与返回前都校验。
+每个档案使用独立知识库集合；入库单位是确认快照中的一条已确认经历。索引 metadata 实际写入：`source_id`（`${snapshot.id}:${claim.id}`，回指已确认 Claim，再经 Claim 回到 SourceBlock）、`profile_id`、`generation`（快照 ID）与 `data_mode=user_confirmed`。权限与快照筛选不是让模型遵守一句提示词：入库回读按 source_id 逐条核对，检索结果在适配器返回前按当前快照的 source_id allowlist 过滤，旧代或已删除来源一律丢弃。
 
 ## 4. 检索策略
 
-候选人资料：使用当前目标能力与项目关键词查询 Knowledge，top_k 初始 4；对照 allowlist 确认来源属于当前快照。小简历全部装入上下文并不天然错误，但本题指定 Knowledge，必须实现真实入库与使用。
+候选人资料：确认快照的每条经历真实写入 Knowledge 并逐条回读校验，激活 ready 是开始面试的门禁；删除档案同步删除索引。按快照 allowlist 过滤的检索接口（`search_knowledge`）已实现并有测试，但当前出题、回答分析与回答优化/简历生成都不调用向量检索：出题从审核题库实例化，分析使用题目冻结 Rubric 与 Seed 参考要点，内容生成直接读取该快照在业务库中的已确认经历。
 
 题目种子：先按 competency、难度、前置条件、review_status=approved、适用技术环境直接筛选，不为 24 条结构化种子增加额外向量检索链。
 

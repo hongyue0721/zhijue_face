@@ -10,11 +10,12 @@
 flowchart TB
   B[浏览器：React / Vite / TypeScript] -->|同源 /api/v1| A[FastAPI：唯一业务后端]
   A --> U[Application Services：校验 / 幂等 / 操作调度]
-  U --> W[openJiuwen WorkflowAgent]
-  W --> N[解析 / 计划 / 分析 / 决策 / 反馈节点]
-  N --> K[openJiuwen Knowledge：真实入库与检索]
+  U --> W[openJiuwen Workflow：答题分析 / 有据生成]
+  W --> N[analyzer / generator / 语义校验 / 决策节点]
+  U --> K[openJiuwen Knowledge：确认快照入库、回读校验与删除]
   N --> M[模型适配层：单文本模型]
-  N --> P[纯规则 Policy 与分数聚合]
+  N --> P[纯规则 Policy：只决定下一动作]
+  U --> S[纯规则：出题规划 / 结束后分数聚合]
   U --> D[(SQLite：业务唯一事实源)]
   K --> V[(本地知识索引：可重建)]
   K --> F[材料文件与页块来源]
@@ -22,7 +23,7 @@ flowchart TB
   E --> B
 ```
 
-浏览器等待用户是业务会话状态，不让一条长时间 HTTP 请求或 Workflow 一直悬挂。每次“准备面试、回答、结束”运行一个有界工作流；动作完成后状态落库，再等待下次用户事件。一个 WorkflowAgent 可以管理这些工作流；不把节点都包装成独立 Agent。
+浏览器等待用户是业务会话状态，不让一条长时间 HTTP 请求或 Workflow 一直悬挂。每次回答运行一次有界答题工作流，经历抽取（长材料按段分批）、回答优化与简历生成运行有界的有据生成工作流；准备面试的出题规划和结束时的评分汇总不经工作流，由应用服务调用纯规则完成。动作完成后状态落库，再等待下次用户事件。生产代码直接构造并运行官方 `Workflow`（每次新建 workflow session），不经 WorkflowAgent 托管，也不把节点包装成独立 Agent；WorkflowAgent 只在 M0-02 smoke 中实测。
 
 ## 2. 技术栈冻结表
 
@@ -122,7 +123,7 @@ zhijue-demo/
 
 `Policy.decide(context, observation) → PolicyDecision`
 
-`WorkflowPort.prepare/answer/finish/coach/compose_resume(command) → WorkflowResult`
+`WorkflowPort.answer/extract_claims/coach_answers/compose_resume(command) → WorkflowResult`（准备面试与结束汇总是纯规则，不经工作流）
 
 端口返回结构必须带 schema_version。所有 side effect 由 Application Service 控制，不在纯 Policy 内写状态。
 
@@ -130,7 +131,7 @@ zhijue-demo/
 
 一次命令先落 Operation，再由生命周期管理的受限队列执行。持久化状态是事实，内存任务只是执行手段。SDK 运行时在 lifespan 初始化与关闭；文档解析/OCR 不能阻塞事件循环。[S08]
 
-完成节点结果通过验证后，使用短事务提交回答观察、下一问题、revision 和事件。**不得在持有 SQLite 写事务期间等待 LLM。** 会话以 active_operation_id 和 expected_revision 控制并发，完成前不允许第二个评分操作。
+完成节点结果通过验证后，使用短事务提交回答观察、下一问题、revision 和事件。**不得在持有 SQLite 写事务期间等待 LLM。** 会话以 active_operation_id 和 expected_revision 控制并发，完成前不允许第二个回答分析操作。
 
 进程重启时，queued 与 running 都转为 interrupted：两者依赖的 `BackgroundTasks` callable 都没有持久化，不能把 queued 假装成可安全自动重放。已保存 Answer 与已确认 ProfileSnapshot 保留；回答、控制、资料激活及内容生成按各自冻结输入通过 parent-linked retry 恢复。上传原始字节未持久化，document.import 失败/中断明确不可通用 retry，须重新上传。不能承诺框架原生断点跨重启恢复，除非已经实测。
 
